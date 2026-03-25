@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  email     String     @unique
+  name      String
+  image     String?
+  role      String     @default("admin")
+  documents Document[]
+}
+
+model Lawyer {
+  id               String        @id @default(cuid())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  name             String
+  email            String        @unique
+  phone            String?
+  specialties      String[]
+  available        Boolean       @default(true)
+  googleCalendarId String?
+  clients          Client[]
+  callSessions     CallSession[]
+  appointments     Appointment[]
+
+  @@index([available])
+}
+
+model Client {
+  id               String        @id @default(cuid())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  name             String
+  phone            String        @unique
+  email            String?
+  isCurrentClient  Boolean       @default(false)
+  assignedLawyerId String?
+  assignedLawyer   Lawyer?       @relation(fields: [assignedLawyerId], references: [id])
+  callSessions     CallSession[]
+  appointments     Appointment[]
+  documents        Document[]
+
+  @@index([phone])
+  @@index([isCurrentClient])
+}
+
+model CallSession {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  callId        String    @unique
+  callerPhone   String?
+  clientId      String?
+  clientType    String?
+  status        String    @default("active")
+  summary       String?
+  notes         String?
+  lawyerId      String?
+  transferred   Boolean   @default(false)
+  transferredTo String?
+  endedAt       DateTime?
+  client        Client?   @relation(fields: [clientId], references: [id])
+  lawyer        Lawyer?   @relation(fields: [lawyerId], references: [id])
+
+  @@index([callerPhone])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Appointment {
+  id                    String   @id @default(cuid())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  clientId              String
+  lawyerId              String
+  startTime             DateTime
+  endTime               DateTime
+  status                String   @default("scheduled")
+  googleCalendarEventId String?
+  notes                 String?
+  client                Client   @relation(fields: [clientId], references: [id])
+  lawyer                Lawyer   @relation(fields: [lawyerId], references: [id])
+
+  @@index([lawyerId, startTime])
+  @@index([clientId, startTime])
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  name         String
+  url          String
+  size         Int?
+  mimeType     String?
+  uploadedById String?
+  clientId     String?
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id])
+  client       Client?  @relation(fields: [clientId], references: [id])
+}
