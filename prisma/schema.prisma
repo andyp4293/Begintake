@@ -9,14 +9,15 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  email     String     @unique
-  name      String
-  image     String?
-  role      String     @default("admin")
-  documents Document[]
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  email        String     @unique
+  name         String
+  image        String?
+  passwordHash String?
+  role         String     @default("admin")
+  documents    Document[]
 }
 
 model Lawyer {
