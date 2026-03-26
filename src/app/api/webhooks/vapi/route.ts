@@ -491,7 +491,14 @@ export async function POST(req: NextRequest) {
       const t0 = Date.now();
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
       const serverUrl = `${appUrl}/api/webhooks/vapi`;
-      const transferPhone = process.env.TRANSFER_PHONE_NUMBER || null;
+      // Get transfer number from DB (user-configured) or env fallback
+      let transferPhone: string | null = process.env.TRANSFER_PHONE_NUMBER || null;
+      try {
+        const users = await prisma.$queryRaw<Array<{ transferPhoneNumber: string }>>`
+          SELECT "transferPhoneNumber" FROM "User" WHERE "transferPhoneNumber" IS NOT NULL LIMIT 1
+        `;
+        if (users.length > 0) transferPhone = users[0].transferPhoneNumber;
+      } catch { /* field may not exist yet */ }
 
       let systemPrompt: string;
       try {
@@ -512,6 +519,17 @@ export async function POST(req: NextRequest) {
           messages: [{ role: 'system', content: systemPrompt }],
           tools: [
             ...getToolDefinitions(),
+            {
+              type: 'transferCall',
+              destinations: transferPhone ? [
+                {
+                  type: 'number',
+                  number: transferPhone,
+                  message: 'Connecting you with our team now. Please hold.',
+                  description: 'Transfer to the paralegal or office staff',
+                },
+              ] : [],
+            },
             { type: 'endCall' },
           ],
         },
@@ -665,17 +683,15 @@ export async function POST(req: NextRequest) {
 
         // Fill in missing labels from summary if tools didn't set them
         if (summary) {
-          const session = await prisma.callSession.findUnique({ where: { callId } });
-          if (session && !session.callOutcome) {
-            await prisma.callSession.update({
-              where: { callId },
-              data: {
-                callOutcome: inferredOutcome || 'general_inquiry',
-                ...(!session.legalArea && inferredLegalArea !== 'other' ? { legalArea: inferredLegalArea } : {}),
-                ...(!session.clientType ? { clientType: 'prospective' } : {}),
-              },
-            });
-          }
+          try {
+            await prisma.$executeRaw`
+              UPDATE "CallSession"
+              SET "callOutcome" = COALESCE("callOutcome", ${inferredOutcome || 'general_inquiry'}),
+                  "legalArea" = COALESCE("legalArea", ${inferredLegalArea !== 'other' ? inferredLegalArea : null}),
+                  "clientType" = COALESCE("clientType", 'prospective')
+              WHERE "callId" = ${callId}
+            `;
+          } catch { /* fields may not exist yet */ }
         }
       }
 
