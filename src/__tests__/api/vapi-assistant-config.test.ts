@@ -68,7 +68,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     const res = await POST(req);
     const { assistant } = await res.json();
     expect(assistant.model.provider).toBe('openai');
-    expect(assistant.model.model).toBe('gpt-4o');
+    expect(assistant.model.model).toBe('gpt-5.2');
   });
 
   it('assistant has model with temperature', async () => {

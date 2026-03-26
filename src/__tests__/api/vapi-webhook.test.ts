@@ -642,7 +642,7 @@ describe('VAPI Webhook', () => {
   // ─── error handling ────────────────────────────────────────────────────
 
   describe('error handling', () => {
-    it('returns 500 on unexpected error', async () => {
+    it('returns 400 on invalid JSON body', async () => {
       const req = new NextRequest('http://localhost:3000/api/webhooks/vapi', {
         method: 'POST',
         body: 'invalid json{{{',
@@ -650,7 +650,7 @@ describe('VAPI Webhook', () => {
       });
 
       const res = await POST(req);
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(400);
     });
   });
 });

@@ -427,11 +427,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await req.json();
-    const messageType = body?.message?.type || body?.type;
+    const rawBody = await req.text();
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      console.error('VAPI webhook: invalid JSON body');
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+
+    const messageType = body?.message?.type;
 
     // Log for debugging
-    console.log('VAPI webhook received:', JSON.stringify({ messageType, bodyKeys: Object.keys(body), messageKeys: body?.message ? Object.keys(body.message) : [] }));
+    console.log('VAPI webhook received:', JSON.stringify({
+      messageType,
+      bodyKeys: Object.keys(body),
+      messageKeys: body?.message ? Object.keys(body.message) : [],
+      bodyPreview: rawBody.slice(0, 500),
+    }));
 
     // Handle assistant-request: return assistant config
     if (messageType === 'assistant-request') {
@@ -445,14 +458,14 @@ export async function POST(req: NextRequest) {
         firstMessage: 'Thank you for calling our law firm. My name is Alex, the AI paralegal assistant. How can I help you today?',
         model: {
           provider: 'openai',
-          model: 'gpt-4o',
+          model: 'gpt-5.2',
           temperature: 0.4,
           messages: [{ role: 'system', content: systemPrompt }],
           tools: getToolDefinitions(),
         },
         voice: {
           provider: '11labs',
-          voiceId: 'sarah',
+          voiceId: 'NDjuUGBKZhdOwAYMSat7',
           stability: 0.45,
           similarityBoost: 0.75,
         },
@@ -474,6 +487,7 @@ export async function POST(req: NextRequest) {
         assistant.forwardingPhoneNumber = transferPhone;
       }
 
+      console.log('VAPI returning assistant config:', JSON.stringify({ name: assistant.name, model: assistant.model.model, voice: assistant.voice.voiceId, serverUrl: assistant.server.url }));
       return NextResponse.json({ assistant });
     }
 
