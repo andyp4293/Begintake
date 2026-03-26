@@ -1,37 +1,35 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PhoneNumberCard } from '@/components/dashboard/PhoneNumberCard';
 
-// Mock clipboard
-Object.assign(navigator, {
-  clipboard: {
-    writeText: vi.fn().mockResolvedValue(undefined),
-  },
-});
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+function renderWithProviders(component: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{component}</QueryClientProvider>
+  );
+}
 
 describe('PhoneNumberCard', () => {
-  it('renders the phone number', () => {
-    render(<PhoneNumberCard />);
-    expect(screen.getByText(/855.*765.*4989/)).toBeInTheDocument();
-  });
-
-  it('displays AI Paralegal Line label', () => {
-    render(<PhoneNumberCard />);
+  it('renders the AI Paralegal Line label', () => {
+    renderWithProviders(<PhoneNumberCard />);
     expect(screen.getByText('AI Paralegal Line')).toBeInTheDocument();
   });
 
   it('displays VAPI-powered label', () => {
-    render(<PhoneNumberCard />);
+    renderWithProviders(<PhoneNumberCard />);
     expect(screen.getByText(/VAPI-powered/)).toBeInTheDocument();
   });
 
-  it('copies number to clipboard on click', async () => {
-    render(<PhoneNumberCard />);
-    const copyButton = screen.getByTitle('Copy number');
-    fireEvent.click(copyButton);
-    await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalled();
-    });
+  it('shows loading state initially', () => {
+    renderWithProviders(<PhoneNumberCard />);
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 });
