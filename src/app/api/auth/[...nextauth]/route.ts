@@ -46,7 +46,10 @@ export const authOptions: NextAuthOptions = {
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             authorization: {
               params: {
-                prompt: 'select_account',
+                prompt: 'consent',
+                access_type: 'offline',
+                response_type: 'code',
+                scope: 'openid email profile https://www.googleapis.com/auth/calendar.events',
               },
             },
           }),
@@ -68,6 +71,7 @@ export const authOptions: NextAuthOptions = {
       const email = user.email?.toLowerCase();
       if (!email) return '/login?error=NoEmail';
 
+      // Store or update user with refresh token
       const existing = await prisma.user.findUnique({ where: { email } });
       if (!existing) {
         await prisma.user.create({
@@ -76,13 +80,20 @@ export const authOptions: NextAuthOptions = {
             name: user.name || 'User',
             image: user.image || null,
             role: 'admin',
+            googleRefreshToken: account.refresh_token || null,
           },
+        });
+      } else if (account.refresh_token) {
+        // Update refresh token if we got a new one
+        await prisma.user.update({
+          where: { email },
+          data: { googleRefreshToken: account.refresh_token },
         });
       }
 
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         const dbUser = await prisma.user.findUnique({
           where: { email: user.email!.toLowerCase() },
@@ -92,6 +103,10 @@ export const authOptions: NextAuthOptions = {
           token.id = dbUser.id;
           token.role = dbUser.role;
         }
+      }
+      // Store access token for calendar API
+      if (account) {
+        token.accessToken = account.access_token;
       }
       return token;
     },

@@ -1,28 +1,36 @@
 import { google } from 'googleapis';
+import { prisma } from '@/lib/prisma';
 
-function getCalendarClient() {
-  // Option 1: Service account (recommended for server-to-server)
+async function getCalendarClient() {
+  // Option 1: Service account (if configured)
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (serviceAccountKey) {
     const credentials = JSON.parse(serviceAccountKey);
     const auth = new google.auth.GoogleAuth({
       credentials,
-      scopes: ['https://www.googleapis.com/auth/calendar'],
+      scopes: ['https://www.googleapis.com/auth/calendar.events'],
     });
     return google.calendar({ version: 'v3', auth });
   }
 
-  // Option 2: OAuth2 with refresh token
+  // Option 2: Use stored refresh token from Google OAuth login
+  const user = await prisma.user.findFirst({
+    where: { googleRefreshToken: { not: null } },
+    select: { googleRefreshToken: true },
+  });
+
+  if (!user?.googleRefreshToken) {
+    throw new Error('No Google Calendar credentials available. Sign in with Google to enable calendar.');
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET
   );
 
-  if (process.env.GOOGLE_REFRESH_TOKEN) {
-    oauth2Client.setCredentials({
-      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-    });
-  }
+  oauth2Client.setCredentials({
+    refresh_token: user.googleRefreshToken,
+  });
 
   return google.calendar({ version: 'v3', auth: oauth2Client });
 }
@@ -38,7 +46,7 @@ interface CreateEventParams {
 
 export async function createCalendarEvent(params: CreateEventParams): Promise<string | null> {
   try {
-    const calendar = getCalendarClient();
+    const calendar = await getCalendarClient();
 
     const event = await calendar.events.insert({
       calendarId: params.calendarId || 'primary',
@@ -61,7 +69,7 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<st
 
     return event.data.id || null;
   } catch (error: any) {
-    console.error('Failed to create calendar event:', error);
+    console.error('Failed to create calendar event:', error?.message || error);
     return null;
   }
 }
@@ -79,7 +87,7 @@ interface TimeSlot {
 
 export async function getAvailableSlots(params: GetSlotsParams): Promise<TimeSlot[]> {
   try {
-    const calendar = getCalendarClient();
+    const calendar = await getCalendarClient();
 
     const dayStart = new Date(`${params.date}T09:00:00-05:00`);
     const dayEnd = new Date(`${params.date}T17:00:00-05:00`);
@@ -94,7 +102,6 @@ export async function getAvailableSlots(params: GetSlotsParams): Promise<TimeSlo
 
     const busySlots = busyResponse.data.calendars?.[params.calendarId || 'primary']?.busy || [];
 
-    // Generate available slots
     const slots: TimeSlot[] = [];
     let current = new Date(dayStart);
 
@@ -112,12 +119,12 @@ export async function getAvailableSlots(params: GetSlotsParams): Promise<TimeSlo
         slots.push({ start: new Date(current), end: new Date(slotEnd) });
       }
 
-      current = new Date(current.getTime() + 30 * 60 * 1000); // 30-min increments
+      current = new Date(current.getTime() + 30 * 60 * 1000);
     }
 
     return slots;
   } catch (error: any) {
-    console.error('Failed to get available slots:', error);
+    console.error('Failed to get available slots:', error?.message || error);
     return [];
   }
 }
