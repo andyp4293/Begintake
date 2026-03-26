@@ -122,8 +122,8 @@ describe('VAPI Webhook', () => {
       expect(toolNames).toContain('checkClient');
       expect(toolNames).toContain('identifyLawyer');
       expect(toolNames).toContain('scheduleConsultation');
-      expect(toolNames).toContain('transferCall');
       expect(toolNames).toContain('generateSummary');
+      // transferCall removed - using forwardingPhoneNumber instead
       expect(data.assistant.model.tools.some((t: any) => t.type === 'endCall')).toBe(true);
     });
 

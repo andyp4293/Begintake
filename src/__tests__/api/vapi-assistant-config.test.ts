@@ -114,9 +114,9 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(toolNames).toContain('checkClient');
     expect(toolNames).toContain('identifyLawyer');
     expect(toolNames).toContain('scheduleConsultation');
-    expect(toolNames).toContain('transferCall');
+    // transferCall removed - using forwardingPhoneNumber instead
     expect(toolNames).toContain('generateSummary');
-    expect(assistant.model.tools).toHaveLength(6); // 5 function tools + endCall
+    expect(assistant.model.tools).toHaveLength(5); // 4 function tools + endCall
   });
 
   it('each function tool has type, function.name, function.description, function.parameters', async () => {

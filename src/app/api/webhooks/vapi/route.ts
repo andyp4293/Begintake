@@ -558,11 +558,17 @@ export async function POST(req: NextRequest) {
     // Handle tool-calls
     if (messageType === 'tool-calls') {
       const toolCalls = body?.message?.toolCallList || body?.message?.toolCalls || [];
+      const callCustomerPhone = body?.message?.call?.customer?.number || '';
       const results = [];
 
       for (const toolCall of toolCalls) {
         const name = toolCall?.function?.name;
         const args = parseToolArguments(toolCall?.function?.arguments);
+        // Inject caller phone from VAPI call if tool didn't provide one
+        if (!args.callerPhone && !args.phone && callCustomerPhone) {
+          args.callerPhone = callCustomerPhone;
+          args.phone = callCustomerPhone;
+        }
         const toolCallId = toolCall?.id;
 
         let result;

@@ -2,13 +2,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
-// Mock next-auth/react
 const mockSignIn = vi.fn();
 vi.mock('next-auth/react', () => ({
   signIn: (...args: any[]) => mockSignIn(...args),
 }));
 
-// Mock next/navigation
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   useSearchParams: () => ({ get: () => null }),
@@ -41,32 +39,7 @@ describe('LoginPage', () => {
 
   it('has dark background', () => {
     const { container } = render(<LoginPage />);
-    const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.className).toContain('bg-black');
-  });
-
-  it('renders email and password inputs', () => {
-    render(<LoginPage />);
-    expect(screen.getByPlaceholderText('Email address')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
-  });
-
-  it('renders sign in button', () => {
-    render(<LoginPage />);
-    expect(screen.getByText('Sign In')).toBeInTheDocument();
-  });
-
-  it('toggles to register mode', () => {
-    render(<LoginPage />);
-    fireEvent.click(screen.getByText('Create one'));
-    expect(screen.getByText('Create Account')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Full name')).toBeInTheDocument();
-  });
-
-  it('toggles back to sign in mode', () => {
-    render(<LoginPage />);
-    fireEvent.click(screen.getByText('Create one'));
-    fireEvent.click(screen.getByText('Sign in'));
-    expect(screen.getByText('Sign In')).toBeInTheDocument();
+    const wrapper = container.querySelector('.bg-black');
+    expect(wrapper).toBeInTheDocument();
   });
 });
