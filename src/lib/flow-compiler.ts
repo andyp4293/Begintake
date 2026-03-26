@@ -91,9 +91,12 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string): str
     day: 'numeric',
   });
 
+  // Resolve {name} variable in any string
+  const resolvedName = assistantName || 'Aria';
+  const resolveVars = (text: string) => text.replace(/\{name\}/gi, resolvedName);
+
   // Header
-  const name = assistantName || 'the AI intake assistant';
-  sections.push(`You are ${name}, an AI intake receptionist for a law firm.`);
+  sections.push(`You are ${resolvedName}, an AI intake receptionist for a law firm.`);
   sections.push(`Today is ${today}.`);
   sections.push('');
   sections.push('FOLLOW THIS SCRIPT EXACTLY. Ask each question one at a time. Wait for answers before proceeding.');
@@ -269,7 +272,8 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string): str
   sections.push('- Everything shared is confidential.');
   sections.push('- Keep ALL responses under 2 sentences — this is a phone call, not a letter.');
 
-  return sections.join('\n');
+  // Replace all {name} variables with the assistant's name
+  return resolveVars(sections.join('\n'));
 }
 
 /**

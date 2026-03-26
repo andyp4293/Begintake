@@ -153,10 +153,13 @@ function NodeCard({
         {editing && (
           <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
             {(node.type === 'start' || node.type === 'transfer') && (
-              <textarea value={node.config?.greeting || node.config?.message || ''}
-                onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
-                rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}
-                className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
+              <>
+                <textarea value={node.config?.greeting || node.config?.message || ''}
+                  onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
+                  rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}
+                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
+                <p className="text-[9px] text-zinc-600">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> to insert the assistant&apos;s name. Example: &quot;My name is {'{name}'}&quot; → &quot;My name is Aria&quot;</p>
+              </>
             )}
             {node.type === 'question' && (
               <>

@@ -29,7 +29,9 @@ async function buildSystemPrompt(assistantName?: string): Promise<{ prompt: stri
       // Extract the greeting from the start node to use as firstMessage
       const startNode = activeFlow.nodes.find((n: any) => n.type === 'start');
       const startConfig = startNode?.config as any;
-      const greeting = startConfig?.greeting as string | undefined;
+      const rawGreeting = startConfig?.greeting as string | undefined;
+      // Replace {name} variable with actual assistant name
+      const greeting = rawGreeting?.replace(/\{name\}/gi, assistantName || 'Aria');
       return { prompt, firstMessage: greeting || undefined };
     }
   } catch (err) {

@@ -48,7 +48,7 @@ export function createAndersonBowmanTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: "Good afternoon. Thank you for calling Anderson Bowman PLLC. My name is Aria, and I'm the firm's intake assistant. I'm going to ask you a few questions so that when I connect you with one of our attorneys, they'll already have everything they need to help you right away. Everything you share is confidential. Shall we get started?",
+    greeting: "Good afternoon. Thank you for calling Anderson Bowman PLLC. My name is {name}, and I'm the firm's intake assistant. I'm going to ask you a few questions so that when I connect you with one of our attorneys, they'll already have everything they need to help you right away. Everything you share is confidential. Shall we get started?",
   });
 
   // Q1. Shall we get started?
