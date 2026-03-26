@@ -7,6 +7,7 @@ interface CallSummaryEmailParams {
   lawyerName: string;
   callerName: string;
   callerPhone: string;
+  callerEmail?: string;
   summary: string;
   notes: string;
   legalArea: string;
@@ -28,6 +29,7 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
           <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
             <p><strong>Client Name:</strong> ${params.callerName}</p>
             <p><strong>Call Back Number:</strong> <a href="tel:${params.callerPhone}">${params.callerPhone}</a></p>
+            ${params.callerEmail ? `<p><strong>Email:</strong> <a href="mailto:${params.callerEmail}">${params.callerEmail}</a></p>` : ''}
             <p><strong>Legal Area:</strong> ${params.legalArea}</p>
           </div>
 

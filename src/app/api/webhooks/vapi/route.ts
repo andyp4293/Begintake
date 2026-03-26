@@ -37,7 +37,9 @@ ${lawyerList}
 Your job:
 - Greet callers warmly and ask for their name.
 - Then ask: "Is the number you're calling from the best number to reach you?" If yes, use that number. If no, ask for their preferred callback number.
-- Once you have their name and phone, call checkClient to look them up.
+- Repeat the phone number back to them to confirm — e.g. "Just to confirm, that's 9-0-8, 7-2-7, 2-4-3-7?" Read each digit clearly.
+- Also ask for their email address so the attorney can follow up. Spell it back to confirm.
+- Once you have their name, phone, and email, call checkClient to look them up.
 
 IF CURRENT CLIENT (checkClient returns isCurrentClient: true):
 - Say: "Welcome back! Let me connect you with your attorney right away."
@@ -62,13 +64,13 @@ IF PROSPECTIVE CLIENT (not in our system):
   - This is the default path. If someone is talking about their problem and has NOT asked to schedule, go with this path.
   - Listen patiently. Take mental notes of their situation.
   - When the conversation reaches a natural pause or they say they're done:
-  - Say: "I appreciate you sharing that with me. Let me get this to the right attorney on our team — they'll review everything and reach out to you directly."
-  - Call generateSummary with the caller's name, phone, a summary of their issue, and detailed notes.
+  - Say something like: "I really appreciate you sharing all of that with me. Here's what I'm going to do — I'll put together notes from our call and send them over to the right attorney on our team along with your contact information. They'll review everything and reach out to you directly to discuss next steps. You should hear from someone soon."
+  - Call generateSummary with the caller's name, phone, email, a summary of their issue, and detailed notes.
 
 WHEN TO TRANSFER TO A REAL PERSON:
-- The caller says "talk to a person", "real person", "human", "manager", or similar — say "Sure, let me connect you with someone now." then call transferCall.
-- The situation sounds like an emergency.
-- You cannot determine the appropriate response.
+- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar — IMMEDIATELY say "Sure, connecting you now." and call transferCall right away. Do NOT ask any more questions. Do NOT collect more info. Just transfer immediately.
+- If the situation sounds like an emergency — transfer immediately.
+- If you cannot determine the appropriate response — transfer immediately.
 
 ENDING THE CALL:
 - When the caller signals they are done (says "goodbye", "bye", "that's all", "I'm good", "no", "nope", "nothing else", or similar), say exactly: "Thank you for calling! Have a wonderful day — goodbye!" — then immediately call endCall.
@@ -161,6 +163,7 @@ function getToolDefinitions() {
           properties: {
             callerName: { type: 'string', description: 'Caller name' },
             callerPhone: { type: 'string', description: 'Caller phone number' },
+            callerEmail: { type: 'string', description: 'Caller email address' },
             issue: { type: 'string', description: 'Summary of the legal issue discussed' },
             notes: { type: 'string', description: 'Detailed notes from the conversation' },
           },
@@ -388,6 +391,7 @@ async function handleTransferCall(args: Record<string, unknown>) {
 async function handleGenerateSummary(args: Record<string, unknown>) {
   const callerName = typeof args.callerName === 'string' ? args.callerName : 'Unknown';
   const callerPhone = typeof args.callerPhone === 'string' ? normalizePhoneNumber(args.callerPhone) : '';
+  const callerEmail = typeof args.callerEmail === 'string' ? args.callerEmail : '';
   const issue = typeof args.issue === 'string' ? args.issue : '';
   const notes = typeof args.notes === 'string' ? args.notes : '';
 
@@ -399,7 +403,7 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
   let client = await prisma.client.findUnique({ where: { phone: callerPhone } });
   if (!client && callerPhone) {
     client = await prisma.client.create({
-      data: { name: callerName, phone: callerPhone, isCurrentClient: false },
+      data: { name: callerName, phone: callerPhone, email: callerEmail || null, isCurrentClient: false },
     });
   }
 
@@ -445,6 +449,7 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
       lawyerName: lawyer.name,
       callerName,
       callerPhone,
+      callerEmail,
       summary: issue,
       notes,
       legalArea,
@@ -562,8 +567,7 @@ export async function POST(req: NextRequest) {
         silenceTimeoutSeconds: 60,
       };
 
-      // Only add forwardingPhoneNumber if it's a real number (not the default dummy)
-      if (transferPhone && transferPhone !== '+15551234567') {
+      if (transferPhone) {
         assistant.forwardingPhoneNumber = transferPhone;
       }
 
