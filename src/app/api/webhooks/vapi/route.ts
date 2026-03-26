@@ -514,7 +514,8 @@ export async function POST(req: NextRequest) {
         silenceTimeoutSeconds: 60,
       };
 
-      if (transferPhone) {
+      // Only add forwardingPhoneNumber if it's a real number (not the default dummy)
+      if (transferPhone && transferPhone !== '+15551234567') {
         assistant.forwardingPhoneNumber = transferPhone;
       }
 
