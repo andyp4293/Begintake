@@ -633,6 +633,15 @@ export async function POST(req: NextRequest) {
           ? transcript
           : '';
 
+        // Infer labels from summary if not already set by tools
+        const inferredLegalArea = summary ? identifyLegalArea(summary) : null;
+        const inferredOutcome = summary
+          ? summary.toLowerCase().includes('schedul') ? 'consultation_scheduled'
+          : summary.toLowerCase().includes('summary') || summary.toLowerCase().includes('notes') ? 'summary_sent'
+          : summary.toLowerCase().includes('transfer') ? 'transferred'
+          : 'general_inquiry'
+          : null;
+
         await prisma.callSession.upsert({
           where: { callId },
           create: {
@@ -640,6 +649,9 @@ export async function POST(req: NextRequest) {
             callerPhone: callerPhone ? normalizePhoneNumber(callerPhone) : null,
             summary: summary || null,
             notes: transcriptText || null,
+            clientType: 'prospective',
+            callOutcome: inferredOutcome,
+            legalArea: inferredLegalArea !== 'other' ? inferredLegalArea : null,
             status: 'completed',
             endedAt: new Date(),
           },
@@ -650,6 +662,21 @@ export async function POST(req: NextRequest) {
             endedAt: new Date(),
           },
         });
+
+        // Fill in missing labels from summary if tools didn't set them
+        if (summary) {
+          const session = await prisma.callSession.findUnique({ where: { callId } });
+          if (session && !session.callOutcome) {
+            await prisma.callSession.update({
+              where: { callId },
+              data: {
+                callOutcome: inferredOutcome || 'general_inquiry',
+                ...(!session.legalArea && inferredLegalArea !== 'other' ? { legalArea: inferredLegalArea } : {}),
+                ...(!session.clientType ? { clientType: 'prospective' } : {}),
+              },
+            });
+          }
+        }
       }
 
       return NextResponse.json({ received: true });
