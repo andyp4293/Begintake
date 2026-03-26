@@ -84,7 +84,8 @@ export function RecentCallsList() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-500">
-                    {new Date(call.createdAt).toLocaleDateString()}
+                    {new Date(call.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                    {new Date(call.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                   </span>
                   {expandedId === call.id ? (
                     <ChevronUp className="w-4 h-4 text-zinc-500" />
