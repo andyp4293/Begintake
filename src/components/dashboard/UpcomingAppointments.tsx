@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock, ExternalLink } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 interface Appointment {
@@ -25,7 +25,19 @@ export function UpcomingAppointments() {
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-      <h3 className="text-sm font-medium text-zinc-300 mb-4">Upcoming Consultations</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-zinc-300">Upcoming Consultations</h3>
+        <a
+          href="https://calendar.google.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-600 transition-colors"
+        >
+          <Calendar className="w-3 h-3" />
+          Google Calendar
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
 
       {isLoading ? (
         <div className="space-y-3">
