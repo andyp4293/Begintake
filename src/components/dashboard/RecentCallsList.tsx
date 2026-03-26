@@ -35,7 +35,7 @@ export function RecentCallsList() {
 
   const buildParams = () => {
     const params = new URLSearchParams();
-    params.set('limit', '10');
+    params.set('limit', '6');
     params.set('sort', sort === 'oldest' ? 'oldest' : 'newest');
     if (filterClientType) params.set('clientType', filterClientType);
     if (filterOutcome) params.set('callOutcome', filterOutcome);

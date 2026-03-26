@@ -9,21 +9,22 @@ datasource db {
 }
 
 model User {
-  id                String     @id @default(cuid())
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  email             String     @unique
-  name              String
-  image             String?
-  passwordHash      String?
-  role              String     @default("admin")
-  vapiPhoneNumberId String?
-  vapiPhoneNumber   String?
+  id                  String       @id @default(cuid())
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  email               String       @unique
+  name                String
+  image               String?
+  passwordHash        String?
+  role                String       @default("admin")
+  vapiPhoneNumberId   String?
+  vapiPhoneNumber     String?
   twilioNumberSid     String?
   transferPhoneNumber String?
   googleRefreshToken  String?
   assistantName       String?
-  documents          Document[]
+  documents           Document[]
+  intakeFlows         IntakeFlow[]
 }
 
 model Lawyer {
@@ -62,24 +63,30 @@ model Client {
 }
 
 model CallSession {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  callId        String    @unique
-  callerPhone   String?
-  clientId      String?
-  clientType    String?
-  callOutcome   String?
-  legalArea     String?
-  status        String    @default("active")
-  summary       String?
-  notes         String?
-  lawyerId      String?
-  transferred   Boolean   @default(false)
-  transferredTo String?
-  endedAt       DateTime?
-  client        Client?   @relation(fields: [clientId], references: [id])
-  lawyer        Lawyer?   @relation(fields: [lawyerId], references: [id])
+  id              String       @id @default(cuid())
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  callId          String       @unique
+  callerPhone     String?
+  clientId        String?
+  clientType      String?
+  callOutcome     String?
+  legalArea       String?
+  status          String       @default("active")
+  summary         String?
+  notes           String?
+  lawyerId        String?
+  transferred     Boolean      @default(false)
+  transferredTo   String?
+  endedAt         DateTime?
+  intakeFlowId    String?
+  urgencyFlag     String?
+  petitionType    String?
+  matterCategory  String?
+  partyRole       String?
+  client          Client?      @relation(fields: [clientId], references: [id])
+  lawyer          Lawyer?      @relation(fields: [lawyerId], references: [id])
+  intakeData      IntakeData[]
 
   @@index([callerPhone])
   @@index([status])
@@ -115,4 +122,68 @@ model Document {
   clientId     String?
   uploadedBy   User?    @relation(fields: [uploadedById], references: [id])
   client       Client?  @relation(fields: [clientId], references: [id])
+}
+
+// ─── Intake Flow Builder ─────────────────────────────────────────────────────
+
+model IntakeFlow {
+  id          String     @id @default(cuid())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  name        String
+  description String?
+  isActive    Boolean    @default(false)
+  isTemplate  Boolean    @default(false)
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  nodes       FlowNode[]
+  edges       FlowEdge[]
+
+  @@index([userId, isActive])
+}
+
+model FlowNode {
+  id        String     @id @default(cuid())
+  flowId    String
+  flow      IntakeFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  type      String
+  label     String
+  positionX Float      @default(0)
+  positionY Float      @default(0)
+  config    Json       @default("{}")
+  sortOrder Int        @default(0)
+  outEdges  FlowEdge[] @relation("SourceNode")
+  inEdges   FlowEdge[] @relation("TargetNode")
+
+  @@index([flowId])
+}
+
+model FlowEdge {
+  id           String     @id @default(cuid())
+  flowId       String
+  flow         IntakeFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  sourceNodeId String
+  sourceNode   FlowNode   @relation("SourceNode", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNodeId String
+  targetNode   FlowNode   @relation("TargetNode", fields: [targetNodeId], references: [id], onDelete: Cascade)
+  label        String?
+  condition    Json?
+  sortOrder    Int        @default(0)
+
+  @@index([flowId])
+  @@index([sourceNodeId])
+}
+
+model IntakeData {
+  id            String      @id @default(cuid())
+  createdAt     DateTime    @default(now())
+  callSessionId String
+  callSession   CallSession @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  flowId        String?
+  fieldName     String
+  fieldValue    String
+  nodeId        String?
+  branchPath    String?
+
+  @@index([callSessionId])
 }

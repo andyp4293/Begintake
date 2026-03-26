@@ -72,7 +72,7 @@ function LawyerFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl mx-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-zinc-800">
           <h2 className="text-base font-semibold text-white">
