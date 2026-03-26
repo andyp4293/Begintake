@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 // ─── System prompt for the AI paralegal ──────────────────────────────────────
 
-async function buildSystemPrompt(assistantName?: string): Promise<string> {
+async function buildSystemPrompt(assistantName?: string): Promise<{ prompt: string; firstMessage?: string }> {
   // Check for active flow first
   try {
     const activeFlow = await prisma.intakeFlow.findFirst({
@@ -25,7 +25,12 @@ async function buildSystemPrompt(assistantName?: string): Promise<string> {
 
     if (activeFlow) {
       console.log(`[vapi] Using active flow: ${activeFlow.name} (${activeFlow.id})`);
-      return compileFlowToPrompt(activeFlow, assistantName);
+      const prompt = compileFlowToPrompt(activeFlow, assistantName);
+      // Extract the greeting from the start node to use as firstMessage
+      const startNode = activeFlow.nodes.find((n: any) => n.type === 'start');
+      const startConfig = startNode?.config as any;
+      const greeting = startConfig?.greeting as string | undefined;
+      return { prompt, firstMessage: greeting || undefined };
     }
   } catch (err) {
     console.error('[vapi] Failed to load active flow, falling back to legacy prompt:', err);
@@ -48,7 +53,7 @@ async function buildSystemPrompt(assistantName?: string): Promise<string> {
     day: 'numeric',
   });
 
-  return `You are the AI paralegal receptionist for a law firm.
+  return { prompt: `You are the AI paralegal receptionist for a law firm.
 Today is ${today}.
 
 Available attorneys (use the ID field when calling tools, never say the ID aloud):
@@ -107,7 +112,7 @@ IMPORTANT RULES:
 - Keep ALL responses under 2 sentences — this is a phone call, be brief.
 - Before calling a tool, say one short natural phrase like "Let me check that." or "One moment." — vary it each time.
 - Never read IDs aloud; they are internal references only.
-- If you don't know the answer, say "Let me connect you with our team for that."`;
+- If you don't know the answer, say "Let me connect you with our team for that."` };
 }
 
 // ─── Tool definitions for VAPI assistant config ──────────────────────────────
@@ -542,19 +547,25 @@ export async function POST(req: NextRequest) {
       } catch { /* field may not exist yet */ }
 
       let systemPrompt: string;
+      let flowFirstMessage: string | undefined;
       try {
-        systemPrompt = await buildSystemPrompt(assistantName || undefined);
+        const result = await buildSystemPrompt(assistantName || undefined);
+        systemPrompt = result.prompt;
+        flowFirstMessage = result.firstMessage;
       } catch (err) {
         console.error('[vapi] buildSystemPrompt failed:', err);
-        // Fallback prompt if DB is slow
         systemPrompt = `You are a warm, professional AI paralegal receptionist for a law firm. Listen empathetically, ask for the caller's name and phone number, and help them schedule a consultation or take notes on their situation. Never give legal advice.`;
       }
       console.log(`[vapi] assistant-request prompt built in ${Date.now() - t0}ms`);
+
+      // Use the flow's greeting as firstMessage if available, otherwise use default
+      const defaultFirstMessage = assistantName
+        ? `Thank you for calling our law firm. My name is ${assistantName}, how can I help you today?`
+        : 'Thank you for calling our law firm. How can I help you today?';
+
       const assistant: any = {
         name: assistantName ? `${assistantName} - AI Paralegal` : 'AI Paralegal Receptionist',
-        firstMessage: assistantName
-          ? `Thank you for calling our law firm. My name is ${assistantName}, how can I help you today?`
-          : 'Thank you for calling our law firm. How can I help you today?',
+        firstMessage: flowFirstMessage || defaultFirstMessage,
         model: {
           provider: 'openai',
           model: 'gpt-5.2',

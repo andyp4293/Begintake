@@ -109,7 +109,47 @@ function NodeCard({
           {node.type !== 'start' && <button onClick={() => onDeleteNode(node.id)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}
         </div>
 
-        {/* Config editor */}
+        {/* Content preview (always visible) */}
+        {!editing && (
+          <div className="px-3 pb-2 space-y-1">
+            {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
+              <p className="text-[11px] text-zinc-400 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
+            )}
+            {node.type === 'question' && (
+              <>
+                {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
+                {node.config?.options?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {node.config.options.map((opt: any, i: number) => (
+                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">► {opt.label}</span>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            {node.type === 'decision' && node.config?.description && (
+              <p className="text-[11px] text-zinc-400 italic">"{node.config.description}"</p>
+            )}
+            {node.type === 'action' && (node.config?.petitionType || node.config?.flagValue) && (
+              <p className="text-[10px] text-zinc-500">Flag: <span className="text-zinc-400">{node.config?.petitionType || node.config?.flagValue}</span></p>
+            )}
+            {node.type === 'action' && node.config?.note && (
+              <p className="text-[10px] text-amber-500/70">{node.config.note}</p>
+            )}
+            {node.type === 'collect_info' && node.config?.fields?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {node.config.fields.map((f: any, i: number) => (
+                  <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
+                ))}
+              </div>
+            )}
+            {node.type === 'end' && node.config?.closingMessage && (
+              <p className="text-[11px] text-zinc-400 italic">"{node.config.closingMessage}"</p>
+            )}
+          </div>
+        )}
+
+        {/* Config editor (when editing) */}
         {editing && (
           <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
             {(node.type === 'start' || node.type === 'transfer') && (
