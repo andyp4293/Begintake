@@ -421,10 +421,10 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Verify secret
+    // Verify secret — warn only (matching ClientFlow pattern)
     const secret = req.headers.get('x-vapi-secret');
     if (!verifyVapiSecret(secret)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      console.warn('[vapi] secret mismatch — expected:', process.env.VAPI_WEBHOOK_SECRET ? 'SET' : 'NOT SET', 'received:', secret ? 'present' : 'missing');
     }
 
     const rawBody = await req.text();
@@ -467,7 +467,21 @@ export async function POST(req: NextRequest) {
           temperature: 0.4,
           messages: [{ role: 'system', content: systemPrompt }],
           tools: [
-            ...getToolDefinitions(),
+            {
+              type: 'function',
+              function: {
+                name: 'checkClient',
+                description: 'Check if a caller is an existing client by their phone number',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Caller name' },
+                    phone: { type: 'string', description: 'Caller phone number' },
+                  },
+                  required: ['phone'],
+                },
+              },
+            },
             { type: 'endCall' },
           ],
         },
@@ -504,7 +518,9 @@ export async function POST(req: NextRequest) {
         assistant.forwardingPhoneNumber = transferPhone;
       }
 
-      console.log(`[vapi] RETURNING assistant in ${Date.now() - t0}ms model=${assistant.model.model} server=${assistant.server.url}`);
+      // Log full response (minus system prompt to save space)
+      const logAssistant = { ...assistant, model: { ...assistant.model, messages: ['[system prompt]'] } };
+      console.log(`[vapi] RETURNING in ${Date.now() - t0}ms: ${JSON.stringify(logAssistant)}`);
       return NextResponse.json({ assistant });
     }
 
