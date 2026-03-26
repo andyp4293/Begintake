@@ -438,13 +438,11 @@ export async function POST(req: NextRequest) {
 
     const messageType = body?.message?.type;
 
-    // Log for debugging
-    console.log('VAPI webhook received:', JSON.stringify({
-      messageType,
-      bodyKeys: Object.keys(body),
-      messageKeys: body?.message ? Object.keys(body.message) : [],
-      bodyPreview: rawBody.slice(0, 500),
-    }));
+    // Log for debugging — short so it doesn't get truncated
+    console.log(`[vapi] type=${messageType} keys=${Object.keys(body).join(',')}`);
+    if (!messageType) {
+      console.log(`[vapi] NO message.type! body preview: ${rawBody.slice(0, 300)}`);
+    }
 
     // Handle assistant-request: return assistant config
     if (messageType === 'assistant-request') {
