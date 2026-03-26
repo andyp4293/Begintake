@@ -19,8 +19,9 @@ model User {
   role              String     @default("admin")
   vapiPhoneNumberId String?
   vapiPhoneNumber   String?
-  twilioNumberSid   String?
-  documents         Document[]
+  twilioNumberSid    String?
+  transferPhoneNumber String?
+  documents          Document[]
 }
 
 model Lawyer {

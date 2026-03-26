@@ -331,10 +331,25 @@ async function handleScheduleConsultation(args: Record<string, unknown>) {
 }
 
 async function handleTransferCall(args: Record<string, unknown>) {
-  const phoneNumber = typeof args.phoneNumber === 'string'
-    ? args.phoneNumber
-    : process.env.TRANSFER_PHONE_NUMBER || '+15551234567';
   const reason = typeof args.reason === 'string' ? args.reason : 'Client requested transfer';
+
+  // Try the provided number first, then look up the user's configured transfer number
+  let phoneNumber = typeof args.phoneNumber === 'string' ? args.phoneNumber : null;
+
+  if (!phoneNumber) {
+    // Get the first user's transfer number (single-tenant demo)
+    const user = await prisma.user.findFirst({
+      where: { transferPhoneNumber: { not: null } },
+      select: { transferPhoneNumber: true },
+    });
+    phoneNumber = user?.transferPhoneNumber || process.env.TRANSFER_PHONE_NUMBER || null;
+  }
+
+  if (!phoneNumber) {
+    return {
+      message: 'No transfer number is configured. Please ask the caller to call back during business hours.',
+    };
+  }
 
   return {
     type: 'transfer',

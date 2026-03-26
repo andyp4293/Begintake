@@ -25,7 +25,7 @@ export function UpcomingAppointments() {
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-      <h3 className="text-sm font-medium text-zinc-400 mb-4">Upcoming Consultations</h3>
+      <h3 className="text-sm font-medium text-zinc-300 mb-4">Upcoming Consultations</h3>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -36,7 +36,7 @@ export function UpcomingAppointments() {
       ) : !appointments?.length ? (
         <div className="text-center py-8">
           <Calendar className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-          <p className="text-zinc-600 text-sm">No upcoming consultations</p>
+          <p className="text-zinc-500 text-sm">No upcoming consultations</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -47,21 +47,21 @@ export function UpcomingAppointments() {
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm font-medium text-white">{apt.client.name}</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-zinc-400 mt-0.5">
                       with {apt.lawyer.name}
                     </p>
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     apt.status === 'scheduled'
-                      ? 'bg-blue-500/10 text-blue-400'
+                      ? 'bg-zinc-800 text-zinc-300'
                       : apt.status === 'completed'
                       ? 'bg-green-500/10 text-green-400'
-                      : 'bg-zinc-700 text-zinc-400'
+                      : 'bg-zinc-700 text-zinc-300'
                   }`}>
                     {apt.status}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 mt-3 text-xs text-zinc-500">
+                <div className="flex items-center gap-3 mt-3 text-xs text-zinc-400">
                   <div className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
                     {start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}

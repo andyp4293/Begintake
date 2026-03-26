@@ -79,7 +79,7 @@ function LawyerFormModal({
             {isEditing ? 'Edit Attorney' : 'Add Attorney'}
           </h2>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-800 transition-colors">
-            <X className="w-4 h-4 text-zinc-500" />
+            <X className="w-4 h-4 text-zinc-400" />
           </button>
         </div>
 
@@ -87,43 +87,43 @@ function LawyerFormModal({
         <div className="p-5 space-y-4">
           {/* Name */}
           <div>
-            <label className="block text-xs font-medium text-zinc-500 mb-1.5">Name *</label>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Name *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Sarah Chen"
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors"
             />
           </div>
 
           {/* Email */}
           <div>
-            <label className="block text-xs font-medium text-zinc-500 mb-1.5">Email *</label>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Email *</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="sarah@lawfirm.com"
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors"
             />
           </div>
 
           {/* Phone */}
           <div>
-            <label className="block text-xs font-medium text-zinc-500 mb-1.5">Phone</label>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Phone</label>
             <input
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="(555) 123-4567"
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors"
             />
           </div>
 
           {/* Specialties */}
           <div>
-            <label className="block text-xs font-medium text-zinc-500 mb-2">Specialties</label>
+            <label className="block text-xs font-medium text-zinc-400 mb-2">Specialties</label>
             <div className="flex flex-wrap gap-1.5">
               {SPECIALTY_OPTIONS.map((s) => (
                 <button
@@ -132,8 +132,8 @@ function LawyerFormModal({
                   onClick={() => toggleSpecialty(s.toLowerCase())}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                     specialties.includes(s.toLowerCase())
-                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                      : 'bg-zinc-800 text-zinc-500 border border-zinc-700 hover:border-zinc-600'
+                      ? 'bg-zinc-700 text-zinc-300 border border-zinc-600'
+                      : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600'
                   }`}
                 >
                   {s}
@@ -144,7 +144,7 @@ function LawyerFormModal({
 
           {/* Available */}
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-zinc-500">Available for calls</label>
+            <label className="text-xs font-medium text-zinc-400">Available for calls</label>
             <button
               type="button"
               onClick={() => setAvailable(!available)}
@@ -165,14 +165,14 @@ function LawyerFormModal({
         <div className="flex gap-3 p-5 border-t border-zinc-800">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-400 hover:bg-zinc-700 transition-colors"
+            className="flex-1 px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={() => saveMutation.mutate()}
             disabled={!name || !email || saveMutation.isPending}
-            className="flex-1 px-4 py-2 bg-blue-600 rounded-lg text-sm text-white font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 px-4 py-2 bg-white rounded-lg text-sm text-black font-medium hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saveMutation.isPending ? 'Saving...' : isEditing ? 'Update' : 'Add Attorney'}
           </button>
@@ -230,10 +230,10 @@ export function LawyerList() {
     <>
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-zinc-400">Attorneys</h3>
+          <h3 className="text-sm font-medium text-zinc-300">Attorneys</h3>
           <button
             onClick={() => { setEditingLawyer(null); setShowForm(true); }}
-            className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-600 transition-colors"
           >
             <Plus className="w-3 h-3" />
             Add
@@ -249,10 +249,10 @@ export function LawyerList() {
         ) : !lawyers?.length ? (
           <div className="text-center py-8">
             <Briefcase className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-            <p className="text-zinc-600 text-sm">No attorneys yet</p>
+            <p className="text-zinc-500 text-sm">No attorneys yet</p>
             <button
               onClick={() => setShowForm(true)}
-              className="mt-3 text-xs text-blue-500 hover:text-blue-400"
+              className="mt-3 text-xs text-white hover:text-zinc-300"
             >
               Add your first attorney
             </button>
@@ -265,7 +265,7 @@ export function LawyerList() {
                 className="group flex items-center gap-3 p-3 bg-zinc-800/50 rounded-xl hover:bg-zinc-800 transition-colors"
               >
                 <div className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-zinc-400" />
+                  <User className="w-4 h-4 text-zinc-300" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -274,7 +274,7 @@ export function LawyerList() {
                       lawyer.available ? 'bg-green-500' : 'bg-zinc-600'
                     }`} />
                   </div>
-                  <p className="text-xs text-zinc-500 truncate">
+                  <p className="text-xs text-zinc-400 truncate">
                     {lawyer.specialties.length
                       ? lawyer.specialties.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' · ')
                       : lawyer.email}
@@ -286,14 +286,14 @@ export function LawyerList() {
                     className="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors"
                     title="Edit"
                   >
-                    <Pencil className="w-3 h-3 text-zinc-500" />
+                    <Pencil className="w-3 h-3 text-zinc-400" />
                   </button>
                   <button
                     onClick={() => handleDelete(lawyer)}
                     className="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors"
                     title="Remove"
                   >
-                    <Trash2 className="w-3 h-3 text-zinc-500" />
+                    <Trash2 className="w-3 h-3 text-zinc-400" />
                   </button>
                 </div>
               </div>

@@ -8,6 +8,7 @@ import { RecentCallsList } from '@/components/dashboard/RecentCallsList';
 import { UpcomingAppointments } from '@/components/dashboard/UpcomingAppointments';
 import { FileUpload } from '@/components/dashboard/FileUpload';
 import { LawyerList } from '@/components/dashboard/LawyerList';
+import { TransferNumberCard } from '@/components/dashboard/TransferNumberCard';
 
 export default function Dashboard() {
   const { data: session, status } = useSession();
@@ -15,7 +16,7 @@ export default function Dashboard() {
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -31,21 +32,21 @@ export default function Dashboard() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-              <Scale className="w-5 h-5 text-blue-500" />
+              <Scale className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-white">AI Paralegal</h1>
-              <p className="text-xs text-zinc-600">Legal intake dashboard</p>
+              <p className="text-xs text-zinc-500">Legal intake dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-zinc-500">{session.user?.name}</span>
+            <span className="text-sm text-zinc-400">{session.user?.name}</span>
             <button
               onClick={() => signOut({ callbackUrl: '/login' })}
               className="p-2 rounded-lg hover:bg-zinc-900 transition-colors"
               title="Sign out"
             >
-              <LogOut className="w-4 h-4 text-zinc-500" />
+              <LogOut className="w-4 h-4 text-zinc-400" />
             </button>
           </div>
         </div>
@@ -57,6 +58,7 @@ export default function Dashboard() {
           {/* Left column - wide */}
           <div className="lg:col-span-2 space-y-6">
             <PhoneNumberCard />
+            <TransferNumberCard />
             <RecentCallsList />
             <UpcomingAppointments />
           </div>

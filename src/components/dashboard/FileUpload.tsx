@@ -67,24 +67,24 @@ export function FileUpload() {
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-      <h3 className="text-sm font-medium text-zinc-400 mb-4">Documents</h3>
+      <h3 className="text-sm font-medium text-zinc-300 mb-4">Documents</h3>
 
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
-          isDragging ? 'border-blue-500 bg-blue-500/5' : 'border-zinc-800 hover:border-zinc-700'
+          isDragging ? 'border-white bg-zinc-800/50' : 'border-zinc-800 hover:border-zinc-700'
         }`}
       >
         {uploading ? (
-          <Loader2 className="w-6 h-6 text-blue-500 mx-auto animate-spin" />
+          <Loader2 className="w-6 h-6 text-white mx-auto animate-spin" />
         ) : (
           <>
-            <Upload className="w-6 h-6 text-zinc-600 mx-auto mb-2" />
-            <p className="text-sm text-zinc-500">
+            <Upload className="w-6 h-6 text-zinc-500 mx-auto mb-2" />
+            <p className="text-sm text-zinc-400">
               Drag & drop files or{' '}
-              <label className="text-blue-500 cursor-pointer hover:text-blue-400">
+              <label className="text-white cursor-pointer hover:text-zinc-300">
                 browse
                 <input
                   type="file"
@@ -102,10 +102,10 @@ export function FileUpload() {
         <div className="mt-4 space-y-2">
           {documents.map((doc) => (
             <div key={doc.id} className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
-              <File className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              <File className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-zinc-300 truncate">{doc.name}</p>
-                <p className="text-xs text-zinc-600">{formatSize(doc.size)}</p>
+                <p className="text-xs text-zinc-500">{formatSize(doc.size)}</p>
               </div>
             </div>
           ))}

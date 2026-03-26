@@ -33,14 +33,14 @@ export function RecentCallsList() {
     switch (status) {
       case 'active': return 'bg-green-500';
       case 'completed': return 'bg-zinc-600';
-      case 'transferred': return 'bg-blue-500';
+      case 'transferred': return 'bg-white';
       default: return 'bg-zinc-700';
     }
   };
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-      <h3 className="text-sm font-medium text-zinc-400 mb-4">Recent Calls</h3>
+      <h3 className="text-sm font-medium text-zinc-300 mb-4">Recent Calls</h3>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -51,7 +51,7 @@ export function RecentCallsList() {
       ) : !calls?.length ? (
         <div className="text-center py-8">
           <PhoneIncoming className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-          <p className="text-zinc-600 text-sm">No calls yet</p>
+          <p className="text-zinc-500 text-sm">No calls yet</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -63,9 +63,9 @@ export function RecentCallsList() {
               >
                 <div className="flex items-center gap-3">
                   {call.transferred ? (
-                    <PhoneForwarded className="w-4 h-4 text-blue-400" />
+                    <PhoneForwarded className="w-4 h-4 text-zinc-300" />
                   ) : (
-                    <PhoneIncoming className="w-4 h-4 text-zinc-500" />
+                    <PhoneIncoming className="w-4 h-4 text-zinc-400" />
                   )}
                   <div>
                     <p className="text-sm font-medium text-white">
@@ -73,9 +73,9 @@ export function RecentCallsList() {
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className={`w-1.5 h-1.5 rounded-full ${statusColor(call.status)}`} />
-                      <span className="text-xs text-zinc-500 capitalize">{call.status}</span>
+                      <span className="text-xs text-zinc-400 capitalize">{call.status}</span>
                       {call.clientType && (
-                        <span className="text-xs text-zinc-600">
+                        <span className="text-xs text-zinc-500">
                           · {call.clientType === 'current' ? 'Current' : 'Prospective'}
                         </span>
                       )}
@@ -83,13 +83,13 @@ export function RecentCallsList() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-600">
+                  <span className="text-xs text-zinc-500">
                     {new Date(call.createdAt).toLocaleDateString()}
                   </span>
                   {expandedId === call.id ? (
-                    <ChevronUp className="w-4 h-4 text-zinc-600" />
+                    <ChevronUp className="w-4 h-4 text-zinc-500" />
                   ) : (
-                    <ChevronDown className="w-4 h-4 text-zinc-600" />
+                    <ChevronDown className="w-4 h-4 text-zinc-500" />
                   )}
                 </div>
               </button>
@@ -98,13 +98,13 @@ export function RecentCallsList() {
                 <div className="px-4 pb-4 border-t border-zinc-700/50">
                   {call.summary && (
                     <div className="mt-3">
-                      <p className="text-xs font-medium text-zinc-500 mb-1">Summary</p>
+                      <p className="text-xs font-medium text-zinc-400 mb-1">Summary</p>
                       <p className="text-sm text-zinc-300">{call.summary}</p>
                     </div>
                   )}
                   {call.lawyer && (
-                    <p className="text-xs text-zinc-500 mt-2">
-                      Assigned to: <span className="text-zinc-400">{call.lawyer.name}</span>
+                    <p className="text-xs text-zinc-400 mt-2">
+                      Assigned to: <span className="text-zinc-300">{call.lawyer.name}</span>
                     </p>
                   )}
                 </div>

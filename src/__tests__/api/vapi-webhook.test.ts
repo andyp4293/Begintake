@@ -22,6 +22,9 @@ vi.mock('@/lib/prisma', () => ({
     appointment: {
       create: vi.fn(),
     },
+    user: {
+      findFirst: vi.fn(),
+    },
   },
 }));
 
@@ -420,6 +423,7 @@ describe('VAPI Webhook', () => {
 
     it('uses default transfer number when none provided', async () => {
       vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.user.findFirst).mockResolvedValue(null);
 
       const req = makeRequest({
         message: {

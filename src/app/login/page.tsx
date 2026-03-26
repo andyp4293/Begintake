@@ -9,7 +9,7 @@ export default function LoginPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <LoginContent />
@@ -76,7 +76,7 @@ function LoginContent() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 mb-6">
-            <Scale className="w-8 h-8 text-blue-500" />
+            <Scale className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-semibold text-white">AI Paralegal</h1>
           <p className="text-zinc-500 mt-2 text-sm">
@@ -123,7 +123,7 @@ function LoginContent() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-blue-600 rounded-xl text-sm text-white font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
+            className="w-full py-2.5 bg-white rounded-xl text-sm text-black font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors"
           >
             {loading ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
           </button>
@@ -155,7 +155,7 @@ function LoginContent() {
           {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
             onClick={() => { setIsRegister(!isRegister); setError(''); }}
-            className="text-blue-500 hover:text-blue-400"
+            className="text-white hover:text-zinc-300"
           >
             {isRegister ? 'Sign in' : 'Create one'}
           </button>
