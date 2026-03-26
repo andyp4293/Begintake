@@ -417,22 +417,46 @@ export async function POST(req: NextRequest) {
 
     // Handle assistant-request: return assistant config
     if (messageType === 'assistant-request') {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+      const serverUrl = `${appUrl}/api/webhooks/vapi`;
+      const transferPhone = process.env.TRANSFER_PHONE_NUMBER || null;
+
       const systemPrompt = await buildSystemPrompt();
-      return NextResponse.json({
-        assistant: {
-          model: {
-            provider: 'openai',
-            model: 'gpt-4o',
-            messages: [{ role: 'system', content: systemPrompt }],
-            tools: getToolDefinitions(),
-          },
-          firstMessage: 'Thank you for calling our law firm. My name is Alex, the AI paralegal assistant. How can I help you today?',
-          voice: {
-            provider: '11labs',
-            voiceId: 'rachel',
-          },
+      const assistant: any = {
+        name: 'AI Paralegal Receptionist',
+        firstMessage: 'Thank you for calling our law firm. My name is Alex, the AI paralegal assistant. How can I help you today?',
+        model: {
+          provider: 'openai',
+          model: 'gpt-4o',
+          temperature: 0.4,
+          messages: [{ role: 'system', content: systemPrompt }],
+          tools: getToolDefinitions(),
         },
-      });
+        voice: {
+          provider: '11labs',
+          voiceId: 'sarah',
+          stability: 0.45,
+          similarityBoost: 0.75,
+        },
+        transcriber: {
+          provider: 'deepgram',
+          model: 'nova-2',
+          language: 'en',
+        },
+        server: { url: serverUrl },
+        startSpeakingPlan: { waitSeconds: 0.4 },
+        stopSpeakingPlan: { numWords: 0, voiceSeconds: 0.2, backoffSeconds: 1 },
+        silenceTimeoutSeconds: 60,
+        voicemailDetection: { provider: 'vapi' },
+        voicemailMessage: "Hi, you've reached our law firm. We missed your call but we'll get back to you as soon as possible. Please leave a message or call back during business hours.",
+        endCallPhrases: ['goodbye', 'bye', 'end call', 'hang up'],
+      };
+
+      if (transferPhone) {
+        assistant.forwardingPhoneNumber = transferPhone;
+      }
+
+      return NextResponse.json({ assistant });
     }
 
     // Handle tool-calls
