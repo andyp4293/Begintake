@@ -22,6 +22,7 @@ model User {
   twilioNumberSid     String?
   transferPhoneNumber String?
   googleRefreshToken  String?
+  assistantName       String?
   documents          Document[]
 }
 

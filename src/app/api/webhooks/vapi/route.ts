@@ -494,6 +494,15 @@ export async function POST(req: NextRequest) {
         if (users.length > 0) transferPhone = users[0].transferPhoneNumber;
       } catch { /* field may not exist yet */ }
 
+      // Get assistant name from DB
+      let assistantName = '';
+      try {
+        const nameRows = await prisma.$queryRaw<Array<{ assistantName: string }>>`
+          SELECT "assistantName" FROM "User" WHERE "assistantName" IS NOT NULL LIMIT 1
+        `;
+        if (nameRows.length > 0 && nameRows[0].assistantName) assistantName = nameRows[0].assistantName;
+      } catch { /* field may not exist yet */ }
+
       let systemPrompt: string;
       try {
         systemPrompt = await buildSystemPrompt();
@@ -504,8 +513,10 @@ export async function POST(req: NextRequest) {
       }
       console.log(`[vapi] assistant-request prompt built in ${Date.now() - t0}ms`);
       const assistant: any = {
-        name: 'AI Paralegal Receptionist',
-        firstMessage: 'Thank you for calling our law firm. How can I help you today?',
+        name: assistantName ? `${assistantName} - AI Paralegal` : 'AI Paralegal Receptionist',
+        firstMessage: assistantName
+          ? `Thank you for calling our law firm. My name is ${assistantName}, how can I help you today?`
+          : 'Thank you for calling our law firm. How can I help you today?',
         model: {
           provider: 'openai',
           model: 'gpt-5.2',

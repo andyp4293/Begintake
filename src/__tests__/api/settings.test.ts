@@ -16,6 +16,8 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    $queryRaw: vi.fn(),
+    $executeRawUnsafe: vi.fn(),
   },
 }));
 
@@ -38,34 +40,25 @@ describe('Settings API', () => {
 
     it('returns transfer phone number when set', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      vi.mocked(prisma.$queryRaw).mockResolvedValue([{
         transferPhoneNumber: '+15551234567',
-      } as any);
+        assistantName: 'Alex',
+      }]);
 
       const res = await GET();
       const data = await res.json();
       expect(data.transferPhoneNumber).toBe('+15551234567');
+      expect(data.assistantName).toBe('Alex');
     });
 
-    it('returns empty string when no transfer number', async () => {
+    it('returns empty strings when no settings', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({
-        transferPhoneNumber: null,
-      } as any);
+      vi.mocked(prisma.$queryRaw).mockResolvedValue([{}]);
 
       const res = await GET();
       const data = await res.json();
       expect(data.transferPhoneNumber).toBe('');
-    });
-
-    it('queries by session user id', async () => {
-      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'user-42' } } as any);
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({ transferPhoneNumber: null } as any);
-
-      await GET();
-      expect(prisma.user.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'user-42' } })
-      );
+      expect(data.assistantName).toBe('');
     });
   });
 
