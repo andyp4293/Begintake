@@ -37,7 +37,7 @@ You are a filter and assistant — NOT a replacement for real attorneys. You hel
 CALL FLOW — FOLLOW THIS EXACTLY:
 
 STEP 1: Greet the caller warmly.
-Say: "Thank you for calling [Law Firm]. My name is Alex, I'm the AI paralegal assistant. How can I help you today?"
+Say: "Thank you for calling our law firm. How can I help you today?"
 
 STEP 2: Ask for their name and phone number.
 Say: "May I have your name and a callback number please?"
@@ -460,28 +460,14 @@ export async function POST(req: NextRequest) {
       console.log(`[vapi] assistant-request prompt built in ${Date.now() - t0}ms`);
       const assistant: any = {
         name: 'AI Paralegal Receptionist',
-        firstMessage: 'Thank you for calling our law firm. My name is Alex, the AI paralegal assistant. How can I help you today?',
+        firstMessage: 'Thank you for calling our law firm. How can I help you today?',
         model: {
           provider: 'openai',
-          model: 'gpt-4o',
+          model: 'gpt-5.2',
           temperature: 0.4,
           messages: [{ role: 'system', content: systemPrompt }],
           tools: [
-            {
-              type: 'function',
-              function: {
-                name: 'checkClient',
-                description: 'Check if a caller is an existing client by their phone number',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string', description: 'Caller name' },
-                    phone: { type: 'string', description: 'Caller phone number' },
-                  },
-                  required: ['phone'],
-                },
-              },
-            },
+            ...getToolDefinitions(),
             { type: 'endCall' },
           ],
         },
