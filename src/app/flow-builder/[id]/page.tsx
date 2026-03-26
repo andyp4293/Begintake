@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { redirect, useParams } from 'next/navigation';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Link2,
@@ -24,12 +24,38 @@ interface FEdge { sourceNodeId: string; targetNodeId: string; label: string | nu
 
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
+// Pre-compute which parent "owns" each node for primary rendering.
+// DFS from root: first parent to reach a node is its primary parent.
+function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, string> {
+  const primaryParent = new Map<string, string>();
+  const childrenOf = new Map<string, FEdge[]>();
+  for (const e of edges) {
+    if (!childrenOf.has(e.sourceNodeId)) childrenOf.set(e.sourceNodeId, []);
+    childrenOf.get(e.sourceNodeId)!.push(e);
+  }
+  const visited = new Set<string>();
+  function dfs(nodeId: string) {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    for (const edge of childrenOf.get(nodeId) || []) {
+      if (!primaryParent.has(edge.targetNodeId)) {
+        primaryParent.set(edge.targetNodeId, nodeId);
+      }
+      dfs(edge.targetNodeId);
+    }
+  }
+  dfs(rootId);
+  return primaryParent;
+}
+
 // ─── Node card component ──────────────────────────────────────────────────
 
 function NodeCard({
-  node, edges, allNodes, depth, rendered, onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
+  node, edges, allNodes, depth, parentId, primaryParents,
+  onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
-  node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number; rendered: Set<string>;
+  node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
+  parentId: string | null; primaryParents: Map<string, string>;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string, edgeLabel?: string) => void;
@@ -40,13 +66,13 @@ function NodeCard({
   const [editing, setEditing] = useState(false);
   const color = NODE_COLORS[node.type] || '#666';
 
-  // Children of this node
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
-  const isFirstRender = !rendered.has(node.id);
-  rendered.add(node.id);
 
-  // If this node was already rendered elsewhere, show a merge reference
-  if (!isFirstRender) {
+  // Show merge reference if this node's primary parent is NOT the current parent
+  const isRoot = parentId === null;
+  const isPrimary = isRoot || primaryParents.get(node.id) === parentId;
+
+  if (!isPrimary) {
     return (
       <div className={depth > 0 ? 'ml-6 border-l border-zinc-800/50 pl-4' : ''}>
         <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800/50 border-dashed rounded-lg mb-2"
@@ -137,7 +163,6 @@ function NodeCard({
         if (!childNode) return null;
         return (
           <div key={`${edge.sourceNodeId}-${edge.targetNodeId}-${edge.label}`}>
-            {/* Edge label */}
             {edge.label && (
               <div className="ml-6 pl-4 flex items-center gap-2 mb-1">
                 <div className="w-4 h-px bg-zinc-700" />
@@ -150,7 +175,8 @@ function NodeCard({
             )}
             <NodeCard
               node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-              rendered={rendered} onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+              parentId={node.id} primaryParents={primaryParents}
+              onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
               onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
             />
           </div>
@@ -168,7 +194,7 @@ function NodeCard({
   );
 }
 
-// ─── Add node menu with "link to existing" option ─────────────────────────
+// ─── Add node menu ────────────────────────────────────────────────────────
 
 function AddNodeMenu({ parentId, allNodes, edges, onAdd, onLink }: {
   parentId: string; allNodes: FNode[]; edges: FEdge[];
@@ -179,7 +205,6 @@ function AddNodeMenu({ parentId, allNodes, edges, onAdd, onLink }: {
   const [mode, setMode] = useState<'new' | 'link'>('new');
   const [edgeLabel, setEdgeLabel] = useState('');
 
-  // Nodes that aren't already children of this parent
   const existingChildIds = new Set(edges.filter((e) => e.sourceNodeId === parentId).map((e) => e.targetNodeId));
   const linkableNodes = allNodes.filter((n) => n.id !== parentId && !existingChildIds.has(n.id));
 
@@ -190,7 +215,6 @@ function AddNodeMenu({ parentId, allNodes, edges, onAdd, onLink }: {
       </button>
       {open && (
         <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-60">
-          {/* Mode tabs */}
           <div className="flex gap-1 mb-2">
             <button onClick={() => setMode('new')}
               className={`flex-1 text-[10px] py-1 rounded ${mode === 'new' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}>
@@ -201,10 +225,8 @@ function AddNodeMenu({ parentId, allNodes, edges, onAdd, onLink }: {
               <Link2 className="w-3 h-3 inline mr-1" />Link Existing
             </button>
           </div>
-
           <input type="text" value={edgeLabel} onChange={(e) => setEdgeLabel(e.target.value)} placeholder="Branch label (optional)"
             className="w-full px-2 py-1 mb-2 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
-
           {mode === 'new' ? (
             Object.entries(NODE_LABELS).map(([type, label]) => (
               <button key={type} onClick={() => { onAdd(parentId, type, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
@@ -262,13 +284,19 @@ export default function FlowEditorPage() {
     }
   }, [flow]);
 
+  // Find root node (no incoming edges)
+  const incomingIds = new Set(edges.map((e) => e.targetNodeId));
+  const rootNode = nodes.find((n) => !incomingIds.has(n.id)) || nodes[0];
+
+  // Pre-compute primary parents (stable across re-renders, only changes when edges/nodes change)
+  const primaryParents = useMemo(() => {
+    if (!rootNode) return new Map<string, string>();
+    return computePrimaryParents(rootNode.id, edges);
+  }, [rootNode?.id, edges]);
+
   if (status === 'loading' || isLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" /></div>;
   if (!session) redirect('/login');
   if (!nodes.length) return <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500">Flow not found</div>;
-
-  // Find root node (no incoming edges)
-  const childIds = new Set(edges.map((e) => e.targetNodeId));
-  const rootNode = nodes.find((n) => !childIds.has(n.id)) || nodes[0];
 
   const updateNode = (id: string, updates: Partial<FNode>) => {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...updates } : n));
@@ -286,7 +314,6 @@ export default function FlowEditorPage() {
   };
 
   const linkExisting = (parentId: string, targetId: string, edgeLabel?: string) => {
-    // Don't add duplicate edge
     if (edges.some((e) => e.sourceNodeId === parentId && e.targetNodeId === targetId)) return;
     setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: targetId, label: edgeLabel || null, condition: null, sortOrder: prev.length }]);
   };
@@ -315,9 +342,6 @@ export default function FlowEditorPage() {
     } catch { toast.error('Failed to activate'); }
   };
 
-  // Each render pass tracks which nodes have been rendered to detect merge points
-  const rendered = new Set<string>();
-
   return (
     <div className="min-h-screen bg-black">
       <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between sticky top-0 bg-black z-10">
@@ -339,11 +363,14 @@ export default function FlowEditorPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8">
-        <NodeCard
-          node={rootNode} edges={edges} allNodes={nodes} depth={0} rendered={rendered}
-          onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
-          onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
-        />
+        {rootNode && (
+          <NodeCard
+            node={rootNode} edges={edges} allNodes={nodes} depth={0}
+            parentId={null} primaryParents={primaryParents}
+            onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
+            onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
+          />
+        )}
       </main>
     </div>
   );
