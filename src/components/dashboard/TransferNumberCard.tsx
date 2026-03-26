@@ -84,7 +84,7 @@ export function TransferNumberCard() {
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <form onSubmit={(e) => { e.preventDefault(); if (hasChanges) saveMutation.mutate(); }} className="flex gap-2">
         <input
           type="tel"
           value={phone}
@@ -105,7 +105,7 @@ export function TransferNumberCard() {
             )}
           </button>
         )}
-      </div>
+      </form>
     </div>
   );
 }
