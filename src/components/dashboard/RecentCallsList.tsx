@@ -29,6 +29,46 @@ interface CallsResponse {
   nextCursor: string | null;
 }
 
+function TranscriptView({ notes }: { notes: string }) {
+  const [showFull, setShowFull] = useState(false);
+  const lines = notes.split('\n').filter(Boolean);
+  const preview = lines.slice(0, 4);
+  const hasMore = lines.length > 4;
+
+  return (
+    <div className="mt-3">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Transcript</p>
+      <div className="bg-zinc-800/50 rounded-lg p-3 space-y-1.5 max-h-64 overflow-y-auto">
+        {(showFull ? lines : preview).map((line, i) => {
+          const colonIdx = line.indexOf(':');
+          if (colonIdx === -1) return <p key={i} className="text-xs text-zinc-400">{line}</p>;
+          const role = line.slice(0, colonIdx).trim().toLowerCase();
+          const content = line.slice(colonIdx + 1).trim();
+          const isAi = role === 'assistant' || role === 'bot' || role === 'ai';
+          return (
+            <div key={i} className="flex gap-2">
+              <span className={`text-[10px] font-medium mt-0.5 shrink-0 w-12 ${isAi ? 'text-blue-400' : 'text-green-400'}`}>
+                {isAi ? 'AI' : 'Caller'}
+              </span>
+              <p className="text-xs text-zinc-300">{content}</p>
+            </div>
+          );
+        })}
+        {hasMore && !showFull && (
+          <button onClick={() => setShowFull(true)} className="text-[10px] text-zinc-500 hover:text-white mt-1">
+            Show full transcript ({lines.length} lines)...
+          </button>
+        )}
+        {showFull && hasMore && (
+          <button onClick={() => setShowFull(false)} className="text-[10px] text-zinc-500 hover:text-white mt-1">
+            Collapse
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function RecentCallsList() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -247,6 +287,11 @@ export function RecentCallsList() {
                       <p className="text-xs text-zinc-400 mt-2">
                         Transferred to: <span className="text-zinc-300 font-mono">{call.transferredTo}</span>
                       </p>
+                    )}
+
+                    {/* Transcript */}
+                    {call.notes && (
+                      <TranscriptView notes={call.notes} />
                     )}
                   </div>
                 )}

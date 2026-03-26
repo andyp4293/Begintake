@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { normalizePhoneNumber } from '@/lib/phone';
+import { normalizePhoneNumber, normalizeOptionalPhoneNumber } from '@/lib/phone';
 import { verifyVapiSecret, parseToolArguments } from '@/lib/vapi';
 import { identifyLegalArea, findBestLawyer } from '@/lib/lawyer-matcher';
 import { createCalendarEvent } from '@/lib/google-calendar';
@@ -399,7 +399,8 @@ async function handleTransferCall(args: Record<string, unknown>) {
 
 async function handleGenerateSummary(args: Record<string, unknown>) {
   const callerName = typeof args.callerName === 'string' ? args.callerName : 'Unknown';
-  const callerPhone = typeof args.callerPhone === 'string' ? normalizePhoneNumber(args.callerPhone) : '';
+  const rawPhone = typeof args.callerPhone === 'string' ? args.callerPhone : (typeof args.phone === 'string' ? args.phone : '');
+  const callerPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
   const callerEmail = typeof args.callerEmail === 'string' ? args.callerEmail : '';
   const issue = typeof args.issue === 'string' ? args.issue : '';
   const notes = typeof args.notes === 'string' ? args.notes : '';
@@ -417,10 +418,26 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
   }
 
   // Update existing call session or create new one
-  const existing = callerPhone ? await prisma.callSession.findFirst({
+  // Try by phone first, then find the most recent active session as fallback
+  let existing = callerPhone ? await prisma.callSession.findFirst({
     where: { callerPhone },
     orderBy: { createdAt: 'desc' },
   }) : null;
+
+  if (!existing) {
+    // Fallback: find the most recent active/completed session (likely the current call)
+    existing = await prisma.callSession.findFirst({
+      where: { status: { in: ['active', 'completed'] } },
+      orderBy: { createdAt: 'desc' },
+    });
+    // Use the existing session's callerPhone if we don't have one from the tool
+    if (existing?.callerPhone && !callerPhone) {
+      // Phone was captured from VAPI customer.number — use it
+    }
+  }
+
+  // Use the VAPI-captured phone if the tool didn't provide a valid one
+  const effectivePhone = callerPhone || existing?.callerPhone || '';
 
   const callSession = existing
     ? await prisma.callSession.update({
@@ -433,12 +450,13 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
           summary: issue,
           notes,
           lawyerId: lawyer?.id,
+          ...(effectivePhone && !existing.callerPhone ? { callerPhone: effectivePhone } : {}),
         },
       })
     : await prisma.callSession.create({
         data: {
           callId: `summary-${Date.now()}`,
-          callerPhone,
+          callerPhone: effectivePhone,
           clientId: client?.id,
           clientType: 'prospective',
           callOutcome: 'summary_sent',
@@ -457,7 +475,7 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
       lawyerEmail: lawyer.email,
       lawyerName: lawyer.name,
       callerName,
-      callerPhone,
+      callerPhone: effectivePhone,
       callerEmail,
       summary: issue,
       notes,
