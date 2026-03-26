@@ -438,11 +438,9 @@ export async function POST(req: NextRequest) {
 
     const messageType = body?.message?.type;
 
-    // Log for debugging — short so it doesn't get truncated
-    console.log(`[vapi] type=${messageType} keys=${Object.keys(body).join(',')}`);
-    if (!messageType) {
-      console.log(`[vapi] NO message.type! body preview: ${rawBody.slice(0, 300)}`);
-    }
+    // Log EVERYTHING for debugging
+    console.log(`[vapi] msgType=${messageType}`);
+    console.log(`[vapi] body=${rawBody.slice(0, 400)}`);
 
     // Handle assistant-request: return assistant config
     if (messageType === 'assistant-request') {
