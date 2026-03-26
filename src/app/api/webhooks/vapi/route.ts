@@ -430,6 +430,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const messageType = body?.message?.type || body?.type;
 
+    // Log for debugging
+    console.log('VAPI webhook received:', JSON.stringify({ messageType, bodyKeys: Object.keys(body), messageKeys: body?.message ? Object.keys(body.message) : [] }));
+
     // Handle assistant-request: return assistant config
     if (messageType === 'assistant-request') {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
