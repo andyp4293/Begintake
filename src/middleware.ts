@@ -7,5 +7,5 @@ export default withAuth({
 });
 
 export const config = {
-  matcher: ['/', '/flow-builder'],
+  matcher: ['/', '/flow-builder', '/flow-builder/:path*'],
 };
