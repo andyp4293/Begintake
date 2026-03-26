@@ -124,6 +124,11 @@ export function RecentCallsList() {
                       Assigned to: <span className="text-zinc-300">{call.lawyer.name}</span>
                     </p>
                   )}
+                  {call.transferred && call.transferredTo && (
+                    <p className="text-xs text-zinc-400 mt-2">
+                      Transferred to: <span className="text-zinc-300 font-mono">{call.transferredTo}</span>
+                    </p>
+                  )}
                 </div>
               )}
             </div>

@@ -600,18 +600,22 @@ export async function POST(req: NextRequest) {
       const endedReason = body?.message?.endedReason;
 
       if (callId) {
+        const isForwarded = endedReason === 'assistant-forwarded-call';
+        const forwardNumber = body?.message?.call?.forwardingPhoneNumber || null;
+
         await prisma.callSession.upsert({
           where: { callId },
           create: {
             callId,
             callerPhone: callerPhone ? normalizePhoneNumber(callerPhone) : null,
             status: status === 'ended' ? 'completed' : 'active',
+            transferred: isForwarded,
+            transferredTo: isForwarded ? forwardNumber : null,
             endedAt: status === 'ended' ? new Date() : null,
-            notes: endedReason ? `Ended: ${endedReason}` : null,
           },
           update: {
             ...(status === 'ended' && { status: 'completed', endedAt: new Date() }),
-            ...(endedReason && { notes: `Ended: ${endedReason}` }),
+            ...(isForwarded && { transferred: true, transferredTo: forwardNumber }),
           },
         });
       }
