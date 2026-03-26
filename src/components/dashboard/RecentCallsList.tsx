@@ -15,6 +15,7 @@ interface CallSession {
   summary: string | null;
   notes: string | null;
   transferred: boolean;
+  transferredTo: string | null;
   lawyer: { name: string } | null;
   client: { name: string } | null;
 }
