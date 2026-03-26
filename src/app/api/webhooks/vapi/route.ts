@@ -70,9 +70,9 @@ IF PROSPECTIVE CLIENT (not in our system):
   - STEP 5: If they say no, say the closing phrase and call endCall. Do NOT combine steps — wait for their answer.
 
 WHEN TO TRANSFER TO A REAL PERSON:
-- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar — IMMEDIATELY say "Sure, connecting you now." and call transferCall right away. Do NOT ask any more questions. Do NOT collect more info. Just transfer immediately.
-- If the situation sounds like an emergency — transfer immediately.
-- If you cannot determine the appropriate response — transfer immediately.
+- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar — IMMEDIATELY say "Sure, let me connect you with someone now." The system will automatically forward the call. Do NOT ask any more questions.
+- If the situation sounds like an emergency — say "Let me connect you with someone right away." The call will be forwarded automatically.
+- If you cannot determine the appropriate response — say "Let me connect you with our team." The call will be forwarded automatically.
 
 ENDING THE CALL:
 - When the caller says "no", "nope", "nothing else", "that's all", "I'm good", "goodbye", "bye", or anything similar indicating they're done:
@@ -139,21 +139,6 @@ function getToolDefinitions() {
             preferredTime: { type: 'string', description: 'Preferred time (e.g. "2 PM", "14:00")' },
           },
           required: ['clientName', 'clientPhone', 'lawyerId', 'preferredDate', 'preferredTime'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'transferCall',
-        description: 'Transfer the call to a real person (lawyer or office)',
-        parameters: {
-          type: 'object',
-          properties: {
-            phoneNumber: { type: 'string', description: 'Phone number to transfer to' },
-            reason: { type: 'string', description: 'Reason for transfer' },
-          },
-          required: ['phoneNumber'],
         },
       },
     },
@@ -528,17 +513,6 @@ export async function POST(req: NextRequest) {
           messages: [{ role: 'system', content: systemPrompt }],
           tools: [
             ...getToolDefinitions(),
-            {
-              type: 'transferCall',
-              destinations: transferPhone ? [
-                {
-                  type: 'number',
-                  number: transferPhone,
-                  message: 'Connecting you with our team now. Please hold.',
-                  description: 'Transfer to the paralegal or office staff',
-                },
-              ] : [],
-            },
             { type: 'endCall' },
           ],
         },
