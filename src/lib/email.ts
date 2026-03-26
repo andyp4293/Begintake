@@ -26,8 +26,8 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
           <h2 style="color: #1a1a1a;">New Prospective Client Inquiry</h2>
 
           <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
-            <p><strong>Caller:</strong> ${params.callerName}</p>
-            <p><strong>Phone:</strong> ${params.callerPhone}</p>
+            <p><strong>Client Name:</strong> ${params.callerName}</p>
+            <p><strong>Call Back Number:</strong> <a href="tel:${params.callerPhone}">${params.callerPhone}</a></p>
             <p><strong>Legal Area:</strong> ${params.legalArea}</p>
           </div>
 
@@ -55,9 +55,10 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
       `,
     });
 
+    console.log(`[email] Sent summary to ${params.lawyerEmail} for caller ${params.callerName}`);
     return { success: true };
   } catch (error: any) {
-    console.error('Failed to send email:', error);
+    console.error('[email] Failed to send:', error?.message || error);
     return { success: false, error: error?.message || 'Failed to send email' };
   }
 }
