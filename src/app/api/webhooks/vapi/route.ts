@@ -463,7 +463,7 @@ export async function POST(req: NextRequest) {
         firstMessage: 'Thank you for calling our law firm. My name is Alex, the AI paralegal assistant. How can I help you today?',
         model: {
           provider: 'openai',
-          model: 'gpt-4o',
+          model: 'gpt-5.2',
           temperature: 0.4,
           messages: [{ role: 'system', content: systemPrompt }],
           tools: [
@@ -481,7 +481,7 @@ export async function POST(req: NextRequest) {
         },
         voice: {
           provider: '11labs',
-          voiceId: 'sarah',
+          voiceId: 'NDjuUGBKZhdOwAYMSat7',
           stability: 0.45,
           similarityBoost: 0.75,
         },
