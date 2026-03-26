@@ -446,11 +446,20 @@ export async function POST(req: NextRequest) {
 
     // Handle assistant-request: return assistant config
     if (messageType === 'assistant-request') {
+      const t0 = Date.now();
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
       const serverUrl = `${appUrl}/api/webhooks/vapi`;
       const transferPhone = process.env.TRANSFER_PHONE_NUMBER || null;
 
-      const systemPrompt = await buildSystemPrompt();
+      let systemPrompt: string;
+      try {
+        systemPrompt = await buildSystemPrompt();
+      } catch (err) {
+        console.error('[vapi] buildSystemPrompt failed:', err);
+        // Fallback prompt if DB is slow
+        systemPrompt = `You are a warm, professional AI paralegal receptionist for a law firm. Listen empathetically, ask for the caller's name and phone number, and help them schedule a consultation or take notes on their situation. Never give legal advice.`;
+      }
+      console.log(`[vapi] assistant-request prompt built in ${Date.now() - t0}ms`);
       const assistant: any = {
         name: 'AI Paralegal Receptionist',
         firstMessage: 'Thank you for calling our law firm. My name is Alex, the AI paralegal assistant. How can I help you today?',
@@ -485,7 +494,7 @@ export async function POST(req: NextRequest) {
         assistant.forwardingPhoneNumber = transferPhone;
       }
 
-      console.log('VAPI returning assistant config:', JSON.stringify({ name: assistant.name, model: assistant.model.model, voice: assistant.voice.voiceId, serverUrl: assistant.server.url }));
+      console.log(`[vapi] RETURNING assistant in ${Date.now() - t0}ms model=${assistant.model.model} server=${assistant.server.url}`);
       return NextResponse.json({ assistant });
     }
 
