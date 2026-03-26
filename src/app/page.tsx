@@ -2,7 +2,8 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { redirect } from 'next/navigation';
-import { Scale, LogOut } from 'lucide-react';
+import { Scale, LogOut, Workflow } from 'lucide-react';
+import Link from 'next/link';
 import { PhoneNumberCard } from '@/components/dashboard/PhoneNumberCard';
 import { RecentCallsList } from '@/components/dashboard/RecentCallsList';
 import { UpcomingAppointments } from '@/components/dashboard/UpcomingAppointments';
@@ -41,6 +42,13 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Link
+              href="/flow-builder"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors"
+            >
+              <Workflow className="w-3 h-3" />
+              Flow Builder
+            </Link>
             <span className="text-sm text-zinc-400">{session.user?.name}</span>
             <button
               onClick={() => signOut({ callbackUrl: '/login' })}

@@ -5,13 +5,33 @@ import { verifyVapiSecret, parseToolArguments } from '@/lib/vapi';
 import { identifyLegalArea, findBestLawyer } from '@/lib/lawyer-matcher';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { sendCallSummaryEmail } from '@/lib/email';
+import { compileFlowToPrompt } from '@/lib/flow-compiler';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // ─── System prompt for the AI paralegal ──────────────────────────────────────
 
-async function buildSystemPrompt(): Promise<string> {
+async function buildSystemPrompt(assistantName?: string): Promise<string> {
+  // Check for active flow first
+  try {
+    const activeFlow = await prisma.intakeFlow.findFirst({
+      where: { isActive: true },
+      include: {
+        nodes: { orderBy: { sortOrder: 'asc' } },
+        edges: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
+
+    if (activeFlow) {
+      console.log(`[vapi] Using active flow: ${activeFlow.name} (${activeFlow.id})`);
+      return compileFlowToPrompt(activeFlow, assistantName);
+    }
+  } catch (err) {
+    console.error('[vapi] Failed to load active flow, falling back to legacy prompt:', err);
+  }
+
+  // Legacy prompt (existing behavior)
   const lawyers = await prisma.lawyer.findMany({
     where: { available: true },
     select: { id: true, name: true, specialties: true, phone: true, email: true },
@@ -505,7 +525,7 @@ export async function POST(req: NextRequest) {
 
       let systemPrompt: string;
       try {
-        systemPrompt = await buildSystemPrompt();
+        systemPrompt = await buildSystemPrompt(assistantName || undefined);
       } catch (err) {
         console.error('[vapi] buildSystemPrompt failed:', err);
         // Fallback prompt if DB is slow
