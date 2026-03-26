@@ -466,7 +466,18 @@ export async function POST(req: NextRequest) {
           model: 'gpt-4o',
           temperature: 0.4,
           messages: [{ role: 'system', content: systemPrompt }],
-          tools: getToolDefinitions(),
+          tools: [
+            ...getToolDefinitions(),
+            { type: 'endCall' },
+          ],
+        },
+        server: {
+          url: serverUrl,
+        },
+        transcriber: {
+          provider: 'deepgram',
+          model: 'nova-2',
+          language: 'en',
         },
         voice: {
           provider: '11labs',
@@ -474,18 +485,19 @@ export async function POST(req: NextRequest) {
           stability: 0.45,
           similarityBoost: 0.75,
         },
-        transcriber: {
-          provider: 'deepgram',
-          model: 'nova-2',
-          language: 'en',
+        startSpeakingPlan: {
+          waitSeconds: 0.4,
         },
-        server: { url: serverUrl },
-        startSpeakingPlan: { waitSeconds: 0.4 },
-        stopSpeakingPlan: { numWords: 0, voiceSeconds: 0.2, backoffSeconds: 1 },
-        silenceTimeoutSeconds: 60,
-        voicemailDetection: { provider: 'vapi' },
+        stopSpeakingPlan: {
+          numWords: 0,
+          voiceSeconds: 0.2,
+          backoffSeconds: 1,
+        },
+        voicemailDetection: {
+          provider: 'vapi',
+        },
         voicemailMessage: "Hi, you've reached our law firm. We missed your call but we'll get back to you as soon as possible. Please leave a message or call back during business hours.",
-        endCallPhrases: ['goodbye', 'bye', 'end call', 'hang up'],
+        silenceTimeoutSeconds: 60,
       };
 
       if (transferPhone) {
