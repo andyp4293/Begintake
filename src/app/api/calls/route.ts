@@ -1,22 +1,43 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/prisma';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { searchParams } = new URL(req.url);
+  const cursor = searchParams.get('cursor');
+  const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
+  const sort = searchParams.get('sort') === 'oldest' ? 'asc' as const : 'desc' as const;
+  const clientType = searchParams.get('clientType');
+  const callOutcome = searchParams.get('callOutcome');
+  const legalArea = searchParams.get('legalArea');
+  const lawyerId = searchParams.get('lawyerId');
+
+  const where: any = {};
+  if (clientType) where.clientType = clientType;
+  if (callOutcome) where.callOutcome = callOutcome;
+  if (legalArea) where.legalArea = legalArea;
+  if (lawyerId) where.lawyerId = lawyerId;
+
   const calls = await prisma.callSession.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 20,
+    where,
+    orderBy: { createdAt: sort },
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     include: {
       client: { select: { name: true } },
       lawyer: { select: { name: true } },
     },
   });
 
-  return NextResponse.json(calls);
+  const hasMore = calls.length > limit;
+  const data = hasMore ? calls.slice(0, limit) : calls;
+  const nextCursor = hasMore ? data[data.length - 1].id : null;
+
+  return NextResponse.json({ calls: data, nextCursor });
 }
