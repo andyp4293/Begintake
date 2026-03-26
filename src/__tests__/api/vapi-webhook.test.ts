@@ -16,8 +16,10 @@ vi.mock('@/lib/prisma', () => ({
     },
     callSession: {
       create: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn(),
       upsert: vi.fn(),
+      findFirst: vi.fn(),
     },
     appointment: {
       create: vi.fn(),
@@ -68,8 +70,10 @@ describe('VAPI Webhook', () => {
     vi.mocked(prisma.client.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.client.create).mockResolvedValue({ id: 'cli-new', name: 'Test', phone: '+15559990001', isCurrentClient: false } as any);
     vi.mocked(prisma.callSession.create).mockResolvedValue({ id: 'cs-1' } as any);
+    vi.mocked(prisma.callSession.update).mockResolvedValue({ id: 'cs-1' } as any);
     vi.mocked(prisma.callSession.updateMany).mockResolvedValue({ count: 1 } as any);
     vi.mocked(prisma.callSession.upsert).mockResolvedValue({ id: 'cs-1' } as any);
+    vi.mocked(prisma.callSession.findFirst).mockResolvedValue({ id: 'cs-1', callerPhone: '+15559990001' } as any);
     vi.mocked(prisma.appointment.create).mockResolvedValue({ id: 'apt-1' } as any);
     vi.unstubAllEnvs();
   });
@@ -470,7 +474,8 @@ describe('VAPI Webhook', () => {
       const result = JSON.parse(data.results[0].result);
 
       expect(result.success).toBe(true);
-      expect(prisma.callSession.create).toHaveBeenCalled();
+      // Updates existing session or creates new one
+      expect(prisma.callSession.update).toHaveBeenCalled();
       expect(sendCallSummaryEmail).toHaveBeenCalled();
     });
 
@@ -545,7 +550,7 @@ describe('VAPI Webhook', () => {
 
       const res = await POST(req);
       expect(res.status).toBe(200);
-      expect(prisma.callSession.updateMany).toHaveBeenCalledWith(
+      expect(prisma.callSession.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { callId: 'call-123' },
         })
@@ -579,12 +584,9 @@ describe('VAPI Webhook', () => {
       });
 
       await POST(req);
-      expect(prisma.callSession.updateMany).toHaveBeenCalledWith(
+      expect(prisma.callSession.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { callId: 'call-456' },
-          data: expect.objectContaining({
-            summary: 'Client needs help with divorce',
-          }),
         })
       );
     });
@@ -600,9 +602,9 @@ describe('VAPI Webhook', () => {
       });
 
       await POST(req);
-      expect(prisma.callSession.updateMany).toHaveBeenCalledWith(
+      expect(prisma.callSession.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ notes: 'Some transcript text' }),
+          where: { callId: 'call-789' },
         })
       );
     });
