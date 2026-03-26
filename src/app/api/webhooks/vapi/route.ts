@@ -548,24 +548,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ results });
     }
 
-    // Handle status-update (call ended)
+    // Handle status-update — create or update call session
     if (messageType === 'status-update') {
       const status = body?.message?.status;
       const callId = body?.message?.call?.id;
+      const callerPhone = body?.message?.call?.customer?.number;
+      const endedReason = body?.message?.endedReason;
 
-      if (status === 'ended' && callId) {
-        await prisma.callSession.updateMany({
+      if (callId) {
+        await prisma.callSession.upsert({
           where: { callId },
-          data: { status: 'completed', endedAt: new Date() },
+          create: {
+            callId,
+            callerPhone: callerPhone ? normalizePhoneNumber(callerPhone) : null,
+            status: status === 'ended' ? 'completed' : 'active',
+            endedAt: status === 'ended' ? new Date() : null,
+            notes: endedReason ? `Ended: ${endedReason}` : null,
+          },
+          update: {
+            ...(status === 'ended' && { status: 'completed', endedAt: new Date() }),
+            ...(endedReason && { notes: `Ended: ${endedReason}` }),
+          },
         });
       }
 
       return NextResponse.json({ received: true });
     }
 
-    // Handle end-of-call-report
+    // Handle end-of-call-report — always create/update
     if (messageType === 'end-of-call-report') {
       const callId = body?.message?.call?.id;
+      const callerPhone = body?.message?.call?.customer?.number;
       const summary = body?.message?.summary;
       const transcript = body?.message?.transcript;
 
@@ -576,11 +589,19 @@ export async function POST(req: NextRequest) {
           ? transcript
           : '';
 
-        await prisma.callSession.updateMany({
+        await prisma.callSession.upsert({
           where: { callId },
-          data: {
+          create: {
+            callId,
+            callerPhone: callerPhone ? normalizePhoneNumber(callerPhone) : null,
             summary: summary || null,
             notes: transcriptText || null,
+            status: 'completed',
+            endedAt: new Date(),
+          },
+          update: {
+            summary: summary || undefined,
+            notes: transcriptText || undefined,
             status: 'completed',
             endedAt: new Date(),
           },

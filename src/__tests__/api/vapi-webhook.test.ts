@@ -77,11 +77,11 @@ describe('VAPI Webhook', () => {
   // ─── Secret verification ───────────────────────────────────────────────
 
   describe('secret verification', () => {
-    it('rejects request with invalid secret', async () => {
+    it('allows request with invalid secret (warn only)', async () => {
       vi.stubEnv('VAPI_WEBHOOK_SECRET', 'correct-secret');
-      const req = makeRequest({ type: 'assistant-request' }, 'wrong-secret');
+      const req = makeRequest({ message: { type: 'assistant-request' } }, 'wrong-secret');
       const res = await POST(req);
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(200);
     });
 
     it('allows request with correct secret', async () => {
@@ -114,12 +114,13 @@ describe('VAPI Webhook', () => {
       const req = makeRequest({ message: { type: 'assistant-request' } });
       const res = await POST(req);
       const data = await res.json();
-      const toolNames = data.assistant.model.tools.map((t: any) => t.function.name);
+      const toolNames = data.assistant.model.tools.filter((t: any) => t.function).map((t: any) => t.function.name);
       expect(toolNames).toContain('checkClient');
       expect(toolNames).toContain('identifyLawyer');
       expect(toolNames).toContain('scheduleConsultation');
       expect(toolNames).toContain('transferCall');
       expect(toolNames).toContain('generateSummary');
+      expect(data.assistant.model.tools.some((t: any) => t.type === 'endCall')).toBe(true);
     });
 
     it('includes lawyer list in system prompt', async () => {

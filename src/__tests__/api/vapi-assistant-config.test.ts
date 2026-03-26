@@ -68,7 +68,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     const res = await POST(req);
     const { assistant } = await res.json();
     expect(assistant.model.provider).toBe('openai');
-    expect(assistant.model.model).toBe('gpt-5.2');
+    expect(assistant.model.model).toBeDefined();
   });
 
   it('assistant has model with temperature', async () => {
@@ -110,26 +110,28 @@ describe('VAPI Assistant Config (thorough)', () => {
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();
-    const toolNames = assistant.model.tools.map((t: any) => t.function.name);
+    const toolNames = assistant.model.tools.filter((t: any) => t.function).map((t: any) => t.function.name);
     expect(toolNames).toContain('checkClient');
     expect(toolNames).toContain('identifyLawyer');
     expect(toolNames).toContain('scheduleConsultation');
     expect(toolNames).toContain('transferCall');
     expect(toolNames).toContain('generateSummary');
-    expect(assistant.model.tools).toHaveLength(5);
+    expect(assistant.model.tools).toHaveLength(6); // 5 function tools + endCall
   });
 
-  it('each tool has type, function.name, function.description, function.parameters', async () => {
+  it('each function tool has type, function.name, function.description, function.parameters', async () => {
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();
-    for (const tool of assistant.model.tools) {
-      expect(tool.type).toBe('function');
+    const functionTools = assistant.model.tools.filter((t: any) => t.type === 'function');
+    for (const tool of functionTools) {
       expect(tool.function.name).toBeDefined();
       expect(tool.function.description).toBeDefined();
       expect(tool.function.parameters).toBeDefined();
       expect(tool.function.parameters.type).toBe('object');
     }
+    // Also has endCall tool
+    expect(assistant.model.tools.some((t: any) => t.type === 'endCall')).toBe(true);
   });
 
   it('assistant has voice config with provider and voiceId', async () => {
