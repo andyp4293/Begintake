@@ -29,10 +29,17 @@ function flatToTree(nodes: any[], edges: any[]): FlowNode {
   const nodeMap = new Map<string, FlowNode>();
   for (const n of nodes) nodeMap.set(n.id, { id: n.id, type: n.type, label: n.label, config: n.config || {}, children: [] });
   const childIds = new Set<string>();
+  const addedChildren = new Set<string>(); // prevent duplicate children
   for (const e of edges) {
     const parent = nodeMap.get(e.sourceNodeId);
     const child = nodeMap.get(e.targetNodeId);
-    if (parent && child) { child.edgeLabel = e.label || undefined; parent.children.push(child); childIds.add(e.targetNodeId); }
+    const key = `${e.sourceNodeId}->${e.targetNodeId}`;
+    if (parent && child && !addedChildren.has(key)) {
+      child.edgeLabel = e.label || undefined;
+      parent.children.push(child);
+      childIds.add(e.targetNodeId);
+      addedChildren.add(key);
+    }
   }
   const root = nodes.find((n: any) => !childIds.has(n.id));
   return root ? nodeMap.get(root.id)! : { id: generateId(), type: 'start', label: 'Start', config: {}, children: [] };

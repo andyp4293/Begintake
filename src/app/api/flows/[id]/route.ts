@@ -40,7 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   await prisma.flowEdge.deleteMany({ where: { flowId: id } });
   await prisma.flowNode.deleteMany({ where: { flowId: id } });
 
-  // Update flow and recreate nodes
+  // Update flow metadata
   await prisma.intakeFlow.update({
     where: { id },
     data: {
@@ -49,32 +49,45 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     },
   });
 
+  // Create nodes one by one with new server-generated IDs, build old->new ID map
+  const idMap = new Map<string, string>();
   if (nodes?.length) {
-    await prisma.flowNode.createMany({
-      data: nodes.map((n: any, i: number) => ({
-        id: n.id,
-        flowId: id,
-        type: n.type,
-        label: n.label,
-        positionX: n.positionX || 0,
-        positionY: n.positionY || 0,
-        config: n.config || {},
-        sortOrder: i,
-      })),
-    });
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const node = await prisma.flowNode.create({
+        data: {
+          flowId: id,
+          type: n.type,
+          label: n.label,
+          positionX: n.positionX || 0,
+          positionY: n.positionY || 0,
+          config: n.config || {},
+          sortOrder: i,
+        },
+      });
+      idMap.set(n.id, node.id);
+    }
   }
 
   if (edges?.length) {
-    await prisma.flowEdge.createMany({
-      data: edges.map((e: any, i: number) => ({
-        flowId: id,
-        sourceNodeId: e.sourceNodeId,
-        targetNodeId: e.targetNodeId,
-        label: e.label || null,
-        condition: e.condition || null,
-        sortOrder: i,
-      })),
-    });
+    const edgeData = edges
+      .map((e: any, i: number) => {
+        const sourceId = idMap.get(e.sourceNodeId);
+        const targetId = idMap.get(e.targetNodeId);
+        if (!sourceId || !targetId) return null;
+        return {
+          flowId: id,
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          label: e.label || null,
+          condition: e.condition || null,
+          sortOrder: i,
+        };
+      })
+      .filter(Boolean) as any[];
+    if (edgeData.length) {
+      await prisma.flowEdge.createMany({ data: edgeData });
+    }
   }
 
   const flow = await prisma.intakeFlow.findUnique({
