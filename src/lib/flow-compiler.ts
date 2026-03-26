@@ -215,19 +215,23 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string): str
       case 'transfer': {
         const config = node.config || {};
         sections.push(`=== SECTION ${sectionId}: TRANSFER TO ATTORNEY ===`);
-        const transferMsg = config.message || 'Thank you so much for sharing all of that with me. I now have everything the attorney will need. Please hold — I\'m connecting you now.';
-        sections.push(`Say: "${transferMsg}"`);
+        sections.push('This is the FINAL step. You MUST complete it to end the call properly.');
         sections.push('');
-        sections.push('Before transferring, compile a mental summary of EVERYTHING collected:');
-        sections.push('- Caller name and phone number');
-        sections.push('- Party role (calling for self or someone else)');
-        sections.push('- Matter category and branch followed');
-        sections.push('- All sub-questions and answers');
-        sections.push('- Urgency flags');
-        sections.push('- Petition type designation');
+        sections.push('STEP 1: Say "One moment while I put together your information."');
+        sections.push('STEP 2: Call the generateSummary tool with ALL data you collected:');
+        sections.push('  - callerName: the name from Q2');
+        sections.push('  - callerPhone: the phone from Q3');
+        sections.push('  - callerEmail: if collected');
+        sections.push('  - issue: a detailed summary of their legal matter, branch, and all answers');
+        sections.push('  - notes: all sub-questions, answers, petition type, urgency flags, party role');
+        sections.push('STEP 3: After the tool returns, say: "I\'ve sent everything over to our legal team along with your contact information. They\'ll reach out to you directly."');
+        sections.push('STEP 4: Ask: "Is there anything else I can help you with?"');
+        sections.push('STEP 5: If they say no (or anything indicating they are done), say:');
+        const transferMsg = config.message || 'Thank you so much for calling. Have a wonderful day. Goodbye!';
+        sections.push(`  "${transferMsg}"`);
+        sections.push('STEP 6: IMMEDIATELY call the endCall tool. The call will NOT end unless you call endCall.');
         sections.push('');
-        sections.push('Call the generateTransferSummary tool with ALL collected data.');
-        sections.push('The system will automatically forward the call to an attorney.');
+        sections.push('CRITICAL: You MUST call endCall after saying goodbye. Do NOT keep talking. Do NOT skip endCall.');
         sections.push('');
         break;
       }
@@ -246,11 +250,24 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string): str
 
   // Add ending rules
   sections.push('=== GENERAL RULES ===');
-  sections.push('- If the caller says "talk to a person", "real person", "human", or similar at ANY point, say "Sure, let me connect you now." The call will be forwarded automatically.');
-  sections.push('- If caller says "goodbye", "bye", "that\'s all", "I\'m good" — say the closing phrase and call endCall.');
+  sections.push('');
+  sections.push('ENDING THE CALL (CRITICAL):');
+  sections.push('- When the caller says "no", "nope", "nothing else", "that\'s all", "I\'m good", "goodbye", "bye", "thanks that\'s it", or ANYTHING indicating they are done:');
+  sections.push('  1. Say: "Thank you for calling Anderson Bowman. Have a wonderful day. Goodbye!"');
+  sections.push('  2. IMMEDIATELY call the endCall tool.');
+  sections.push('- You MUST call endCall after saying goodbye. The call will NOT end unless you call endCall.');
+  sections.push('- Do NOT keep talking after saying goodbye. Do NOT ask more questions after goodbye.');
+  sections.push('- After completing the transfer section (generateSummary + "anything else?" + they say no), you MUST call endCall.');
+  sections.push('');
+  sections.push('TRANSFER TO HUMAN:');
+  sections.push('- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer me", or similar at ANY point:');
+  sections.push('  Say "Sure, let me connect you with someone now." The call will be forwarded automatically.');
+  sections.push('');
+  sections.push('OTHER RULES:');
   sections.push('- Never read IDs aloud.');
   sections.push('- Be empathetic. People calling a law firm are often stressed.');
   sections.push('- Everything shared is confidential.');
+  sections.push('- Keep ALL responses under 2 sentences — this is a phone call, not a letter.');
 
   return sections.join('\n');
 }
