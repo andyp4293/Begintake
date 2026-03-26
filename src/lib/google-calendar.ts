@@ -67,9 +67,10 @@ export async function createCalendarEvent(params: CreateEventParams): Promise<st
       },
     });
 
+    console.log(`[calendar] Event created: ${event.data.id} - ${params.summary}`);
     return event.data.id || null;
   } catch (error: any) {
-    console.error('Failed to create calendar event:', error?.message || error);
+    console.error('[calendar] Failed to create event:', error?.message || error);
     return null;
   }
 }
