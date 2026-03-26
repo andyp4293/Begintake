@@ -16,6 +16,10 @@ interface CallSession {
   notes: string | null;
   transferred: boolean;
   transferredTo: string | null;
+  urgencyFlag: string | null;
+  petitionType: string | null;
+  matterCategory: string | null;
+  partyRole: string | null;
   lawyer: { name: string } | null;
   client: { name: string } | null;
 }
@@ -200,6 +204,34 @@ export function RecentCallsList() {
 
                 {expandedId === call.id && (
                   <div className="px-4 pb-4 border-t border-zinc-700/50">
+                    {/* Structured Intake Notes */}
+                    {(call.matterCategory || call.petitionType || call.urgencyFlag || call.partyRole) && (
+                      <div className="mt-3 bg-zinc-800/50 rounded-lg p-3 space-y-1.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Intake Notes</p>
+                        {call.callerPhone && (
+                          <p className="text-xs text-zinc-400">Phone: <span className="text-zinc-300 font-mono">{call.callerPhone}</span></p>
+                        )}
+                        {call.partyRole && (
+                          <p className="text-xs text-zinc-400">Party Role: <span className="text-zinc-300 capitalize">{call.partyRole}</span></p>
+                        )}
+                        {call.matterCategory && (
+                          <p className="text-xs text-zinc-400">Matter: <span className="text-zinc-300">{call.matterCategory}</span></p>
+                        )}
+                        {call.petitionType && (
+                          <p className="text-xs text-zinc-400">Petition Type: <span className="text-zinc-300">{call.petitionType}</span></p>
+                        )}
+                        {call.urgencyFlag && call.urgencyFlag !== 'standard' && (
+                          <p className="text-xs">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              call.urgencyFlag === 'safety_first' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
+                            }`}>
+                              {call.urgencyFlag === 'safety_first' ? 'URGENT — SAFETY' : 'URGENT'}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {call.summary && (
                       <div className="mt-3">
                         <p className="text-xs font-medium text-zinc-400 mb-1">Summary</p>

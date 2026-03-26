@@ -137,4 +137,87 @@ describe('Anderson Bowman template', () => {
     const triageEdges = template.edges.filter((e: any) => e.sourceNodeId === triageNode!.id);
     expect(triageEdges.length).toBe(8);
   });
+
+  it('has custody branch (Branch A) with sub-questions', () => {
+    const template = createAndersonBowmanTemplate();
+    const custodyNode = template.nodes.find((n: any) => n.label === 'Custody Order Status');
+    expect(custodyNode).toBeDefined();
+    expect(custodyNode!.type).toBe('decision');
+  });
+
+  it('has safety-first protocol for family offense (Branch C)', () => {
+    const template = createAndersonBowmanTemplate();
+    const safetyNode = template.nodes.find((n: any) => n.label === 'Safety Check');
+    expect(safetyNode).toBeDefined();
+    expect(safetyNode!.type).toBe('question');
+    expect(safetyNode!.config.question).toContain('safe');
+  });
+
+  it('has emergency action node with safety flag', () => {
+    const template = createAndersonBowmanTemplate();
+    const emergencyNode = template.nodes.find((n: any) => n.label === 'Emergency — Call 911');
+    expect(emergencyNode).toBeDefined();
+    expect(emergencyNode!.config.flagValue).toBe('safety_first');
+    expect(emergencyNode!.config.petitionType).toContain('O-Petition');
+  });
+
+  it('has collect info node for caller details', () => {
+    const template = createAndersonBowmanTemplate();
+    const collectNode = template.nodes.find((n: any) => n.label === 'Caller Information');
+    expect(collectNode).toBeDefined();
+    expect(collectNode!.config.fields).toHaveLength(2);
+    expect(collectNode!.config.fields[0].name).toBe('caller_name');
+  });
+
+  it('compiled prompt contains all critical legal terms', () => {
+    const template = createAndersonBowmanTemplate();
+    const flow = { id: 'test', ...template };
+    const prompt = compileFlowToPrompt(flow, 'Aria');
+
+    // Legal petition types must appear
+    expect(prompt).toContain('V-Petition');
+    expect(prompt).toContain('safety');
+    expect(prompt).toContain('O-Petition');
+
+    // Critical instructions
+    expect(prompt).toContain('NEVER give legal advice');
+    expect(prompt).toContain('confidential');
+    expect(prompt).toContain('endCall');
+  });
+
+  it('compiled prompt instructs AI to follow script exactly', () => {
+    const template = createAndersonBowmanTemplate();
+    const flow = { id: 'test', ...template };
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('FOLLOW THIS SCRIPT EXACTLY');
+  });
+
+  it('compiled prompt includes transfer protocol with all data fields', () => {
+    const template = createAndersonBowmanTemplate();
+    const flow = { id: 'test', ...template };
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('TRANSFER TO ATTORNEY');
+    expect(prompt).toContain('Caller name');
+    expect(prompt).toContain('petition_type');
+    expect(prompt).toContain('generateTransferSummary');
+  });
+
+  it('all edges reference valid node IDs', () => {
+    const template = createAndersonBowmanTemplate();
+    const nodeIds = new Set(template.nodes.map((n: any) => n.id));
+    for (const edge of template.edges) {
+      expect(nodeIds.has(edge.sourceNodeId)).toBe(true);
+      expect(nodeIds.has(edge.targetNodeId)).toBe(true);
+    }
+  });
+
+  it('no orphaned nodes (every non-start node has at least one incoming edge)', () => {
+    const template = createAndersonBowmanTemplate();
+    const startNode = template.nodes.find((n: any) => n.type === 'start');
+    const targetIds = new Set(template.edges.map((e: any) => e.targetNodeId));
+    for (const node of template.nodes) {
+      if (node.id === startNode!.id) continue; // Start node has no incoming
+      expect(targetIds.has(node.id)).toBe(true);
+    }
+  });
 });

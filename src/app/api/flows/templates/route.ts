@@ -28,45 +28,54 @@ export async function POST() {
 
   const template = createAndersonBowmanTemplate();
 
-  // Create the flow with nodes
+  // Create the flow first
   const flow = await prisma.intakeFlow.create({
     data: {
       name: template.name,
       description: template.description,
       isTemplate: false,
       userId: session.user.id,
-      nodes: {
-        create: template.nodes.map((n: any, i: number) => ({
-          id: n.id,
-          type: n.type,
-          label: n.label,
-          positionX: n.positionX,
-          positionY: n.positionY,
-          config: n.config,
-          sortOrder: i,
-        })),
-      },
     },
-    include: { nodes: true },
   });
 
-  // Create edges
-  if (template.edges.length > 0) {
-    await prisma.flowEdge.createMany({
-      data: template.edges.map((e: any, i: number) => ({
+  // Create nodes with new unique IDs, keeping a mapping from old to new
+  const idMap = new Map<string, string>();
+  for (const n of template.nodes) {
+    const node = await prisma.flowNode.create({
+      data: {
         flowId: flow.id,
-        sourceNodeId: e.sourceNodeId,
-        targetNodeId: e.targetNodeId,
-        label: e.label,
-        condition: e.condition,
-        sortOrder: i,
-      })),
+        type: n.type,
+        label: n.label,
+        positionX: n.positionX,
+        positionY: n.positionY,
+        config: n.config,
+        sortOrder: n.sortOrder,
+      },
     });
+    idMap.set(n.id, node.id);
+  }
+
+  // Create edges using the new node IDs
+  for (const e of template.edges) {
+    const sourceId = idMap.get(e.sourceNodeId);
+    const targetId = idMap.get(e.targetNodeId);
+    if (sourceId && targetId) {
+      await prisma.flowEdge.create({
+        data: {
+          flowId: flow.id,
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          label: e.label,
+          condition: e.condition,
+          sortOrder: e.sortOrder,
+        },
+      });
+    }
   }
 
   const fullFlow = await prisma.intakeFlow.findUnique({
     where: { id: flow.id },
-    include: { nodes: true, edges: true },
+    include: { nodes: { orderBy: { sortOrder: 'asc' } }, edges: { orderBy: { sortOrder: 'asc' } } },
   });
 
   return NextResponse.json(fullFlow, { status: 201 });
