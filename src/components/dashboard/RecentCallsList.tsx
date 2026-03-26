@@ -1,7 +1,7 @@
 'use client';
 
-import { PhoneIncoming, PhoneForwarded, ChevronDown, ChevronUp, Loader2, Filter } from 'lucide-react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { PhoneIncoming, PhoneForwarded, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Filter } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 interface CallSession {
@@ -24,9 +24,11 @@ interface CallSession {
   client: { name: string } | null;
 }
 
-interface CallsResponse {
+interface PagedResponse {
   calls: CallSession[];
-  nextCursor: string | null;
+  page: number;
+  totalPages: number;
+  totalCount: number;
 }
 
 function TranscriptView({ notes }: { notes: string }) {
@@ -76,10 +78,13 @@ export function RecentCallsList() {
   const [filterClientType, setFilterClientType] = useState('');
   const [filterOutcome, setFilterOutcome] = useState('');
   const [filterLegalArea, setFilterLegalArea] = useState('');
+  const [page, setPage] = useState(1);
+  const perPage = 5;
 
   const buildParams = () => {
     const params = new URLSearchParams();
-    params.set('limit', '6');
+    params.set('limit', String(perPage));
+    params.set('page', String(page));
     params.set('sort', sort === 'oldest' ? 'oldest' : 'newest');
     if (filterClientType) params.set('clientType', filterClientType);
     if (filterOutcome) params.set('callOutcome', filterOutcome);
@@ -87,26 +92,24 @@ export function RecentCallsList() {
     return params.toString();
   };
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery<CallsResponse>({
-    queryKey: ['calls', sort, filterClientType, filterOutcome, filterLegalArea],
-    queryFn: async ({ pageParam }) => {
-      const params = buildParams();
-      const cursorParam = pageParam ? `&cursor=${pageParam}` : '';
-      const res = await fetch(`/api/calls?${params}${cursorParam}`);
+  const { data, isLoading } = useQuery<PagedResponse>({
+    queryKey: ['calls', page, sort, filterClientType, filterOutcome, filterLegalArea],
+    queryFn: async () => {
+      const res = await fetch(`/api/calls?${buildParams()}`);
       if (!res.ok) throw new Error('Failed to fetch calls');
       return res.json();
     },
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 
-  const allCalls = data?.pages.flatMap((p) => p.calls) || [];
+  const calls = data?.calls || [];
+  const totalPages = data?.totalPages || 1;
+  const totalCount = data?.totalCount || 0;
+
+  // Reset page when filters change
+  const updateFilter = (setter: (v: string) => void, value: string) => {
+    setter(value);
+    setPage(1);
+  };
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -120,10 +123,15 @@ export function RecentCallsList() {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-zinc-300">Recent Calls</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-zinc-300">Recent Calls</h3>
+          {totalCount > 0 && (
+            <span className="text-[10px] text-zinc-600">{totalCount} total</span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setSort(sort === 'newest' ? 'oldest' : 'newest')}
+            onClick={() => { setSort(sort === 'newest' ? 'oldest' : 'newest'); setPage(1); }}
             className="px-2 py-1 text-[10px] bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white transition-colors"
           >
             {sort === 'newest' ? 'Newest first' : 'Oldest first'}
@@ -139,31 +147,22 @@ export function RecentCallsList() {
 
       {showFilters && (
         <div className="flex flex-wrap gap-2 mb-4">
-          <select
-            value={filterClientType}
-            onChange={(e) => setFilterClientType(e.target.value)}
-            className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300"
-          >
+          <select value={filterClientType} onChange={(e) => updateFilter(setFilterClientType, e.target.value)}
+            className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300">
             <option value="">All types</option>
             <option value="current">Current client</option>
             <option value="prospective">Prospective</option>
           </select>
-          <select
-            value={filterOutcome}
-            onChange={(e) => setFilterOutcome(e.target.value)}
-            className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300"
-          >
+          <select value={filterOutcome} onChange={(e) => updateFilter(setFilterOutcome, e.target.value)}
+            className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300">
             <option value="">All outcomes</option>
             <option value="consultation_scheduled">Scheduled</option>
             <option value="summary_sent">Summary sent</option>
             <option value="transferred">Transferred</option>
             <option value="general_inquiry">General inquiry</option>
           </select>
-          <select
-            value={filterLegalArea}
-            onChange={(e) => setFilterLegalArea(e.target.value)}
-            className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300"
-          >
+          <select value={filterLegalArea} onChange={(e) => updateFilter(setFilterLegalArea, e.target.value)}
+            className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300">
             <option value="">All areas</option>
             <option value="family">Family</option>
             <option value="criminal">Criminal</option>
@@ -180,7 +179,7 @@ export function RecentCallsList() {
             <div key={i} className="h-16 bg-zinc-800/50 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : !allCalls.length ? (
+      ) : !calls.length ? (
         <div className="text-center py-8">
           <PhoneIncoming className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
           <p className="text-zinc-500 text-sm">No calls yet</p>
@@ -188,7 +187,7 @@ export function RecentCallsList() {
       ) : (
         <>
           <div className="space-y-2">
-            {allCalls.map((call) => (
+            {calls.map((call) => (
               <div key={call.id} className="bg-zinc-800/50 rounded-xl">
                 <button
                   onClick={() => setExpandedId(expandedId === call.id ? null : call.id)}
@@ -244,7 +243,6 @@ export function RecentCallsList() {
 
                 {expandedId === call.id && (
                   <div className="px-4 pb-4 border-t border-zinc-700/50">
-                    {/* Structured Intake Notes */}
                     {(call.matterCategory || call.petitionType || call.urgencyFlag || call.partyRole) && (
                       <div className="mt-3 bg-zinc-800/50 rounded-lg p-3 space-y-1.5">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Intake Notes</p>
@@ -289,7 +287,6 @@ export function RecentCallsList() {
                       </p>
                     )}
 
-                    {/* Transcript */}
                     {call.notes && (
                       <TranscriptView notes={call.notes} />
                     )}
@@ -299,20 +296,71 @@ export function RecentCallsList() {
             ))}
           </div>
 
-          {hasNextPage && (
-            <button
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-              className="w-full mt-4 py-2 text-xs text-zinc-400 hover:text-white bg-zinc-800/50 rounded-lg transition-colors"
-            >
-              {isFetchingNextPage ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Loading...
-                </span>
-              ) : (
-                'Load more'
-              )}
-            </button>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 pt-3 border-t border-zinc-800">
+              <span className="text-[10px] text-zinc-600">
+                Page {page} of {totalPages}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="px-2 py-1 text-[10px] bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+                >
+                  First
+                </button>
+                <button
+                  onClick={() => setPage(page - 1)}
+                  disabled={page === 1}
+                  className="p-1 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+
+                {/* Page numbers */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (page <= 3) {
+                    pageNum = i + 1;
+                  } else if (page >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = page - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setPage(pageNum)}
+                      className={`w-7 h-7 text-[10px] rounded-lg border transition-colors ${
+                        pageNum === page
+                          ? 'bg-white text-black border-white font-bold'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+
+                <button
+                  onClick={() => setPage(page + 1)}
+                  disabled={page === totalPages}
+                  className="p-1 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  className="px-2 py-1 text-[10px] bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+                >
+                  Last
+                </button>
+              </div>
+            </div>
           )}
         </>
       )}

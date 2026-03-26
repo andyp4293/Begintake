@@ -348,8 +348,12 @@ export default function FlowEditorPage() {
         <div className="flex items-center gap-3">
           <Link href="/flow-builder" className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"><ArrowLeft className="w-4 h-4 text-zinc-400" /></Link>
           <Scale className="w-5 h-5 text-white" />
-          <input type="text" value={flowName} onChange={(e) => setFlowName(e.target.value)}
-            className="bg-transparent text-white font-semibold text-sm focus:outline-none border-b border-transparent focus:border-zinc-600 px-1" />
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <input type="text" value={flowName} maxLength={80}
+              onChange={(e) => setFlowName(e.target.value)}
+              className="bg-transparent text-white font-semibold text-sm focus:outline-none border-b border-transparent focus:border-zinc-600 px-1 w-full max-w-md" />
+            <span className="text-[9px] text-zinc-600 shrink-0">{flowName.length}/80</span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-zinc-600 mr-2">{nodes.length} nodes · {edges.length} edges</span>

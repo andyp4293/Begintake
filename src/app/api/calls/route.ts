@@ -24,6 +24,30 @@ export async function GET(req: NextRequest) {
   if (legalArea) where.legalArea = legalArea;
   if (lawyerId) where.lawyerId = lawyerId;
 
+  // Support both cursor-based and page-based pagination
+  const page = parseInt(searchParams.get('page') || '0');
+
+  if (page > 0) {
+    // Page-based pagination
+    const skip = (page - 1) * limit;
+    const [calls, totalCount] = await Promise.all([
+      prisma.callSession.findMany({
+        where,
+        orderBy: { createdAt: sort },
+        take: limit,
+        skip,
+        include: {
+          client: { select: { name: true } },
+          lawyer: { select: { name: true } },
+        },
+      }),
+      prisma.callSession.count({ where }),
+    ]);
+    const totalPages = Math.ceil(totalCount / limit);
+    return NextResponse.json({ calls, page, totalPages, totalCount });
+  }
+
+  // Cursor-based pagination (legacy)
   const calls = await prisma.callSession.findMany({
     where,
     orderBy: { createdAt: sort },
