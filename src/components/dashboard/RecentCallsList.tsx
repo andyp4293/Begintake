@@ -9,6 +9,8 @@ interface CallSession {
   createdAt: string;
   callerPhone: string | null;
   clientType: string | null;
+  callOutcome: string | null;
+  legalArea: string | null;
   status: string;
   summary: string | null;
   notes: string | null;
@@ -71,13 +73,27 @@ export function RecentCallsList() {
                     <p className="text-sm font-medium text-white">
                       {call.client?.name || call.callerPhone || 'Unknown'}
                     </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${statusColor(call.status)}`} />
-                      <span className="text-xs text-zinc-400 capitalize">{call.status}</span>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       {call.clientType && (
-                        <span className="text-xs text-zinc-500">
-                          · {call.clientType === 'current' ? 'Current' : 'Prospective'}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-medium">
+                          {call.clientType === 'current' ? 'Current Client' : 'Prospective'}
                         </span>
+                      )}
+                      {call.callOutcome && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-medium">
+                          {call.callOutcome === 'consultation_scheduled' ? 'Scheduled'
+                            : call.callOutcome === 'summary_sent' ? 'Summary Sent'
+                            : call.callOutcome === 'transferred' ? 'Transferred'
+                            : call.callOutcome}
+                        </span>
+                      )}
+                      {call.legalArea && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-medium capitalize">
+                          {call.legalArea.replace('_', ' ')}
+                        </span>
+                      )}
+                      {!call.clientType && !call.callOutcome && (
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusColor(call.status)}`} />
                       )}
                     </div>
                   </div>

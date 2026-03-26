@@ -167,6 +167,22 @@ function getToolDefinitions() {
   ];
 }
 
+// ─── Helper: update most recent call session ─────────────────────────────────
+
+async function updateLatestCallSession(callerPhone: string | null, data: Record<string, any>) {
+  if (!callerPhone) return;
+  const session = await prisma.callSession.findFirst({
+    where: { callerPhone },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (session) {
+    await prisma.callSession.update({
+      where: { id: session.id },
+      data,
+    });
+  }
+}
+
 // ─── Tool handlers ───────────────────────────────────────────────────────────
 
 async function handleCheckClient(args: Record<string, unknown>) {
@@ -183,6 +199,7 @@ async function handleCheckClient(args: Record<string, unknown>) {
   });
 
   if (client?.isCurrentClient) {
+    await updateLatestCallSession(phone, { clientType: 'current', clientId: client.id });
     return {
       isCurrentClient: true,
       clientId: client.id,
@@ -192,6 +209,7 @@ async function handleCheckClient(args: Record<string, unknown>) {
     };
   }
 
+  await updateLatestCallSession(phone, { clientType: 'prospective' });
   return {
     isCurrentClient: false,
     clientId: client?.id || null,
@@ -313,6 +331,13 @@ async function handleScheduleConsultation(args: Record<string, unknown>) {
     hour12: true,
   });
 
+  // Tag the call session
+  await updateLatestCallSession(clientPhone, {
+    callOutcome: 'consultation_scheduled',
+    legalArea: lawyer.specialties[0] || null,
+    lawyerId: lawyer.id,
+  });
+
   return {
     success: true,
     appointmentId: appointment.id,
@@ -344,8 +369,10 @@ async function handleTransferCall(args: Record<string, unknown>) {
     };
   }
 
+  // We don't have callerPhone here, but the status-update will catch it
   return {
     type: 'transfer',
+    callOutcome: 'transferred',
     destination: {
       type: 'number',
       number: phoneNumber,
@@ -372,19 +399,39 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
     });
   }
 
-  // Save call session
-  const callSession = await prisma.callSession.create({
-    data: {
-      callId: `summary-${Date.now()}`,
-      callerPhone,
-      clientId: client?.id,
-      clientType: 'prospective',
-      status: 'completed',
-      summary: issue,
-      notes,
-      lawyerId: lawyer?.id,
-    },
-  });
+  // Update existing call session or create new one
+  const existing = callerPhone ? await prisma.callSession.findFirst({
+    where: { callerPhone },
+    orderBy: { createdAt: 'desc' },
+  }) : null;
+
+  const callSession = existing
+    ? await prisma.callSession.update({
+        where: { id: existing.id },
+        data: {
+          clientId: client?.id,
+          clientType: 'prospective',
+          callOutcome: 'summary_sent',
+          legalArea,
+          summary: issue,
+          notes,
+          lawyerId: lawyer?.id,
+        },
+      })
+    : await prisma.callSession.create({
+        data: {
+          callId: `summary-${Date.now()}`,
+          callerPhone,
+          clientId: client?.id,
+          clientType: 'prospective',
+          callOutcome: 'summary_sent',
+          legalArea,
+          status: 'completed',
+          summary: issue,
+          notes,
+          lawyerId: lawyer?.id,
+        },
+      });
 
   // Email the summary to the lawyer
   if (lawyer) {

@@ -68,6 +68,8 @@ model CallSession {
   callerPhone   String?
   clientId      String?
   clientType    String?
+  callOutcome   String?
+  legalArea     String?
   status        String    @default("active")
   summary       String?
   notes         String?
