@@ -25,7 +25,7 @@ describe('PhoneNumberCard', () => {
 
   it('displays VAPI-powered label', () => {
     renderWithProviders(<PhoneNumberCard />);
-    expect(screen.getByText(/VAPI-powered/)).toBeInTheDocument();
+    expect(screen.getByText(/Available 24\/7/)).toBeInTheDocument();
   });
 
   it('shows loading state initially', () => {

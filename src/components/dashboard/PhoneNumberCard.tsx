@@ -63,7 +63,7 @@ export function PhoneNumberCard() {
         </div>
         <div>
           <h3 className="text-sm font-medium text-zinc-400">AI Paralegal Line</h3>
-          <p className="text-xs text-zinc-600">VAPI-powered 24/7</p>
+          <p className="text-xs text-zinc-600">Available 24/7</p>
         </div>
       </div>
 
