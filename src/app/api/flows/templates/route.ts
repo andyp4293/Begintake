@@ -13,9 +13,9 @@ export async function GET() {
   // Return available templates
   return NextResponse.json([
     {
-      id: 'anderson-bowman',
-      name: 'Anderson Bowman PLLC — Family Court Intake',
-      description: 'Complete AI intake script for family law. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters.',
+      id: 'family-court-intake',
+      name: 'Family Court Intake Example',
+      description: 'Complete AI intake script for family law. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters. Uses {firm} and {name} variables.',
     },
   ]);
 }

@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 // ─── System prompt for the AI paralegal ──────────────────────────────────────
 
-async function buildSystemPrompt(assistantName?: string): Promise<{ prompt: string; firstMessage?: string }> {
+async function buildSystemPrompt(assistantName?: string, firmName?: string): Promise<{ prompt: string; firstMessage?: string }> {
   // Check for active flow first
   try {
     const activeFlow = await prisma.intakeFlow.findFirst({
@@ -25,13 +25,15 @@ async function buildSystemPrompt(assistantName?: string): Promise<{ prompt: stri
 
     if (activeFlow) {
       console.log(`[vapi] Using active flow: ${activeFlow.name} (${activeFlow.id})`);
-      const prompt = compileFlowToPrompt(activeFlow, assistantName);
+      const prompt = compileFlowToPrompt(activeFlow, assistantName, firmName);
       // Extract the greeting from the start node to use as firstMessage
       const startNode = activeFlow.nodes.find((n: any) => n.type === 'start');
       const startConfig = startNode?.config as any;
       const rawGreeting = startConfig?.greeting as string | undefined;
-      // Replace {name} variable with actual assistant name
-      const greeting = rawGreeting?.replace(/\{name\}/gi, assistantName || 'Aria');
+      // Replace {name} and {firm} variables
+      const greeting = rawGreeting
+        ?.replace(/\{name\}/gi, assistantName || 'Aria')
+        .replace(/\{firm\}/gi, firmName || 'our law firm');
       return { prompt, firstMessage: greeting || undefined };
     }
   } catch (err) {
@@ -539,19 +541,23 @@ export async function POST(req: NextRequest) {
         if (users.length > 0) transferPhone = users[0].transferPhoneNumber;
       } catch { /* field may not exist yet */ }
 
-      // Get assistant name from DB
+      // Get assistant name and firm name from DB
       let assistantName = '';
+      let firmName = '';
       try {
-        const nameRows = await prisma.$queryRaw<Array<{ assistantName: string }>>`
-          SELECT "assistantName" FROM "User" WHERE "assistantName" IS NOT NULL LIMIT 1
+        const settingsRows = await prisma.$queryRaw<Array<{ assistantName: string; firmName: string }>>`
+          SELECT "assistantName", "firmName" FROM "User" WHERE "assistantName" IS NOT NULL OR "firmName" IS NOT NULL LIMIT 1
         `;
-        if (nameRows.length > 0 && nameRows[0].assistantName) assistantName = nameRows[0].assistantName;
-      } catch { /* field may not exist yet */ }
+        if (settingsRows.length > 0) {
+          assistantName = settingsRows[0].assistantName || '';
+          firmName = settingsRows[0].firmName || '';
+        }
+      } catch { /* fields may not exist yet */ }
 
       let systemPrompt: string;
       let flowFirstMessage: string | undefined;
       try {
-        const result = await buildSystemPrompt(assistantName || undefined);
+        const result = await buildSystemPrompt(assistantName || undefined, firmName || undefined);
         systemPrompt = result.prompt;
         flowFirstMessage = result.firstMessage;
       } catch (err) {

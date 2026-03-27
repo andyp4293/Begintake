@@ -12,7 +12,7 @@ export async function GET() {
   let user: any;
   try {
     const rows = await prisma.$queryRaw<Array<any>>`
-      SELECT "transferPhoneNumber", "assistantName" FROM "User" WHERE "id" = ${session.user.id} LIMIT 1
+      SELECT "transferPhoneNumber", "assistantName", "firmName" FROM "User" WHERE "id" = ${session.user.id} LIMIT 1
     `;
     user = rows[0] || {};
   } catch {
@@ -22,6 +22,7 @@ export async function GET() {
   return NextResponse.json({
     transferPhoneNumber: user?.transferPhoneNumber || '',
     assistantName: user?.assistantName || '',
+    firmName: user?.firmName || '',
   });
 }
 
@@ -39,6 +40,9 @@ export async function PUT(req: NextRequest) {
   }
   if ('assistantName' in body) {
     data.assistantName = body.assistantName || null;
+  }
+  if ('firmName' in body) {
+    data.firmName = body.firmName || null;
   }
 
   if (Object.keys(data).length > 0) {

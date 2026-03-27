@@ -10,6 +10,7 @@ import { UpcomingAppointments } from '@/components/dashboard/UpcomingAppointment
 import { FileUpload } from '@/components/dashboard/FileUpload';
 import { LawyerList } from '@/components/dashboard/LawyerList';
 import { TransferNumberCard } from '@/components/dashboard/TransferNumberCard';
+import { FirmNameCard } from '@/components/dashboard/FirmNameCard';
 import { AssistantNameCard } from '@/components/dashboard/AssistantNameCard';
 
 export default function Dashboard() {
@@ -67,6 +68,7 @@ export default function Dashboard() {
           {/* Left column - wide */}
           <div className="lg:col-span-2 space-y-6">
             <PhoneNumberCard />
+            <FirmNameCard />
             <AssistantNameCard />
             <TransferNumberCard />
             <RecentCallsList />

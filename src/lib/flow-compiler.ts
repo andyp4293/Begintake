@@ -29,7 +29,7 @@ interface FlowData {
   edges: FlowEdgeData[];
 }
 
-export function compileFlowToPrompt(flow: FlowData, assistantName?: string): string {
+export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firmName?: string): string {
   const nodeMap = new Map<string, FlowNodeData>();
   for (const node of flow.nodes) {
     nodeMap.set(node.id, node);
@@ -91,9 +91,9 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string): str
     day: 'numeric',
   });
 
-  // Resolve {name} variable in any string
+  // Resolve {name} and {firm} variables in any string
   const resolvedName = assistantName || 'Aria';
-  const resolveVars = (text: string) => text.replace(/\{name\}/gi, resolvedName);
+  const resolveVars = (text: string) => text.replace(/\{name\}/gi, resolvedName).replace(/\{firm\}/gi, firmName || 'our law firm');
 
   // Header
   sections.push(`You are ${resolvedName}, an AI intake receptionist for a law firm.`);

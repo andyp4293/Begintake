@@ -48,7 +48,7 @@ export function createAndersonBowmanTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: "Good afternoon. Thank you for calling Anderson Bowman PLLC. My name is {name}, and I'm the firm's intake assistant. I'm going to ask you a few questions so that when I connect you with one of our attorneys, they'll already have everything they need to help you right away. Everything you share is confidential. Shall we get started?",
+    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'm going to ask you a few questions so that when I connect you with one of our attorneys, they'll already have everything they need to help you right away. Everything you share is confidential. Shall we get started?",
   });
 
   // Q1. Shall we get started?
@@ -386,8 +386,8 @@ export function createAndersonBowmanTemplate() {
   addEdge(branchHRouting, transferId, 'Any type');
 
   return {
-    name: 'Anderson Bowman PLLC — Family Court Intake',
-    description: 'Complete AI intake script for prospective family law clients. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters. Routes callers through triage and transfers with structured notes to attorneys.',
+    name: 'Family Court Intake Example',
+    description: 'Complete AI intake script for prospective family law clients. Uses {firm} and {name} variables. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters.',
     isTemplate: true,
     nodes,
     edges,

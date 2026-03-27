@@ -147,7 +147,7 @@ function NodeCard({
                   onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
                   rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <p className="text-[9px] text-zinc-600">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> to insert the assistant&apos;s name. Example: &quot;My name is {'{name}'}&quot; → &quot;My name is Aria&quot;</p>
+                <p className="text-[9px] text-zinc-600">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> for assistant name and <span className="text-zinc-400 font-mono">{'{firm}'}</span> for firm name. Example: &quot;Thank you for calling {'{firm}'}. My name is {'{name}'}.&quot;</p>
               </>
             )}
             {node.type === 'question' && (
