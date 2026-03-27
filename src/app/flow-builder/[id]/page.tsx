@@ -473,16 +473,70 @@ export default function FlowEditorPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        {rootNode && (
-          <NodeCard
-            node={rootNode} edges={edges} allNodes={nodes} depth={0}
-            parentId={null} primaryParents={primaryParents} confirm={confirm}
-            onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
-            onDeleteEdge={deleteEdge}
-          />
-        )}
-      </main>
+      <div className="flex">
+        {/* ── Left legend sidebar ── */}
+        <aside className="w-56 shrink-0 sticky top-[53px] h-[calc(100vh-53px)] overflow-y-auto border-r border-zinc-800 px-4 py-6 space-y-5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-4">Node Types</p>
+
+          {([
+            {
+              type: 'start',
+              title: 'Start',
+              desc: 'The opening greeting the AI says when a call begins. Every flow has exactly one.',
+            },
+            {
+              type: 'question',
+              title: 'Question',
+              desc: 'Ask the caller something. Add answer options with routing instructions, and optionally collect specific values (name, phone, hair color — anything).',
+            },
+            {
+              type: 'decision',
+              title: 'Decision',
+              desc: 'An internal routing fork. Describes the branching logic (e.g. "Is there a custody order?") without asking the caller directly.',
+            },
+            {
+              type: 'action',
+              title: 'Action',
+              desc: 'Sets an internal flag or calls a tool behind the scenes. The caller never hears this step. Use it to tag the call with a petition type, urgency level, or any other metadata that gets passed to the attorney at transfer.',
+            },
+            {
+              type: 'transfer',
+              title: 'Transfer',
+              desc: 'Hands the call off to an attorney. The AI summarises everything collected and connects the caller. Every branch should end here (or at End Call).',
+            },
+            {
+              type: 'end',
+              title: 'End Call',
+              desc: 'Closes the call with a farewell message and hangs up. Use when no attorney handoff is needed.',
+            },
+          ] as { type: string; title: string; desc: string }[]).map(({ type, title, desc }) => (
+            <div key={type} className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: NODE_COLORS[type] }} />
+                <span className="text-[11px] font-semibold text-zinc-300">{title}</span>
+              </div>
+              <p className="text-[10px] text-zinc-500 leading-relaxed pl-3.5">{desc}</p>
+            </div>
+          ))}
+
+          <div className="pt-4 border-t border-zinc-800 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Edges</p>
+            <p className="text-[10px] text-zinc-500 leading-relaxed">The amber labels between nodes are branch paths. They tell the AI which route to take based on a caller&apos;s answer.</p>
+          </div>
+        </aside>
+
+        {/* ── Main flow canvas ── */}
+        <main className="flex-1 max-w-4xl mx-auto px-6 py-8">
+          {rootNode && (
+            <NodeCard
+              node={rootNode} edges={edges} allNodes={nodes} depth={0}
+              parentId={null} primaryParents={primaryParents} confirm={confirm}
+              onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
+              onDeleteEdge={deleteEdge}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 }
