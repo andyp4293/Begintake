@@ -201,9 +201,30 @@ function NodeCard({
                 placeholder="e.g. V-Petition — new" className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
             )}
             {node.type === 'collect_info' && (
-              <input type="text" value={(node.config?.fields || []).map((f: any) => f.label || f.name).join(', ')}
-                onChange={(e) => { const fields = e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean).map((label: string) => ({ name: label.toLowerCase().replace(/\s+/g, '_'), label, type: 'text', required: true })); onUpdateNode(node.id, { config: { ...node.config, fields } }); }}
-                placeholder="Full name, Phone, Email" className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+              <div className="space-y-2">
+                <label className="text-[10px] text-zinc-500">Fields to collect:</label>
+                {(node.config?.fields || []).map((field: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input type="text" value={field.label || ''} placeholder="Field label — e.g. Best phone number to reach you"
+                      onChange={(e) => {
+                        const fields = [...(node.config?.fields || [])];
+                        fields[i] = { ...fields[i], label: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') };
+                        onUpdateNode(node.id, { config: { ...node.config, fields } });
+                      }}
+                      className="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-white focus:outline-none" />
+                    <button onClick={() => {
+                      const fields = (node.config?.fields || []).filter((_: any, j: number) => j !== i);
+                      onUpdateNode(node.id, { config: { ...node.config, fields } });
+                    }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                ))}
+                <button onClick={() => {
+                  const fields = [...(node.config?.fields || []), { name: `field_${Date.now()}`, label: '', type: 'text', required: true }];
+                  onUpdateNode(node.id, { config: { ...node.config, fields } });
+                }} className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
+                  <Plus className="w-3 h-3" /> Add field
+                </button>
+              </div>
             )}
             {node.type === 'end' && (
               <input type="text" value={node.config?.closingMessage || ''} placeholder="Closing message..."

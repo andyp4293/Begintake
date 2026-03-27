@@ -70,9 +70,11 @@ export function createAndersonBowmanTemplate() {
   addEdge(q1, q2, 'Continue');
 
   // Q3. Best phone number to reach you?
-  const q3 = addNode('collect_info', 'Q3. Phone Number', {
-    fields: [
-      { name: 'phone', label: 'Best phone number to reach you in case we get disconnected', type: 'phone', required: true },
+  const q3 = addNode('question', 'Q3. Best Number to Reach You', {
+    question: 'Is the number you\'re calling from the best number to reach you in case we get disconnected?',
+    options: [
+      { label: 'Yes, this number is fine', value: 'yes', instruction: 'Note: use the caller\'s phone number from the call. Proceed to Q4.' },
+      { label: 'No, use a different number', value: 'no', instruction: 'Ask: "What\'s the best number to reach you?" Collect and note the number, then proceed to Q4.' },
     ],
   });
   addEdge(q2, q3);
