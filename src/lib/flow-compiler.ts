@@ -235,20 +235,15 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
       }
 
       case 'decision': {
+        // Legacy backward compat - treat as a question node
         const config = node.config || {};
         sections.push(`=== SECTION ${sectionId}: ${node.label.toUpperCase()} ===`);
-        if (config.description) {
-          sections.push(config.description);
-        }
+        const legacyQ = config.description || config.note;
+        if (legacyQ) sections.push(`Ask the caller: "${legacyQ}"`);
         if (edges.length > 0) {
+          sections.push('Based on their response:');
           for (const edge of edges) {
-            const targetSection = sectionIds.get(edge.targetNodeId);
-            const cond = edge.condition;
-            if (cond) {
-              sections.push(`- If ${cond.field} ${cond.operator || 'is'} ${cond.value} → go to SECTION ${targetSection}`);
-            } else {
-              sections.push(`- ${edge.label || 'Otherwise'} → go to SECTION ${targetSection}`);
-            }
+            sections.push(`- If they say "${edge.label || 'Continue'}": go to SECTION ${sectionIds.get(edge.targetNodeId)}`);
           }
         }
         sections.push('');

@@ -96,8 +96,8 @@ export function createFamilyIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ── BRANCH A - CUSTODY & VISITATION ─────────────────────────────────────
-  const branchARouting = addNode('decision', 'Branch A - Custody Order Status', {
-    description: 'Is there currently a custody order in place, or would this be a new filing?',
+  const branchARouting = addNode('question', 'Branch A - Custody Order Status', {
+    note: 'Is there currently a custody order in place, or would this be a new filing?',
   });
   const q5_a = response('My children - custody or visitation');
   addEdge(q5, q5_a);
@@ -162,8 +162,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(a3, a4);
 
   // ── BRANCH B - CHILD SUPPORT & SPOUSAL MAINTENANCE ──────────────────────
-  const branchBRouting = addNode('decision', 'Branch B - Support Filing Status', {
-    description: "Are you looking to file for support for the first time, modify an existing order, or enforce an order that isn't being followed?",
+  const branchBRouting = addNode('question', 'Branch B - Support Filing Status', {
+    note: "Are you looking to file for support for the first time, modify an existing order, or enforce an order that isn't being followed?",
   });
   const q5_b = response('Child support or spousal support');
   addEdge(q5, q5_b);
@@ -243,8 +243,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(c1, c1_sexual);     addEdge(c1_sexual, c2);
 
   // ── BRANCH D - CHILD WELFARE / ACS ──────────────────────────────────────
-  const branchDRouting = addNode('decision', 'Branch D - ACS / Child Welfare', {
-    description: "Can you tell me more about the situation? Did ACS come to your home, are you concerned about a child elsewhere, or is this a foster care matter?",
+  const branchDRouting = addNode('question', 'Branch D - ACS / Child Welfare', {
+    note: "Can you tell me more about the situation? Did ACS come to your home, are you concerned about a child elsewhere, or is this a foster care matter?",
   });
   const q5_d = response("A child's safety or welfare concern");
   addEdge(q5, q5_d);
@@ -279,8 +279,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(d2, d2_dispute);
 
   // ── BRANCH E - PATERNITY ─────────────────────────────────────────────────
-  const branchERouting = addNode('decision', 'Branch E - Paternity', {
-    description: 'Are you a mother looking to establish paternity, a father seeking parental rights, or someone disputing paternity?',
+  const branchERouting = addNode('question', 'Branch E - Paternity', {
+    note: 'Are you a mother looking to establish paternity, a father seeking parental rights, or someone disputing paternity?',
   });
   const q5_e = response('Paternity - establishing who the father is');
   addEdge(q5, q5_e);
@@ -294,8 +294,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(branchERouting, branchE_dispute);
 
   // ── BRANCH F - ADOPTION & GUARDIANSHIP ──────────────────────────────────
-  const branchFRouting = addNode('decision', 'Branch F - Adoption / Guardianship', {
-    description: 'What type of adoption or guardianship matter do you need help with? For example: stepparent adoption, foster-to-adopt, private adoption, kinship adoption, guardianship of a minor, or guardianship of an adult with a disability?',
+  const branchFRouting = addNode('question', 'Branch F - Adoption / Guardianship', {
+    note: 'What type of adoption or guardianship matter do you need help with? For example: stepparent adoption, foster-to-adopt, private adoption, kinship adoption, guardianship of a minor, or guardianship of an adult with a disability?',
   });
   const q5_f = response('Adoption or guardianship');
   addEdge(q5, q5_f);
@@ -305,8 +305,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(branchFRouting, branchF_any);
 
   // ── BRANCH G - JUVENILE ──────────────────────────────────────────────────
-  const branchGRouting = addNode('decision', 'Branch G - Juvenile Matter', {
-    description: 'Can you tell me more about the juvenile matter? Is this about an alleged crime or delinquent act, or about truancy or a child beyond parental control?',
+  const branchGRouting = addNode('question', 'Branch G - Juvenile Matter', {
+    note: 'Can you tell me more about the juvenile matter? Is this about an alleged crime or delinquent act, or about truancy or a child beyond parental control?',
   });
   const q5_g = response('A juvenile matter');
   addEdge(q5, q5_g);
@@ -316,8 +316,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(branchGRouting, branchG_any);
 
   // ── BRANCH H - OTHER ────────────────────────────────────────────────────
-  const branchHRouting = addNode('decision', 'Branch H - Other Legal Matter', {
-    description: 'Can you tell me what kind of legal matter you need help with? For example: name change, termination of parental rights, Special Immigrant Juvenile Status (SIJS), or something else?',
+  const branchHRouting = addNode('question', 'Branch H - Other Legal Matter', {
+    note: 'Can you tell me what kind of legal matter you need help with? For example: name change, termination of parental rights, Special Immigrant Juvenile Status (SIJS), or something else?',
   });
   const q5_h = response('Something else');
   addEdge(q5, q5_h);

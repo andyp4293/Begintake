@@ -13,13 +13,16 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 
 const NODE_COLORS: Record<string, string> = {
   start: '#22c55e', question: '#3b82f6', response: '#7c3aed',
-  collect_info: '#a855f7', decision: '#f59e0b', action: '#06b6d4',
+  collect_info: '#a855f7', action: '#06b6d4',
   transfer: '#f97316', end: '#ef4444',
+  // decision kept for backward compat with saved flows
+  decision: '#f59e0b',
 };
 const NODE_LABELS: Record<string, string> = {
   start: 'Start', question: 'Question', response: 'Response',
-  collect_info: 'Collect Info', decision: 'Decision',
-  action: 'Action', transfer: 'Transfer', end: 'End Call',
+  collect_info: 'Collect Info', action: 'Action', transfer: 'Transfer', end: 'End Call',
+  // decision kept for backward compat
+  decision: 'Question',
 };
 
 interface FNode { id: string; type: string; label: string; config: any; sortOrder: number; }
@@ -189,8 +192,8 @@ function NodeCard({
                 )}
               </>
             )}
-            {node.type === 'decision' && node.config?.description && (
-              <p className="text-[11px] text-zinc-300 italic">"{node.config.description}"</p>
+            {node.type === 'decision' && (node.config?.description || node.config?.note) && (
+              <p className="text-[11px] text-zinc-300 italic">"{node.config.description || node.config.note}"</p>
             )}
             {node.type === 'action' && (
               <>
@@ -288,8 +291,8 @@ function NodeCard({
               </div>
             )}
             {node.type === 'decision' && (
-              <textarea value={node.config?.description || ''} placeholder="Routing logic..."
-                onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, description: e.target.value } })}
+              <textarea value={node.config?.description || node.config?.note || ''} placeholder="Question or routing guidance..."
+                onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, description: e.target.value, note: e.target.value } })}
                 rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
             )}
             {node.type === 'action' && (
@@ -491,7 +494,7 @@ function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeI
               )}
               {Object.entries(NODE_LABELS)
                 .filter(([type]) => {
-                  if (type === 'start' || type === 'collect_info') return false;
+                  if (type === 'start' || type === 'collect_info' || type === 'decision') return false;
                   if (isQuestion) return type === 'response';
                   return true;
                 })
@@ -704,11 +707,6 @@ export default function FlowEditorPage() {
               type: 'response',
               title: 'Response',
               desc: "Represents a specific answer the caller gives. Add one per option under a Question. From each Response you can continue to the next step, or link to any existing step.",
-            },
-            {
-              type: 'decision',
-              title: 'Decision',
-              desc: 'An internal routing fork. Describes the branching logic without asking the caller directly.',
             },
             {
               type: 'action',
