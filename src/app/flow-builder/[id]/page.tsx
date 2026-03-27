@@ -78,9 +78,9 @@ function NodeCard({
   if (!isPrimary) return null;
 
   return (
-    <div id={`flow-node-${node.id}`} className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
+    <div className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
       {/* Node card */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden w-80" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
+      <div id={`flow-node-${node.id}`} className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden w-80" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
         <div className="flex items-center gap-2 px-3 py-2">
           <button onClick={() => setExpanded(!expanded)} className="text-zinc-500 hover:text-white">
             {childEdges.length > 0 ? (expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
@@ -327,7 +327,7 @@ function NodeCard({
                     onClick={() => {
                       const el = document.getElementById(`flow-node-${childNode.id}`);
                       if (!el) return;
-                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
                       el.style.transition = 'outline 0s';
                       el.style.outline = '2px solid #3b82f6';
                       el.style.borderRadius = '8px';
