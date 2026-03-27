@@ -255,6 +255,19 @@ function NodeCard({
           <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
             {(node.type === 'start' || node.type === 'transfer') && (
               <>
+                {node.type === 'transfer' && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-zinc-400 mb-1">Transfer to</label>
+                    <select
+                      value={node.config?.transferTarget || 'attorney'}
+                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, transferTarget: e.target.value } })}
+                      className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none"
+                    >
+                      <option value="attorney">Attorney (AI selects best match)</option>
+                      <option value="paralegal">Paralegal / Reception (firm number)</option>
+                    </select>
+                  </div>
+                )}
                 <textarea value={node.config?.greeting || node.config?.message || ''}
                   onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
                   rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}

@@ -37,9 +37,16 @@ export function createGeneralIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════
 
   const transferId = addNode('transfer', 'Transfer to Attorney', {
+    transferTarget: 'attorney',
     message: "Thank you for sharing all of that. I now have everything our attorney will need. Please hold one moment - I'm connecting you now.",
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'practice_area', 'matter_type', 'urgency_flag', 'all_collected_fields'],
+  });
+
+  // Separate paralegal transfer for existing clients (bypasses full intake)
+  const transferParalegalId = addNode('transfer', 'Transfer to Paralegal', {
+    transferTarget: 'paralegal',
+    message: "Welcome back! Please hold one moment while I connect you with our team.",
   });
 
   const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
@@ -94,7 +101,7 @@ export function createGeneralIntakeTemplate() {
   // Q1b responses
   const q1b_existing = resp('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with your attorney right away.\" Proceed directly to transfer.");
   const q1b_new      = resp('New client - first time calling', 'Proceed to Q2 to collect their information.');
-  addEdge(q1b, q1b_existing); addEdge(q1b_existing, transferId);
+  addEdge(q1b, q1b_existing); addEdge(q1b_existing, transferParalegalId);
   addEdge(q1b, q1b_new);
 
   const q2 = addNode('question', 'Q2. Caller Name', {

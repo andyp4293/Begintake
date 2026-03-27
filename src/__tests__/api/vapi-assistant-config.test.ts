@@ -106,7 +106,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(prompt).toContain('empathetic');
   });
 
-  it('assistant has all 5 tool definitions', async () => {
+  it('assistant has all tool definitions', async () => {
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();
@@ -114,9 +114,9 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(toolNames).toContain('checkClient');
     expect(toolNames).toContain('identifyLawyer');
     expect(toolNames).toContain('scheduleConsultation');
-    // transferCall removed - using forwardingPhoneNumber instead
     expect(toolNames).toContain('generateSummary');
-    expect(assistant.model.tools).toHaveLength(5); // 4 function tools + endCall
+    expect(toolNames).toContain('generateTransferSummary');
+    expect(assistant.model.tools).toHaveLength(6); // 5 function tools + endCall
   });
 
   it('each function tool has type, function.name, function.description, function.parameters', async () => {

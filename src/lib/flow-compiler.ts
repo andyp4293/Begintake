@@ -282,33 +282,46 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
 
       case 'transfer': {
         const config = node.config || {};
-        sections.push(`=== SECTION ${sectionId}: TRANSFER TO ATTORNEY ===`);
+        const isParalegal = config.transferTarget === 'paralegal';
+        const sectionTitle = isParalegal ? 'TRANSFER TO PARALEGAL' : 'TRANSFER TO ATTORNEY';
+        sections.push(`=== SECTION ${sectionId}: ${sectionTitle} ===`);
         sections.push('This is the FINAL step. You MUST complete it to end the call properly.');
         sections.push('');
-        sections.push('STEP 1: Say "One moment while I put together your information."');
-        sections.push('STEP 2: Call the generateTransferSummary tool with ALL data you collected:');
-        sections.push('  - Caller name: the name from Q2');
-        sections.push('  - Caller phone: the phone from Q3');
-        sections.push('  - callerEmail: if collected');
-        sections.push('  - issue: a detailed summary of their legal matter, branch, and all answers');
-        sections.push('  - notes: all sub-questions, answers, petition type, urgency flags, party role');
-        sections.push('STEP 3: After the tool returns, say: "I\'ve sent everything over to our legal team along with your contact information. They\'ll reach out to you directly."');
-        sections.push('STEP 4: Ask: "Is there anything else I can help you with?"');
-        sections.push('STEP 5: If they say no (or anything indicating they are done), say:');
         const transferMsg = config.message || 'Thank you so much for calling. Have a wonderful day. Goodbye!';
-        sections.push(`  "${transferMsg}"`);
-        sections.push('STEP 6: IMMEDIATELY call the endCall tool. The call will NOT end unless you call endCall.');
-        sections.push('');
-        sections.push('CRITICAL: You MUST call endCall after saying goodbye. Do NOT keep talking. Do NOT skip endCall.');
-        sections.push('');
-        sections.push('IF NO ATTORNEY IS AVAILABLE (transfer fails or no one answers):');
-        sections.push('Do NOT end the call abruptly. Instead:');
-        sections.push('  1. Say warmly: "I\'m so sorry - our attorneys are currently with other clients and aren\'t available to take your call right now."');
-        sections.push('  2. Reassure using the number already on file: "Everything you\'ve shared has been saved and an attorney will personally call you back at [the phone number from Q3] as soon as possible."');
-        sections.push('  3. Offer scheduling: "Would you also like to book a scheduled consultation so you have a guaranteed time slot?"');
-        sections.push('     - If yes: call the bookAppointment tool, confirm the date and time, then say "You\'re all set. We\'ll see you then."');
-        sections.push('     - If no: say "Understood. You\'re all set - expect a call from our team soon."');
-        sections.push('  4. Close warmly and call endCall.');
+
+        if (isParalegal) {
+          sections.push('STEP 1: Say "Welcome back! Let me connect you with our team right away. One moment."');
+          sections.push('STEP 2: Call the generateTransferSummary tool with transferTarget="paralegal" and any caller info you have (name, phone).');
+          sections.push('STEP 3: After the tool returns, say:');
+          sections.push(`  "${transferMsg}"`);
+          sections.push('STEP 4: IMMEDIATELY call the endCall tool. The call will NOT end unless you call endCall.');
+          sections.push('');
+          sections.push('IF NO ONE ANSWERS: Say "I\'m sorry - no one is available right now. Please call back during business hours." Then call endCall.');
+        } else {
+          sections.push('STEP 1: Say "One moment while I put together your information."');
+          sections.push('STEP 2: Call the generateTransferSummary tool with transferTarget="attorney" and ALL data you collected:');
+          sections.push('  - Caller name: the name from Q2');
+          sections.push('  - Caller phone: the phone from Q3');
+          sections.push('  - callerEmail: if collected');
+          sections.push('  - issue: a detailed summary of their legal matter, branch, and all answers');
+          sections.push('  - notes: all sub-questions, answers, petition type, urgency flags, party role');
+          sections.push('STEP 3: After the tool returns, say: "I\'ve sent everything over to our legal team along with your contact information. They\'ll reach out to you directly."');
+          sections.push('STEP 4: Ask: "Is there anything else I can help you with?"');
+          sections.push('STEP 5: If they say no (or anything indicating they are done), say:');
+          sections.push(`  "${transferMsg}"`);
+          sections.push('STEP 6: IMMEDIATELY call the endCall tool. The call will NOT end unless you call endCall.');
+          sections.push('');
+          sections.push('CRITICAL: You MUST call endCall after saying goodbye. Do NOT keep talking. Do NOT skip endCall.');
+          sections.push('');
+          sections.push('IF NO ATTORNEY IS AVAILABLE (transfer fails or no one answers):');
+          sections.push('Do NOT end the call abruptly. Instead:');
+          sections.push('  1. Say warmly: "I\'m so sorry - our attorneys are currently with other clients and aren\'t available to take your call right now."');
+          sections.push('  2. Reassure using the number already on file: "Everything you\'ve shared has been saved and an attorney will personally call you back at [the phone number from Q3] as soon as possible."');
+          sections.push('  3. Offer scheduling: "Would you also like to book a scheduled consultation so you have a guaranteed time slot?"');
+          sections.push('     - If yes: call the bookAppointment tool, confirm the date and time, then say "You\'re all set. We\'ll see you then."');
+          sections.push('     - If no: say "Understood. You\'re all set - expect a call from our team soon."');
+          sections.push('  4. Close warmly and call endCall.');
+        }
         sections.push('');
         break;
       }

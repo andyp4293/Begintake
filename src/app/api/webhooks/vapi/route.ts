@@ -174,6 +174,29 @@ function getToolDefinitions() {
     {
       type: 'function',
       function: {
+        name: 'generateTransferSummary',
+        description: 'Used by intake flows at the transfer step. Saves intake data, emails the matched attorney or routes to paralegal based on transferTarget.',
+        parameters: {
+          type: 'object',
+          properties: {
+            transferTarget: { type: 'string', enum: ['attorney', 'paralegal'], description: '"attorney" to route to the best matched attorney, "paralegal" to route to the firm paralegal number' },
+            callerName:     { type: 'string', description: 'Caller name' },
+            callerPhone:    { type: 'string', description: 'Caller phone number' },
+            callerEmail:    { type: 'string', description: 'Caller email address' },
+            issue:          { type: 'string', description: 'Summary of the legal issue' },
+            notes:          { type: 'string', description: 'Detailed intake notes' },
+            petitionType:   { type: 'string', description: 'Petition type flag (e.g. V-Petition, F-Petition)' },
+            matterCategory: { type: 'string', description: 'Matter category from intake' },
+            partyRole:      { type: 'string', description: 'Petitioner or respondent' },
+            urgencyFlag:    { type: 'string', description: 'Urgency flag if set during intake' },
+          },
+          required: ['transferTarget'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'generateSummary',
         description: 'Generate a call summary and email it to the appropriate lawyer',
         parameters: {
@@ -424,6 +447,43 @@ async function handleTransferCall(args: Record<string, unknown>) {
         : `Transferring the call. Reason: ${reason}`,
     },
   };
+}
+
+async function handleGenerateTransferSummary(args: Record<string, unknown>) {
+  const transferTarget = typeof args.transferTarget === 'string' ? args.transferTarget : 'attorney';
+  // Delegate to the shared summary handler which saves data and emails the lawyer
+  const summaryResult = await handleGenerateSummary({ ...args });
+
+  if (transferTarget === 'paralegal') {
+    // Route to firm's general paralegal/reception number instead of the matched attorney
+    const user = await prisma.user.findFirst({
+      where: { transferPhoneNumber: { not: null } },
+      select: { transferPhoneNumber: true },
+    });
+    const phoneNumber = user?.transferPhoneNumber || process.env.TRANSFER_PHONE_NUMBER || null;
+    if (!phoneNumber) {
+      return { ...summaryResult, message: 'No paralegal transfer number configured. Please have the caller call back during business hours.' };
+    }
+    return {
+      ...summaryResult,
+      type: 'transfer',
+      destination: { type: 'number', number: phoneNumber, message: 'Transferring to paralegal.' },
+    };
+  }
+
+  // attorney path: find best matched attorney and transfer to their direct line
+  const issueText = typeof args.issue === 'string' ? args.issue : '';
+  const legalArea = identifyLegalArea(issueText || 'other');
+  const lawyer = await findBestLawyer(legalArea);
+  if (lawyer?.phone) {
+    return {
+      ...summaryResult,
+      type: 'transfer',
+      destination: { type: 'number', number: lawyer.phone, message: `Transferring to ${lawyer.name}.` },
+    };
+  }
+
+  return summaryResult;
 }
 
 async function handleGenerateSummary(args: Record<string, unknown>) {
@@ -689,6 +749,9 @@ export async function POST(req: NextRequest) {
             break;
           case 'transferCall':
             result = await handleTransferCall(args);
+            break;
+          case 'generateTransferSummary':
+            result = await handleGenerateTransferSummary(args);
             break;
           case 'generateSummary':
             result = await handleGenerateSummary(args);

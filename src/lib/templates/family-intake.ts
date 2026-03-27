@@ -33,11 +33,18 @@ export function createFamilyIntakeTemplate() {
     return addNode('response', label, { response: label, instruction: instruction || '' });
   }
 
-  // Transfer node declared early so it can be referenced by any branch (including existing-client bypass)
+  // Transfer node declared early so it can be referenced by any branch
   const transferId = addNode('transfer', 'Transfer to Attorney', {
+    transferTarget: 'attorney',
     message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need to help you effectively. Please hold for just a moment - I'm connecting you now with a member of our legal team.",
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
+  });
+
+  // Separate paralegal transfer for existing clients (bypasses full intake)
+  const transferParalegalId = addNode('transfer', 'Transfer to Paralegal', {
+    transferTarget: 'paralegal',
+    message: "Welcome back! Please hold one moment while I connect you with our team.",
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -70,7 +77,7 @@ export function createFamilyIntakeTemplate() {
   const q1b_existing = response('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with your attorney right away.\" Proceed directly to transfer.");
   const q1b_new      = response('New client - first time calling', 'Proceed to Q2 to collect their information.');
   addEdge(q1b, q1b_existing);
-  addEdge(q1b_existing, transferId);   // existing clients bypass intake → straight to attorney
+  addEdge(q1b_existing, transferParalegalId);   // existing clients → paralegal/reception, not attorney
   addEdge(q1b, q1b_new);
 
   // Q2. Caller name (collect field, no branching)
