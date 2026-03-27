@@ -119,9 +119,12 @@ function NodeCard({
               <>
                 {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
                 {node.config?.options?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
+                  <div className="space-y-1 mt-1">
                     {node.config.options.map((opt: any, i: number) => (
-                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">► {opt.label}</span>
+                      <div key={i} className="flex items-start gap-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500 shrink-0">► {opt.label}</span>
+                        {opt.instruction && <span className="text-[9px] text-zinc-600 italic">→ {opt.instruction}</span>}
+                      </div>
                     ))}
                   </div>
                 )}

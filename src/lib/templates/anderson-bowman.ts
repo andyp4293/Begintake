@@ -55,8 +55,8 @@ export function createAndersonBowmanTemplate() {
   const q1 = addNode('question', 'Q1. Shall we get started?', {
     question: 'Shall we get started?',
     options: [
-      { label: 'Yes, let\'s begin', value: 'yes' },
-      { label: 'What is this for?', value: 'explain' },
+      { label: 'Yes, let\'s begin', value: 'yes', instruction: 'Proceed to Q2.' },
+      { label: 'What is this for?', value: 'explain', instruction: 'Briefly explain: "Of course — I\'m going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes." Then proceed to Q2.' },
     ],
   });
   addEdge(startId, q1);
@@ -81,8 +81,8 @@ export function createAndersonBowmanTemplate() {
   const q4 = addNode('question', 'Q4. Self or On Behalf Of', {
     question: 'Are you calling for yourself, or on behalf of someone else?',
     options: [
-      { label: 'For myself', value: 'self' },
-      { label: 'For a family member', value: 'family' },
+      { label: 'For myself', value: 'self', instruction: 'Proceed to Q5.' },
+      { label: 'For a family member', value: 'family', instruction: 'Ask follow-up: "What is your relationship to them? For example, are you a parent, grandparent, or someone else?" Note the relationship, then proceed to Q5.' },
     ],
   });
   addEdge(q3, q4);
@@ -175,8 +175,8 @@ export function createAndersonBowmanTemplate() {
   const a4 = addNode('question', 'A4. Urgency / Safety Screen', {
     question: 'Is there an immediate safety concern for you or the children right now?',
     options: [
-      { label: 'Yes — immediate safety concern', value: 'urgent' },
-      { label: 'No — routine matter', value: 'routine' },
+      { label: 'Yes — immediate safety concern', value: 'urgent', instruction: 'FLAG URGENT. Say: "I understand — your safety is the priority. Let me get you connected with an attorney right away." Proceed immediately to Transfer.' },
+      { label: 'No — routine matter', value: 'routine', instruction: 'Proceed to Transfer.' },
     ],
     note: 'CRITICAL QUESTION — determines whether emergency application is needed',
   }, -600);

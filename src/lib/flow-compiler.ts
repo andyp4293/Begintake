@@ -155,15 +155,41 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string): str
         const config = node.config || {};
         sections.push(`=== SECTION ${sectionId}: ${node.label.toUpperCase()} ===`);
         sections.push(`Ask the caller: "${config.question || node.label}"`);
-        if (edges.length > 0) {
+
+        // If options have instructions, emit them
+        const options = config.options || [];
+        if (options.length > 0 && options.some((o: any) => o.instruction)) {
           sections.push(`Based on their response:`);
-          for (const edge of edges) {
-            const targetSection = sectionIds.get(edge.targetNodeId);
-            sections.push(`- If they say "${edge.label || 'yes'}" → go to SECTION ${targetSection}`);
+          for (const opt of options) {
+            if (opt.instruction) {
+              sections.push(`- If they say "${opt.label}": ${opt.instruction}`);
+            } else {
+              sections.push(`- If they say "${opt.label}": proceed to next step`);
+            }
           }
         }
+
+        // Edge-based routing (for branching to different sections)
+        if (edges.length > 0) {
+          // Only add "Based on their response:" if we didn't already from options
+          if (!(options.length > 0 && options.some((o: any) => o.instruction))) {
+            sections.push(`Based on their response:`);
+          }
+          if (edges.length > 1) {
+            for (const edge of edges) {
+              const targetSection = sectionIds.get(edge.targetNodeId);
+              sections.push(`- "${edge.label || 'Continue'}" → go to SECTION ${targetSection}`);
+            }
+          } else {
+            sections.push(`Then proceed to SECTION ${sectionIds.get(edges[0].targetNodeId)}.`);
+          }
+        }
+
         if (config.allowFreeform) {
           sections.push(`If their answer doesn't match any option, ask them to clarify or pick the closest option.`);
+        }
+        if (config.note) {
+          sections.push(`Note: ${config.note}`);
         }
         sections.push('');
         break;
