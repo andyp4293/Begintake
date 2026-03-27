@@ -27,6 +27,10 @@ export function createGeneralIntakeTemplate() {
   function resp(label: string, instruction = '') {
     return addNode('response', label, { response: label, instruction });
   }
+  // Q5 triage responses: short label for the card title, full text in config.response for the AI
+  function q5r(shortLabel: string, fullResponse: string, instruction: string) {
+    return addNode('response', shortLabel, { response: fullResponse, instruction });
+  }
 
   // ═══════════════════════════════════════════════════════════════
   // SHARED ENDPOINTS (created first so all branches can reference)
@@ -111,12 +115,12 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 1 — FAMILY LAW
   // ═══════════════════════════════════════════════════════════════
 
-  const famTriage = addNode('decision', 'Family Law - Matter Triage', {
+  const famTriage = addNode('decision', 'Family Law - Matter Triage', { defaultCollapsed: true,
     description: 'What brings you to us today regarding your family matter?',
   });
   // AI routes here when caller describes: custody, divorce, child support, alimony,
   // domestic violence, child welfare, adoption, guardianship, paternity, or juvenile matters.
-  const q5_fam = resp('Caller\'s situation involves family law', 'Route here when the caller describes: custody of children, divorce or separation, child support or alimony, a family member threatening or hurting them, child welfare or ACS involvement, adoption, guardianship, paternity, or a juvenile matter.');
+  const q5_fam = q5r('Family Law', "Caller's situation involves family law", 'Route here when the caller describes: custody of children, divorce or separation, child support or alimony, a family member threatening or hurting them, child welfare or ACS involvement, adoption, guardianship, paternity, or a juvenile matter.');
   addEdge(q5, q5_fam); addEdge(q5_fam, famTriage);
 
   // --- Custody & Visitation ---
@@ -341,10 +345,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 2 — CRIMINAL DEFENSE
   // ═══════════════════════════════════════════════════════════════
 
-  const crimRouting = addNode('decision', 'Criminal - Matter Type', {
+  const crimRouting = addNode('decision', 'Criminal - Matter Type', { defaultCollapsed: true,
     description: 'What type of criminal charge or matter are you facing?',
   });
-  const q5_crim = resp("Caller's situation involves criminal defense", 'Route here when the caller describes: being arrested, facing criminal charges, a DUI, drug offense, assault, theft, domestic violence charge, sex offense, weapons charge, probation violation, warrant, or any criminal investigation or prosecution.');
+  const q5_crim = q5r('Criminal Defense', "Caller's situation involves criminal defense", 'Route here when the caller describes: being arrested, facing criminal charges, a DUI, drug offense, assault, theft, domestic violence charge, sex offense, weapons charge, probation violation, warrant, or any criminal investigation or prosecution.');
   addEdge(q5, q5_crim); addEdge(q5_crim, crimRouting);
 
   const crim_dui   = addNode('action', 'Flag: Criminal - DUI',       { actionType: 'set_flag', flagName: 'criminal_matter', flagValue: 'DUI / drunk driving' });
@@ -425,10 +429,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 3 — IMMIGRATION
   // ═══════════════════════════════════════════════════════════════
 
-  const immRouting = addNode('decision', 'Immigration - Matter Type', {
+  const immRouting = addNode('decision', 'Immigration - Matter Type', { defaultCollapsed: true,
     description: 'What type of immigration matter do you need help with?',
   });
-  const q5_imm = resp("Caller's situation involves immigration", 'Route here when the caller describes: visa issues, deportation or removal, citizenship or naturalization, asylum, green card, work permits, sponsoring a family member, DACA, or any immigration status concern.');
+  const q5_imm = q5r('Immigration', "Caller's situation involves immigration", 'Route here when the caller describes: visa issues, deportation or removal, citizenship or naturalization, asylum, green card, work permits, sponsoring a family member, DACA, or any immigration status concern.');
   addEdge(q5, q5_imm); addEdge(q5_imm, immRouting);
 
   const imm_visa   = addNode('action', 'Flag: Immigration - Visa',       { actionType: 'set_flag', flagName: 'immigration_matter', flagValue: 'Visa application or extension' });
@@ -503,10 +507,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 4 — PERSONAL INJURY
   // ═══════════════════════════════════════════════════════════════
 
-  const piRouting = addNode('decision', 'Personal Injury - Incident Type', {
+  const piRouting = addNode('decision', 'Personal Injury - Incident Type', { defaultCollapsed: true,
     description: 'What type of accident or injury occurred?',
   });
-  const q5_pi = resp("Caller's situation involves personal injury or accident", 'Route here when the caller describes: being hurt in a car accident, slip and fall, medical malpractice, workplace injury, a defective product causing harm, a dog bite, or the wrongful death of a family member due to someone else\'s negligence.');
+  const q5_pi = q5r('Personal Injury', "Caller's situation involves personal injury or accident", 'Route here when the caller describes: being hurt in a car accident, slip and fall, medical malpractice, workplace injury, a defective product causing harm, a dog bite, or the wrongful death of a family member due to someone else\'s negligence.');
   addEdge(q5, q5_pi); addEdge(q5_pi, piRouting);
 
   const pi_car   = addNode('action', 'Flag: PI - Vehicle Accident',    { actionType: 'set_flag', flagName: 'injury_type', flagValue: 'Vehicle accident' });
@@ -571,10 +575,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 5 — CORPORATE / BUSINESS
   // ═══════════════════════════════════════════════════════════════
 
-  const corpRouting = addNode('decision', 'Corporate - Matter Type', {
+  const corpRouting = addNode('decision', 'Corporate - Matter Type', { defaultCollapsed: true,
     description: 'What type of business or corporate matter do you need help with?',
   });
-  const q5_corp = resp("Caller's situation involves business or corporate law", 'Route here when the caller describes: a contract dispute, starting or dissolving a business, a business partnership conflict, merger or acquisition, corporate compliance, or a commercial dispute.');
+  const q5_corp = q5r('Corporate / Business', "Caller's situation involves business or corporate law", 'Route here when the caller describes: a contract dispute, starting or dissolving a business, a business partnership conflict, merger or acquisition, corporate compliance, or a commercial dispute.');
   addEdge(q5, q5_corp); addEdge(q5_corp, corpRouting);
 
   const corp_contract = addNode('action', 'Flag: Corp - Contract',       { actionType: 'set_flag', flagName: 'business_matter', flagValue: 'Contract dispute or drafting' });
@@ -632,10 +636,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 6 — REAL ESTATE
   // ═══════════════════════════════════════════════════════════════
 
-  const reRouting = addNode('decision', 'Real Estate - Matter Type', {
+  const reRouting = addNode('decision', 'Real Estate - Matter Type', { defaultCollapsed: true,
     description: 'What type of real estate matter do you need help with?',
   });
-  const q5_re = resp("Caller's situation involves real estate", 'Route here when the caller describes: buying or selling property, a landlord-tenant dispute, eviction, foreclosure, a title dispute, zoning issues, a construction defect, or a real estate contract problem.');
+  const q5_re = q5r('Real Estate', "Caller's situation involves real estate", 'Route here when the caller describes: buying or selling property, a landlord-tenant dispute, eviction, foreclosure, a title dispute, zoning issues, a construction defect, or a real estate contract problem.');
   addEdge(q5, q5_re); addEdge(q5_re, reRouting);
 
   const re_buy    = addNode('action', 'Flag: RE - Purchase',      { actionType: 'set_flag', flagName: 're_matter', flagValue: 'Property purchase / closing' });
@@ -693,10 +697,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 7 — EMPLOYMENT
   // ═══════════════════════════════════════════════════════════════
 
-  const empRouting = addNode('decision', 'Employment - Matter Type', {
+  const empRouting = addNode('decision', 'Employment - Matter Type', { defaultCollapsed: true,
     description: 'What type of employment or labor matter do you need help with?',
   });
-  const q5_emp = resp("Caller's situation involves employment or labor law", 'Route here when the caller describes: being fired unfairly, workplace discrimination or harassment, unpaid wages, a non-compete or severance agreement, retaliation for whistleblowing, FMLA denial, or any employer-employee dispute.');
+  const q5_emp = q5r('Employment', "Caller's situation involves employment or labor law", 'Route here when the caller describes: being fired unfairly, workplace discrimination or harassment, unpaid wages, a non-compete or severance agreement, retaliation for whistleblowing, FMLA denial, or any employer-employee dispute.');
   addEdge(q5, q5_emp); addEdge(q5_emp, empRouting);
 
   const emp_term  = addNode('action', 'Flag: Emp - Wrongful Term.',   { actionType: 'set_flag', flagName: 'emp_matter', flagValue: 'Wrongful termination' });
@@ -765,10 +769,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 8 — BANKRUPTCY
   // ═══════════════════════════════════════════════════════════════
 
-  const bankRouting = addNode('decision', 'Bankruptcy - Type', {
+  const bankRouting = addNode('decision', 'Bankruptcy - Type', { defaultCollapsed: true,
     description: 'What type of bankruptcy are you considering or currently involved in?',
   });
-  const q5_bank = resp("Caller's situation involves bankruptcy or debt", 'Route here when the caller describes: overwhelming debt, wage garnishment, creditor harassment, potential foreclosure due to inability to pay, or asking about Chapter 7, 11, or 13 bankruptcy.');
+  const q5_bank = q5r('Bankruptcy', "Caller's situation involves bankruptcy or debt", 'Route here when the caller describes: overwhelming debt, wage garnishment, creditor harassment, potential foreclosure due to inability to pay, or asking about Chapter 7, 11, or 13 bankruptcy.');
   addEdge(q5, q5_bank); addEdge(q5_bank, bankRouting);
 
   const bank_7  = addNode('action', 'Flag: Bankruptcy - Chapter 7',  { actionType: 'set_flag', flagName: 'bankruptcy_type', flagValue: 'Chapter 7 - Liquidation' });
@@ -821,10 +825,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 9 — TAX LAW
   // ═══════════════════════════════════════════════════════════════
 
-  const taxRouting = addNode('decision', 'Tax Law - Matter Type', {
+  const taxRouting = addNode('decision', 'Tax Law - Matter Type', { defaultCollapsed: true,
     description: 'What type of tax matter do you need legal help with?',
   });
-  const q5_tax = resp("Caller's situation involves tax law or the IRS", 'Route here when the caller describes: an IRS audit, back taxes owed, a tax lien or levy on wages or bank account, a tax court appeal, suspected tax fraud, or needing help with tax planning or an IRS notice.');
+  const q5_tax = q5r('Tax Law', "Caller's situation involves tax law or the IRS", 'Route here when the caller describes: an IRS audit, back taxes owed, a tax lien or levy on wages or bank account, a tax court appeal, suspected tax fraud, or needing help with tax planning or an IRS notice.');
   addEdge(q5, q5_tax); addEdge(q5_tax, taxRouting);
 
   const tax_audit  = addNode('action', 'Flag: Tax - Audit',         { actionType: 'set_flag', flagName: 'tax_matter', flagValue: 'IRS or state tax audit' });
@@ -887,10 +891,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 10 — ESTATE PLANNING
   // ═══════════════════════════════════════════════════════════════
 
-  const estRouting = addNode('decision', 'Estate Planning - Matter Type', {
+  const estRouting = addNode('decision', 'Estate Planning - Matter Type', { defaultCollapsed: true,
     description: 'What type of estate planning or probate matter do you need help with?',
   });
-  const q5_est = resp("Caller's situation involves estate planning or probate", 'Route here when the caller describes: wanting to write or update a will, setting up a trust, handling a deceased family member\'s estate, needing a power of attorney or healthcare directive, or contesting a will.');
+  const q5_est = q5r('Estate Planning', "Caller's situation involves estate planning or probate", 'Route here when the caller describes: wanting to write or update a will, setting up a trust, handling a deceased family member\'s estate, needing a power of attorney or healthcare directive, or contesting a will.');
   addEdge(q5, q5_est); addEdge(q5_est, estRouting);
 
   const est_will   = addNode('action', 'Flag: Estate - Will',         { actionType: 'set_flag', flagName: 'estate_matter', flagValue: 'Will drafting or updating' });
@@ -945,10 +949,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 11 — INTELLECTUAL PROPERTY
   // ═══════════════════════════════════════════════════════════════
 
-  const ipRouting = addNode('decision', 'IP - Matter Type', {
+  const ipRouting = addNode('decision', 'IP - Matter Type', { defaultCollapsed: true,
     description: 'What type of intellectual property matter do you need help with?',
   });
-  const q5_ip = resp("Caller's situation involves intellectual property", 'Route here when the caller describes: someone copying their brand name or logo, protecting an invention, a copyright infringement, a stolen trade secret, or needing a licensing agreement for creative or technical work.');
+  const q5_ip = q5r('Intellectual Property', "Caller's situation involves intellectual property", 'Route here when the caller describes: someone copying their brand name or logo, protecting an invention, a copyright infringement, a stolen trade secret, or needing a licensing agreement for creative or technical work.');
   addEdge(q5, q5_ip); addEdge(q5_ip, ipRouting);
 
   const ip_tm   = addNode('action', 'Flag: IP - Trademark',   { actionType: 'set_flag', flagName: 'ip_matter', flagValue: 'Trademark registration or infringement' });
@@ -1000,10 +1004,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 12 — CIVIL RIGHTS
   // ═══════════════════════════════════════════════════════════════
 
-  const crRouting = addNode('decision', 'Civil Rights - Matter Type', {
+  const crRouting = addNode('decision', 'Civil Rights - Matter Type', { defaultCollapsed: true,
     description: 'What type of civil rights matter do you need help with?',
   });
-  const q5_cr = resp("Caller's situation involves a civil rights violation", 'Route here when the caller describes: police brutality or misconduct, an unlawful arrest or search, discrimination by a government agency, their free speech or religion being suppressed, or their rights being violated by a public institution.');
+  const q5_cr = q5r('Civil Rights', "Caller's situation involves a civil rights violation", 'Route here when the caller describes: police brutality or misconduct, an unlawful arrest or search, discrimination by a government agency, their free speech or religion being suppressed, or their rights being violated by a public institution.');
   addEdge(q5, q5_cr); addEdge(q5_cr, crRouting);
 
   const cr_police = addNode('action', 'Flag: CR - Police Misconduct',    { actionType: 'set_flag', flagName: 'cr_matter', flagValue: 'Police misconduct / excessive force' });
@@ -1063,10 +1067,10 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 13 — ENVIRONMENTAL
   // ═══════════════════════════════════════════════════════════════
 
-  const envRouting = addNode('decision', 'Environmental - Matter Type', {
+  const envRouting = addNode('decision', 'Environmental - Matter Type', { defaultCollapsed: true,
     description: 'What type of environmental or natural resources matter do you need legal help with?',
   });
-  const q5_env = resp("Caller's situation involves environmental law", 'Route here when the caller describes: contaminated water or soil near their property, an EPA or state agency enforcement action, a permit dispute, natural resource rights (water, minerals), illness from toxic exposure, or a Superfund cleanup liability.');
+  const q5_env = q5r('Environmental', "Caller's situation involves environmental law", 'Route here when the caller describes: contaminated water or soil near their property, an EPA or state agency enforcement action, a permit dispute, natural resource rights (water, minerals), illness from toxic exposure, or a Superfund cleanup liability.');
   addEdge(q5, q5_env); addEdge(q5_env, envRouting);
 
   const env_contam  = addNode('action', 'Flag: Env - Contamination',   { actionType: 'set_flag', flagName: 'env_matter', flagValue: 'Property or water contamination (toxic exposure)' });
@@ -1128,7 +1132,7 @@ export function createGeneralIntakeTemplate() {
     actionType: 'set_flag', flagName: 'practice_area', flagValue: 'General inquiry - attorney consultation required',
     note: 'Catch-all: attorney consultation needed to determine correct practice area',
   });
-  const q5_other = resp("Caller's situation does not clearly match a specific area", 'Route here only if the caller\'s situation genuinely does not fit any of the above categories after careful listening. Say: "That\'s helpful - let me make sure I connect you with someone who can assess exactly what type of help you need."');
+  const q5_other = q5r('Other', "Caller's situation does not clearly match a specific area", 'Route here only if the caller\'s situation genuinely does not fit any of the above categories after careful listening. Say: "That\'s helpful - let me make sure I connect you with someone who can assess exactly what type of help you need."');
   addEdge(q5, q5_other); addEdge(q5_other, otherFlag); addEdge(otherFlag, connectOrSchedule);
 
   return {

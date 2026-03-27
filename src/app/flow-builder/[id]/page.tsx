@@ -27,6 +27,18 @@ interface FEdge { sourceNodeId: string; targetNodeId: string; label: string | nu
 
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
+// Walk primaryParents backwards from targetId to root, collecting IDs along the way.
+// These are the nodes that need to be expanded to make the target visible.
+function computePathToNode(targetId: string, primaryParents: Map<string, string>): string[] {
+  const path: string[] = [];
+  let current: string | undefined = targetId;
+  while (current) {
+    path.unshift(current);
+    current = primaryParents.get(current);
+  }
+  return path;
+}
+
 // Pre-compute which parent "owns" each node for primary rendering.
 // DFS from root: first parent to reach a node is its primary parent.
 function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, string> {
@@ -92,19 +104,24 @@ function CustomSelect({ value, options, onChange }: {
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents, confirm,
+  expandedOverrides, onExpandPath,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
   parentId: string | null; primaryParents: Map<string, string>;
   confirm: (opts: { title?: string; message: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
+  expandedOverrides: Set<string>;
+  onExpandPath: (targetId: string) => void;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string) => void;
   onLinkExisting: (parentId: string, targetId: string) => void;
   onDeleteEdge: (sourceId: string, targetId: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(() => !node.config?.defaultCollapsed);
   const [editing, setEditing] = useState(false);
+  // Force-expanded when parent clicked "Continues to" and this node is on the path
+  const displayExpanded = expandedOverrides.has(node.id) || expanded;
   const color = NODE_COLORS[node.type] || '#666';
 
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
@@ -119,15 +136,15 @@ function NodeCard({
       {/* Node card */}
       <div id={`flow-node-${node.id}`} className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden w-80" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
         <div className="flex items-center gap-2 px-3 py-2">
-          <button onClick={() => setExpanded(!expanded)} className="text-zinc-500 hover:text-white">
-            {childEdges.length > 0 ? (expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
+          <button onClick={() => setExpanded(!displayExpanded)} className="text-zinc-500 hover:text-white">
+            {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
           </button>
           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color, backgroundColor: `${color}15` }}>
             {NODE_LABELS[node.type] ?? node.type}
           </span>
           <input type="text" value={node.label} onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
             className="flex-1 bg-transparent text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600 px-1" />
-          {childEdges.length > 0 && !expanded && (
+          {childEdges.length > 0 && !displayExpanded && (
             <span className="text-[9px] text-zinc-400">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
           )}
           <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-300 hover:text-white px-1">{editing ? 'Done' : 'Edit'}</button>
@@ -353,7 +370,7 @@ function NodeCard({
       </div>
 
       {/* Children */}
-      {expanded && childEdges.map((edge) => {
+      {displayExpanded && childEdges.map((edge) => {
         const childNode = allNodes.find((n) => n.id === edge.targetNodeId);
         if (!childNode) return null;
 
@@ -365,6 +382,7 @@ function NodeCard({
               <NodeCard
                 node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
                 parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                expandedOverrides={expandedOverrides} onExpandPath={onExpandPath}
                 onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
                 onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
               />
@@ -375,28 +393,32 @@ function NodeCard({
                   <span className="text-[10px] text-zinc-300">Continues to:</span>
                   <button
                     onClick={() => {
-                      const el = document.getElementById(`flow-node-${childNode.id}`);
-                      if (!el) return;
-                      el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-                      // Clear any existing highlight first
-                      document.querySelectorAll('[data-highlighted]').forEach((n) => {
-                        (n as HTMLElement).style.outline = '';
-                        (n as HTMLElement).style.borderRadius = '';
-                        (n as HTMLElement).removeAttribute('data-highlighted');
-                      });
-                      // Apply persistent highlight
-                      el.style.outline = '2px solid #22c55e';
-                      el.style.borderRadius = '8px';
-                      el.setAttribute('data-highlighted', 'true');
-                      // Dismiss on next click anywhere
+                      // Expand all nodes on the path so the target is visible, then scroll
+                      onExpandPath(childNode.id);
                       setTimeout(() => {
-                        document.addEventListener('click', function dismiss() {
-                          el.style.outline = '';
-                          el.style.borderRadius = '';
-                          el.removeAttribute('data-highlighted');
-                          document.removeEventListener('click', dismiss);
-                        }, { once: true });
-                      }, 50);
+                        const el = document.getElementById(`flow-node-${childNode.id}`);
+                        if (!el) return;
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+                        // Clear any existing highlight
+                        document.querySelectorAll('[data-highlighted]').forEach((n) => {
+                          (n as HTMLElement).style.outline = '';
+                          (n as HTMLElement).style.borderRadius = '';
+                          (n as HTMLElement).removeAttribute('data-highlighted');
+                        });
+                        // Apply persistent green highlight
+                        el.style.outline = '2px solid #22c55e';
+                        el.style.borderRadius = '8px';
+                        el.setAttribute('data-highlighted', 'true');
+                        // Dismiss on next click anywhere
+                        setTimeout(() => {
+                          document.addEventListener('click', function dismiss() {
+                            el.style.outline = '';
+                            el.style.borderRadius = '';
+                            el.removeAttribute('data-highlighted');
+                            document.removeEventListener('click', dismiss);
+                          }, { once: true });
+                        }, 50);
+                      }, 150);
                     }}
                     className="text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate underline-offset-2 hover:underline transition-colors"
                   >
@@ -416,7 +438,7 @@ function NodeCard({
       })}
 
       {/* Add child */}
-      {expanded && (
+      {displayExpanded && (
         <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
           <AddNodeMenu
             parentId={node.id} parentLabel={node.label} parentType={node.type}
@@ -533,6 +555,7 @@ export default function FlowEditorPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
 
   const updateScrollButtons = useCallback(() => {
     const el = scrollRef.current;
@@ -576,6 +599,10 @@ export default function FlowEditorPage() {
     if (!rootNode) return new Map<string, string>();
     return computePrimaryParents(rootNode.id, edges);
   }, [rootNode?.id, edges]);
+
+  const expandPathToNode = useCallback((targetId: string) => {
+    setExpandedOverrides(new Set(computePathToNode(targetId, primaryParents)));
+  }, [primaryParents]);
 
   if (status === 'loading' || isLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" /></div>;
   if (!session) redirect('/login');
@@ -743,6 +770,7 @@ export default function FlowEditorPage() {
                 <NodeCard
                   node={rootNode} edges={edges} allNodes={nodes} depth={0}
                   parentId={null} primaryParents={primaryParents} confirm={confirm}
+                  expandedOverrides={expandedOverrides} onExpandPath={expandPathToNode}
                   onUpdateNode={updateNode} onDeleteNode={deleteNode}
                   onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
                 />
