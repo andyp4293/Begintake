@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 
 interface Flow {
   id: string;
@@ -21,6 +22,7 @@ interface Flow {
 export default function FlowListPage() {
   const { data: session, status } = useSession();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const { data: flows, isLoading } = useQuery<Flow[]>({
     queryKey: ['flows'],
@@ -188,7 +190,7 @@ export default function FlowListPage() {
                     Edit <ArrowRight className="w-3 h-3" />
                   </Link>
                   <button
-                    onClick={() => { if (confirm('Delete this flow?')) deleteMutation.mutate(flow.id); }}
+                    onClick={async () => { const ok = await confirm({ title: 'Delete Flow', message: `Delete "${flow.name}"? This cannot be undone.`, confirmLabel: 'Delete', destructive: true }); if (ok) deleteMutation.mutate(flow.id); }}
                     className="p-1 text-zinc-600 hover:text-red-400 transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />

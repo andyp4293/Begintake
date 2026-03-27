@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 
 const NODE_COLORS: Record<string, string> = {
   start: '#22c55e', question: '#3b82f6', collect_info: '#a855f7',
@@ -51,11 +52,12 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
 // ─── Node card component ──────────────────────────────────────────────────
 
 function NodeCard({
-  node, edges, allNodes, depth, parentId, primaryParents,
+  node, edges, allNodes, depth, parentId, primaryParents, confirm,
   onUpdateNode, onDeleteNode, onAddChild, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
   parentId: string | null; primaryParents: Map<string, string>;
+  confirm: (opts: { title?: string; message: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string, edgeLabel?: string) => void;
@@ -91,7 +93,10 @@ function NodeCard({
           )}
           <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-500 hover:text-white px-1">{editing ? 'Done' : 'Edit'}</button>
           {node.type !== 'start' && (
-            <button onClick={() => { if (confirm(`Delete "${node.label}"? This cannot be undone.`)) onDeleteNode(node.id); }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+            <button onClick={async () => {
+              const ok = await confirm({ title: 'Delete Step', message: `Delete "${node.label}"? This will also remove any steps connected only to this one.`, confirmLabel: 'Delete', destructive: true });
+              if (ok) onDeleteNode(node.id);
+            }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
           )}
         </div>
 
@@ -253,7 +258,7 @@ function NodeCard({
             )}
             <NodeCard
               node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-              parentId={node.id} primaryParents={primaryParents}
+              parentId={node.id} primaryParents={primaryParents} confirm={confirm}
               onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
               onAddChild={onAddChild} onDeleteEdge={onDeleteEdge}
             />
@@ -307,6 +312,7 @@ function AddNodeMenu({ parentId, onAdd }: {
 export default function FlowEditorPage() {
   const { data: session, status } = useSession();
   const params = useParams();
+  const confirm = useConfirm();
   const flowId = params.id as string;
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
@@ -411,7 +417,7 @@ export default function FlowEditorPage() {
         {rootNode && (
           <NodeCard
             node={rootNode} edges={edges} allNodes={nodes} depth={0}
-            parentId={null} primaryParents={primaryParents}
+            parentId={null} primaryParents={primaryParents} confirm={confirm}
             onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
             onDeleteEdge={deleteEdge}
           />
