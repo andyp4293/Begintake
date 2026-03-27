@@ -460,9 +460,16 @@ describe('Anderson Bowman template', () => {
     const node = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
     expect(node).toBeDefined();
     expect(node!.type).toBe('question');
-    expect(node!.config.options).toHaveLength(2);
-    expect(node!.config.options[0].value).toBe('now');
-    expect(node!.config.options[1].value).toBe('schedule');
+    // Options are now separate Response child nodes, not a config.options array
+    const outEdges = template.edges.filter((e: any) => e.sourceNodeId === node!.id);
+    expect(outEdges).toHaveLength(2);
+    const responseNodes = outEdges.map((e: any) =>
+      template.nodes.find((n: any) => n.id === e.targetNodeId)
+    );
+    expect(responseNodes.every((n: any) => n.type === 'response')).toBe(true);
+    const responseLabels = responseNodes.map((n: any) => n.label);
+    expect(responseLabels).toContain('Connect me now');
+    expect(responseLabels).toContain('Schedule a consultation');
   });
 
   it('Connect or Schedule routes to both transfer and appointment booking', () => {
@@ -471,11 +478,16 @@ describe('Anderson Bowman template', () => {
     const transfer = template.nodes.find((n: any) => n.type === 'transfer');
     const booking = template.nodes.find((n: any) => n.label === 'Book Consultation');
     expect(cos).toBeDefined();
+    // cos -> Response nodes (cos_now, cos_schedule)
     const outEdges = template.edges.filter((e: any) => e.sourceNodeId === cos!.id);
     expect(outEdges).toHaveLength(2);
-    const targets = outEdges.map((e: any) => e.targetNodeId);
-    expect(targets).toContain(transfer!.id);
-    expect(targets).toContain(booking!.id);
+    const responseIds = outEdges.map((e: any) => e.targetNodeId);
+    // Each Response node leads to transfer or booking
+    const secondHopTargets = responseIds.flatMap((rid: string) =>
+      template.edges.filter((e: any) => e.sourceNodeId === rid).map((e: any) => e.targetNodeId)
+    );
+    expect(secondHopTargets).toContain(transfer!.id);
+    expect(secondHopTargets).toContain(booking!.id);
   });
 
   it('has a Book Consultation action node with book_appointment type', () => {
@@ -500,10 +512,19 @@ describe('Anderson Bowman template', () => {
     const bookingEdge = template.edges.find((e: any) => e.sourceNodeId === booking!.id);
     expect(bookingEdge!.targetNodeId).toBe(nothingElse!.id);
 
-    // nothingElse -> end (both answer paths)
+    // nothingElse -> Response nodes -> end (both answer paths go through Response nodes)
     const nothingElseEdges = template.edges.filter((e: any) => e.sourceNodeId === nothingElse!.id);
     expect(nothingElseEdges.length).toBeGreaterThanOrEqual(1);
-    nothingElseEdges.forEach((e: any) => expect(e.targetNodeId).toBe(endNode!.id));
+    // Each edge from nothingElse targets a Response node, which then targets endNode
+    nothingElseEdges.forEach((e: any) => {
+      const responseNode = template.nodes.find((n: any) => n.id === e.targetNodeId);
+      if (responseNode && responseNode.type === 'response') {
+        const hopEdge = template.edges.find((he: any) => he.sourceNodeId === responseNode.id);
+        expect(hopEdge!.targetNodeId).toBe(endNode!.id);
+      } else {
+        expect(e.targetNodeId).toBe(endNode!.id);
+      }
+    });
   });
 
   it('emergency paths bypass scheduling and go directly to transfer', () => {
@@ -517,17 +538,25 @@ describe('Anderson Bowman template', () => {
     const emergencyEdge = template.edges.find((e: any) => e.sourceNodeId === emergency!.id);
     expect(emergencyEdge!.targetNodeId).toBe(transfer!.id);
 
-    // a4 urgent edge -> transfer directly (not via cos)
-    const a4UrgentEdge = template.edges.find(
-      (e: any) => e.sourceNodeId === a4!.id && e.label === 'Urgent - emergency custody'
+    // a4 -> Response nodes; urgent Response -> transfer, routine Response -> cos
+    const a4OutEdges = template.edges.filter((e: any) => e.sourceNodeId === a4!.id);
+    const a4ResponseNodes = a4OutEdges.map((e: any) =>
+      template.nodes.find((n: any) => n.id === e.targetNodeId)
     );
-    expect(a4UrgentEdge!.targetNodeId).toBe(transfer!.id);
 
-    // a4 routine edge -> cos (not direct transfer)
-    const a4RoutineEdge = template.edges.find(
-      (e: any) => e.sourceNodeId === a4!.id && e.label === 'Routine - proceed to transfer'
-    );
-    expect(a4RoutineEdge!.targetNodeId).toBe(cos!.id);
+    // Find the urgent Response node (the one whose next hop is transfer)
+    const urgentResponse = a4ResponseNodes.find((n: any) => {
+      const hop = template.edges.find((e: any) => e.sourceNodeId === n.id);
+      return hop && hop.targetNodeId === transfer!.id;
+    });
+    expect(urgentResponse).toBeDefined();
+
+    // Find the routine Response node (the one whose next hop is cos)
+    const routineResponse = a4ResponseNodes.find((n: any) => {
+      const hop = template.edges.find((e: any) => e.sourceNodeId === n.id);
+      return hop && hop.targetNodeId === cos!.id;
+    });
+    expect(routineResponse).toBeDefined();
   });
 
   it('no non-emergency branch endpoints connect directly to transfer (all go via Connect or Schedule)', () => {
@@ -535,16 +564,36 @@ describe('Anderson Bowman template', () => {
     const transfer = template.nodes.find((n: any) => n.type === 'transfer');
     const emergency = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
     const a4 = template.nodes.find((n: any) => n.label === 'A4. Urgency / Safety Screen');
+    const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
 
-    const allowedDirectToTransfer = new Set([emergency!.id, a4!.id]);
+    // In the new Response-node pattern, edges to transfer can come from:
+    // 1. cEmergency (emergency action node) - direct bypass
+    // 2. a4_urgent (Response child of a4) - urgent bypass
+    // 3. cos_now (Response child of cos) - the "Connect me now" path
+
+    // Get Response children of a4 and cos
+    const a4ResponseIds = new Set(
+      template.edges
+        .filter((e: any) => e.sourceNodeId === a4!.id)
+        .map((e: any) => e.targetNodeId)
+    );
+    const cosResponseIds = new Set(
+      template.edges
+        .filter((e: any) => e.sourceNodeId === cos!.id)
+        .map((e: any) => e.targetNodeId)
+    );
+
+    const allowedDirectToTransfer = new Set([
+      emergency!.id,
+      ...Array.from(a4ResponseIds),
+      ...Array.from(cosResponseIds),
+    ]);
+
     const directToTransfer = template.edges.filter(
       (e: any) => e.targetNodeId === transfer!.id && !allowedDirectToTransfer.has(e.sourceNodeId)
     );
-    // Only the Connect or Schedule node itself should be a non-emergency direct transfer source
-    const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
-    directToTransfer.forEach((e: any) => {
-      expect(e.sourceNodeId).toBe(cos!.id);
-    });
+    // No other node should connect directly to transfer
+    expect(directToTransfer).toHaveLength(0);
   });
 
   // ── Dead-end / orphan audit ──────────────────────────────────────────────

@@ -2,19 +2,9 @@
  * Anderson Bowman PLLC - AI Receptionist Intake Script
  * Family Court Practice Group - Kew Gardens, New York
  *
- * This template encodes the full 9-page intake script as a flow graph.
- * Labels match the attorney review document exactly:
- *   Section 0: Q1–Q4 (Opening & Caller Identification)
- *   Section 1: Q5 (Primary Matter Triage)
- *   Branch A: A1–A4 (Custody & Visitation)
- *   Branch B: B1–B3 (Child Support & Spousal Maintenance)
- *   Branch C: C1–C2 (Family Offense / Order of Protection)
- *   Branch D: D1–D2 (Child Welfare / ACS)
- *   Branch E: Paternity routing
- *   Branch F: Adoption & Guardianship routing
- *   Branch G: Juvenile Delinquency & PINS routing
- *   Branch H: Other / Miscellaneous routing
- *   Transfer Protocol
+ * Uses the new Response node pattern:
+ *   Question -> Response (per answer) -> next step
+ * This gives each answer its own visible branch in the flow builder.
  */
 
 let nodeCounter = 0;
@@ -28,19 +18,20 @@ export function createAndersonBowmanTemplate() {
 
   const nodes: any[] = [];
   const edges: any[] = [];
-  let y = 0;
 
-  function addNode(type: string, label: string, config: any, x = 0) {
+  function addNode(type: string, label: string, config: any) {
     const id = nodeId();
-    nodes.push({ id, type, label, config, positionX: x, positionY: y, sortOrder: nodes.length });
-    y += 150;
+    nodes.push({ id, type, label, config, positionX: 0, positionY: nodes.length * 120, sortOrder: nodes.length });
     return id;
   }
 
-  function addEdge(sourceId: string, targetId: string, label?: string, condition?: any) {
+  function addEdge(sourceId: string, targetId: string) {
     const id = edgeId();
-    edges.push({ id, sourceNodeId: sourceId, targetNodeId: targetId, label: label || null, condition: condition || null, sortOrder: edges.length });
-    return id;
+    edges.push({ id, sourceNodeId: sourceId, targetNodeId: targetId, label: null, condition: null, sortOrder: edges.length });
+  }
+
+  function response(label: string, instruction?: string) {
+    return addNode('response', label, { response: label, instruction: instruction || '' });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -52,318 +43,289 @@ export function createAndersonBowmanTemplate() {
   });
 
   // Q1. Shall we get started?
-  const q1 = addNode('question', 'Q1. Shall we get started?', {
-    question: 'Shall we get started?',
-    options: [
-      { label: 'Yes, let\'s begin', value: 'yes', instruction: 'Proceed to Q2.' },
-      { label: 'What is this for?', value: 'explain', instruction: 'Briefly explain: "Of course - I\'m going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes." Then proceed to Q2.' },
-    ],
-  });
+  const q1 = addNode('question', 'Q1. Shall we get started?', { question: 'Shall we get started?' });
   addEdge(startId, q1);
 
-  // Q2. May I have your first and last name?
+  // Q2. Caller name (collect field, no branching)
   const q2 = addNode('question', 'Q2. Caller Name', {
     question: 'Could I start with your first and last name?',
-    options: [],
-    collectFields: [
-      { name: 'caller_name', label: 'First and last name', type: 'text', required: true },
-    ],
+    collectFields: [{ name: 'caller_name', label: 'First and last name', type: 'text', required: true }],
   });
-  addEdge(q1, q2, 'Continue');
 
-  // Q3. Best phone number to reach you?
+  // Q1 responses - both lead to Q2
+  const q1_yes = response("Yes, let's begin", 'Proceed to Q2.');
+  const q1_explain = response("What is this for?", "Briefly explain: \"Of course - I'm going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes.\" Then proceed to Q2.");
+  addEdge(q1, q1_yes);
+  addEdge(q1_yes, q2);
+  addEdge(q1, q1_explain);
+  addEdge(q1_explain, q2); // shared target - shows as "Continues to: Q2"
+
+  // Q3. Best phone number
   const q3 = addNode('question', 'Q3. Best Number to Reach You', {
-    question: 'Is the number you\'re calling from the best number to reach you in case we get disconnected?',
-    options: [
-      { label: 'Yes, this number is fine', value: 'yes', instruction: 'Note: use the caller\'s phone number from the call. Proceed to Q4.' },
-      { label: 'No, use a different number', value: 'no', instruction: 'Ask: "What\'s the best number to reach you?" Collect and note the number, then proceed to Q4.' },
-    ],
+    question: "Is the number you're calling from the best number to reach you in case we get disconnected?",
   });
   addEdge(q2, q3);
 
-  // Q4. Calling for yourself or someone else?
+  // Q4. Self or on behalf of
   const q4 = addNode('question', 'Q4. Self or On Behalf Of', {
     question: 'Are you calling for yourself, or on behalf of someone else?',
-    options: [
-      { label: 'For myself', value: 'self', instruction: 'Proceed to Q5.' },
-      { label: 'For a family member', value: 'family', instruction: 'Ask follow-up: "What is your relationship to them? For example, are you a parent, grandparent, or someone else?" Note the relationship, then proceed to Q5.' },
-    ],
   });
-  addEdge(q3, q4);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SECTION 1 - PRIMARY MATTER TRIAGE
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Q3 responses - both lead to Q4
+  const q3_yes = response('Yes, this number is fine', "Note the caller's phone number from the call. Proceed to Q4.");
+  const q3_no = response('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note the number, then proceed to Q4.");
+  addEdge(q3, q3_yes);
+  addEdge(q3_yes, q4);
+  addEdge(q3, q3_no);
+  addEdge(q3_no, q4);
 
-  // Q5. What brings you to the firm today?
+  // Q5. Primary matter triage
   const q5 = addNode('question', 'Q5. What brings you to the firm today?', {
     question: 'What brings you to the firm today?',
-    options: [
-      { label: 'My children - custody or visitation', value: 'A' },
-      { label: 'Child support or spousal support', value: 'B' },
-      { label: 'A family member is threatening or hurting me', value: 'C' },
-      { label: 'A child\'s safety or welfare concern', value: 'D' },
-      { label: 'Paternity - establishing who the father is', value: 'E' },
-      { label: 'Adoption or guardianship', value: 'F' },
-      { label: 'A juvenile matter', value: 'G' },
-      { label: 'Something else', value: 'H' },
-    ],
-    allowFreeform: true,
   });
-  addEdge(q4, q5);
+
+  // Q4 responses - both lead to Q5
+  const q4_self = response('For myself', 'Proceed to Q5.');
+  const q4_family = response('For a family member', 'Ask follow-up: "What is your relationship to them? For example, are you a parent, grandparent, or someone else?" Note the relationship, then proceed to Q5.');
+  addEdge(q4, q4_self);
+  addEdge(q4_self, q5);
+  addEdge(q4, q4_family);
+  addEdge(q4_family, q5);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH A - CUSTODY & VISITATION [V-Petition, FCA Art. 6]
+  // SECTION 1 - PRIMARY MATTER TRIAGE (Q5 responses -> branches)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Routing table: custody order status
+  // ── BRANCH A - CUSTODY & VISITATION ─────────────────────────────────────
   const branchARouting = addNode('decision', 'Branch A - Custody Order Status', {
     description: 'Is there currently a custody order in place, or would this be a new filing?',
-  }, -600);
-  addEdge(q5, branchARouting, 'Custody or visitation');
+  });
+  const q5_a = response('My children - custody or visitation');
+  addEdge(q5, q5_a);
+  addEdge(q5_a, branchARouting);
 
   const aNew = addNode('action', 'Flag: V-Petition - new', {
     actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition (Custody) - new',
-  }, -600);
-
+  });
   const aMod = addNode('action', 'Flag: V-Petition - modification', {
     actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition - modification',
     note: 'Substantial change in circumstances required',
-  }, -400);
-
+  });
   const aViolation = addNode('action', 'Flag: V-Petition - violation/enforcement', {
     actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition - violation/enforcement',
     note: 'Flag potential contempt/enforcement',
-  }, -200);
+  });
 
-  addEdge(branchARouting, aNew, 'No order exists');
-  addEdge(branchARouting, aMod, 'Order exists - want to modify');
-  addEdge(branchARouting, aViolation, 'Order exists - being violated');
+  const branchA_new = response('No order exists');
+  const branchA_mod = response('Order exists - want to modify');
+  const branchA_viol = response('Order exists - being violated');
+  addEdge(branchARouting, branchA_new);   addEdge(branchA_new, aNew);
+  addEdge(branchARouting, branchA_mod);   addEdge(branchA_mod, aMod);
+  addEdge(branchARouting, branchA_viol);  addEdge(branchA_viol, aViolation);
 
-  // A1. Marital / Relationship Status
   const a1 = addNode('question', 'A1. Marital / Relationship Status', {
     question: 'What is your marital or relationship status with the other parent?',
-    options: [
-      { label: 'Married or divorcing', value: 'married' },
-      { label: 'Never married', value: 'never_married' },
-      { label: 'Separated or divorced', value: 'separated' },
-    ],
     note: 'Married/divorcing may need Supreme Court referral for divorce',
-  }, -600);
+  });
   addEdge(aNew, a1);
   addEdge(aMod, a1);
   addEdge(aViolation, a1);
 
-  // A2. Type of Custody Sought
   const a2 = addNode('question', 'A2. Type of Custody Sought', {
     question: 'Are you seeking physical custody, legal custody, or both?',
-    options: [
-      { label: 'Physical custody (residence)', value: 'physical' },
-      { label: 'Legal custody (decision-making)', value: 'legal' },
-      { label: 'Both / unsure', value: 'both' },
-    ],
-  }, -600);
-  addEdge(a1, a2);
+  });
+  const a1_married = response('Married or divorcing', 'Note: may need Supreme Court referral for divorce.');
+  const a1_never   = response('Never married');
+  const a1_sep     = response('Separated or divorced');
+  addEdge(a1, a1_married); addEdge(a1_married, a2);
+  addEdge(a1, a1_never);   addEdge(a1_never, a2);
+  addEdge(a1, a1_sep);     addEdge(a1_sep, a2);
 
-  // A3. Number and Ages of Children
   const a3 = addNode('question', 'A3. Number and Ages of Children', {
     question: 'How many children are involved, and how old are they?',
-    options: [],
     collectFields: [
       { name: 'num_children', label: 'How many children are involved', type: 'text', required: true },
       { name: 'children_ages', label: 'Ages of each child', type: 'text', required: true },
     ],
     note: 'If teenager 13-17, court may consider child preference',
-  }, -600);
-  addEdge(a2, a3);
+  });
+  const a2_physical = response('Physical custody (residence)');
+  const a2_legal    = response('Legal custody (decision-making)');
+  const a2_both     = response('Both / unsure');
+  addEdge(a2, a2_physical); addEdge(a2_physical, a3);
+  addEdge(a2, a2_legal);    addEdge(a2_legal, a3);
+  addEdge(a2, a2_both);     addEdge(a2_both, a3);
 
-  // A4. Urgency / Safety Screen
   const a4 = addNode('question', 'A4. Urgency / Safety Screen', {
     question: 'Is there an immediate safety concern for you or the children right now?',
-    options: [
-      { label: 'Yes - immediate safety concern', value: 'urgent', instruction: 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away." Proceed immediately to Transfer.' },
-      { label: 'No - routine matter', value: 'routine', instruction: 'Proceed to Transfer.' },
-    ],
     note: 'CRITICAL QUESTION - determines whether emergency application is needed',
-  }, -600);
+  });
   addEdge(a3, a4);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH B - CHILD SUPPORT & SPOUSAL MAINTENANCE [F-Petition, FCA Art. 4]
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Routing table: support filing status
+  // ── BRANCH B - CHILD SUPPORT & SPOUSAL MAINTENANCE ──────────────────────
   const branchBRouting = addNode('decision', 'Branch B - Support Filing Status', {
-    description: 'Are you looking to file for support for the first time, modify an existing order, or enforce an order that isn\'t being followed?',
-  }, -300);
-  addEdge(q5, branchBRouting, 'Child support or spousal support');
+    description: "Are you looking to file for support for the first time, modify an existing order, or enforce an order that isn't being followed?",
+  });
+  const q5_b = response('Child support or spousal support');
+  addEdge(q5, q5_b);
+  addEdge(q5_b, branchBRouting);
 
-  const bNew = addNode('action', 'Flag: F-Petition - new', {
-    actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition (Support) - new',
-  }, -300);
+  const bNew     = addNode('action', 'Flag: F-Petition - new', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition (Support) - new' });
+  const bMod     = addNode('action', 'Flag: F-Petition - modification', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - modification', note: 'Must show substantial change in circumstances' });
+  const bEnforce = addNode('action', 'Flag: F-Petition - enforcement', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - violation/enforcement' });
 
-  const bMod = addNode('action', 'Flag: F-Petition - modification', {
-    actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - modification',
-    note: 'Must show substantial change in circumstances',
-  }, -200);
+  const branchB_new     = response('New - first time');
+  const branchB_mod     = response('Modify existing order');
+  const branchB_enforce = response('Enforce - not being paid');
+  addEdge(branchBRouting, branchB_new);     addEdge(branchB_new, bNew);
+  addEdge(branchBRouting, branchB_mod);     addEdge(branchB_mod, bMod);
+  addEdge(branchBRouting, branchB_enforce); addEdge(branchB_enforce, bEnforce);
 
-  const bEnforce = addNode('action', 'Flag: F-Petition - enforcement', {
-    actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - violation/enforcement',
-  }, -100);
-
-  addEdge(branchBRouting, bNew, 'New - first time');
-  addEdge(branchBRouting, bMod, 'Modify existing order');
-  addEdge(branchBRouting, bEnforce, 'Enforce - not being paid');
-
-  // B1. Type of Support
   const b1 = addNode('question', 'B1. Type of Support', {
     question: 'Are you looking for child support, spousal maintenance, or both?',
-    options: [
-      { label: 'Child support only', value: 'child' },
-      { label: 'Spousal maintenance only', value: 'spousal' },
-      { label: 'Both', value: 'both' },
-    ],
-  }, -300);
-  addEdge(bNew, b1);
-  addEdge(bMod, b1);
-  addEdge(bEnforce, b1);
+  });
+  addEdge(bNew, b1); addEdge(bMod, b1); addEdge(bEnforce, b1);
 
-  // B2. Arrears (enforcement matters only)
   const b2 = addNode('question', 'B2. Arrears Period (if enforcement)', {
-    question: 'How long has it been since you last received the support payments you\'re owed?',
-    options: [
-      { label: 'Less than 3 months', value: 'lt3mo' },
-      { label: '3 to 12 months', value: '3to12mo' },
-      { label: 'Over 1 year', value: 'gt1yr' },
-    ],
+    question: "How long has it been since you last received the support payments you're owed?",
     note: 'Over 1 year = flag significant arrears, possible CSEA referral / income execution',
-  }, -300);
-  addEdge(b1, b2);
+  });
+  const b1_child   = response('Child support only');
+  const b1_spousal = response('Spousal maintenance only');
+  const b1_both    = response('Both');
+  addEdge(b1, b1_child);   addEdge(b1_child, b2);
+  addEdge(b1, b1_spousal); addEdge(b1_spousal, b2);
+  addEdge(b1, b1_both);    addEdge(b1_both, b2);
 
-  // B3. Party Role
   const b3 = addNode('question', 'B3. Party Role', {
     question: 'Are you the one receiving support, or being asked to pay?',
-    options: [
-      { label: 'Receiving support (Petitioner)', value: 'petitioner' },
-      { label: 'Being asked to pay (Respondent)', value: 'respondent' },
-    ],
     note: 'Respondent = respondent-side representation',
-  }, -300);
-  addEdge(b2, b3);
+  });
+  const b2_lt3  = response('Less than 3 months');
+  const b2_3to12 = response('3 to 12 months');
+  const b2_gt1  = response('Over 1 year', 'Flag significant arrears - possible CSEA referral / income execution.');
+  addEdge(b2, b2_lt3);   addEdge(b2_lt3, b3);
+  addEdge(b2, b2_3to12); addEdge(b2_3to12, b3);
+  addEdge(b2, b2_gt1);   addEdge(b2_gt1, b3);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH C - FAMILY OFFENSE / ORDER OF PROTECTION [O-Petition, FCA Art. 8]
-  // SAFETY-FIRST PROTOCOL
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Safety check (before any other questions)
+  // ── BRANCH C - FAMILY OFFENSE / ORDER OF PROTECTION ─────────────────────
   const cSafety = addNode('question', 'Branch C - Safety Check', {
     question: 'First, I need to ask - are you in a safe place right now?',
-    options: [
-      { label: 'Yes, I am safe', value: 'safe' },
-      { label: 'No, or I\'m not sure', value: 'unsafe' },
-    ],
     note: 'SAFETY-FIRST PROTOCOL - caller safety must be confirmed before proceeding',
-  }, 0);
-  addEdge(q5, cSafety, 'Family member threatening or hurting me');
+  });
+  const q5_c = response('A family member is threatening or hurting me');
+  addEdge(q5, q5_c);
+  addEdge(q5_c, cSafety);
 
   const cEmergency = addNode('action', 'EMERGENCY - Advise 911', {
     actionType: 'set_flag', flagName: 'urgencyFlag', flagValue: 'safety_first',
     petitionType: 'O-Petition - emergency order of protection',
     note: 'EMERGENCY PROTOCOL: Advise caller to call 911 immediately. Offer immediate attorney transfer.',
-  }, 100);
-  addEdge(cSafety, cEmergency, 'Not safe / unsure');
-
-  // C1. Nature of Conduct
+  });
   const c1 = addNode('question', 'C1. Nature of Conduct', {
     question: 'Can you tell me a little about what has been happening?',
-    options: [
-      { label: 'Physical violence or threats', value: 'physical' },
-      { label: 'Harassment, stalking, or intimidation', value: 'harassment' },
-      { label: 'Emotional / psychological abuse', value: 'emotional' },
-      { label: 'Sexual abuse', value: 'sexual' },
-    ],
-  }, 0);
-  addEdge(cSafety, c1, 'Caller is safe');
+  });
 
-  // C2. Relationship to Respondent
+  const cSafety_unsafe = response("No, or I'm not sure", 'EMERGENCY: Advise caller to call 911 immediately. Offer immediate attorney transfer.');
+  const cSafety_safe   = response('Yes, I am safe', 'Continue intake.');
+  addEdge(cSafety, cSafety_unsafe); addEdge(cSafety_unsafe, cEmergency);
+  addEdge(cSafety, cSafety_safe);   addEdge(cSafety_safe, c1);
+
   const c2 = addNode('question', 'C2. Relationship to Respondent', {
     question: 'What is your relationship to the person who is doing this?',
-    options: [
-      { label: 'Spouse or former spouse', value: 'spouse' },
-      { label: 'Co-parent or parent of my child', value: 'coparent' },
-      { label: 'Parent or sibling (family member)', value: 'family' },
-      { label: 'Intimate partner / boyfriend / girlfriend', value: 'partner' },
-    ],
-  }, 0);
-  addEdge(c1, c2);
+  });
+  const c1_physical   = response('Physical violence or threats');
+  const c1_harassment = response('Harassment, stalking, or intimidation');
+  const c1_emotional  = response('Emotional / psychological abuse');
+  const c1_sexual     = response('Sexual abuse');
+  addEdge(c1, c1_physical);   addEdge(c1_physical, c2);
+  addEdge(c1, c1_harassment); addEdge(c1_harassment, c2);
+  addEdge(c1, c1_emotional);  addEdge(c1_emotional, c2);
+  addEdge(c1, c1_sexual);     addEdge(c1_sexual, c2);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH D - CHILD WELFARE / ACS [N-Petition / A-Petition, FCA Art. 10]
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // ── BRANCH D - CHILD WELFARE / ACS ──────────────────────────────────────
   const branchDRouting = addNode('decision', 'Branch D - ACS / Child Welfare', {
-    description: 'Can you tell me more about the situation? Did ACS come to your home, are you concerned about a child elsewhere, or is this a foster care matter?',
-  }, 300);
-  addEdge(q5, branchDRouting, 'Child\'s safety or welfare concern');
+    description: "Can you tell me more about the situation? Did ACS come to your home, are you concerned about a child elsewhere, or is this a foster care matter?",
+  });
+  const q5_d = response("A child's safety or welfare concern");
+  addEdge(q5, q5_d);
+  addEdge(q5_d, branchDRouting);
 
-  // D1. Stage of ACS Involvement
   const d1 = addNode('question', 'D1. Stage of ACS Involvement', {
     question: 'Has ACS come to your home? And is there a court date scheduled?',
-    options: [
-      { label: 'ACS at investigation stage - no court date yet', value: 'investigation' },
-      { label: 'Petition filed - court date scheduled', value: 'court_date' },
-    ],
     note: 'If court date imminent, flag URGENT',
-  }, 300);
-  addEdge(branchDRouting, d1, 'ACS came to my home');
-
-  // D2. Foster Care Sub-Branch
+  });
   const d2 = addNode('question', 'D2. Foster Care Sub-Branch', {
     question: 'What kind of foster care matter is this?',
-    options: [
-      { label: 'Extension of placement / permanency hearing', value: 'placement' },
-      { label: 'Foster-to-adopt', value: 'foster_adopt' },
-      { label: 'Dispute with agency', value: 'agency_dispute' },
-    ],
-  }, 400);
-  addEdge(branchDRouting, d2, 'Foster parent legal matter');
+  });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH E - PATERNITY [P-Petition, FCA Art. 5]
-  // ═══════════════════════════════════════════════════════════════════════════
+  const branchD_acs     = response('ACS came to my home');
+  const branchD_child   = response('Concerned about a child elsewhere');
+  const branchD_foster  = response('Foster parent legal matter');
+  addEdge(branchDRouting, branchD_acs);    addEdge(branchD_acs, d1);
+  addEdge(branchDRouting, branchD_child);
+  addEdge(branchDRouting, branchD_foster); addEdge(branchD_foster, d2);
 
+  const d1_investigation = response('ACS at investigation stage - no court date yet');
+  const d1_court         = response('Petition filed - court date scheduled', 'FLAG URGENT - court date imminent.');
+  // both d1 responses lead to connectOrSchedule (added below)
+
+  const d2_placement = response('Extension of placement / permanency hearing');
+  const d2_adopt     = response('Foster-to-adopt');
+  const d2_dispute   = response('Dispute with agency');
+  addEdge(d1, d1_investigation);
+  addEdge(d1, d1_court);
+  addEdge(d2, d2_placement);
+  addEdge(d2, d2_adopt);
+  addEdge(d2, d2_dispute);
+
+  // ── BRANCH E - PATERNITY ─────────────────────────────────────────────────
   const branchERouting = addNode('decision', 'Branch E - Paternity', {
     description: 'Are you a mother looking to establish paternity, a father seeking parental rights, or someone disputing paternity?',
-  }, 600);
-  addEdge(q5, branchERouting, 'Paternity');
+  });
+  const q5_e = response('Paternity - establishing who the father is');
+  addEdge(q5, q5_e);
+  addEdge(q5_e, branchERouting);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH F - ADOPTION & GUARDIANSHIP
-  // ═══════════════════════════════════════════════════════════════════════════
+  const branchE_mother = response('Mother seeking to establish');
+  const branchE_father = response('Father seeking rights', 'May need to establish paternity first before custody petition.');
+  const branchE_dispute = response('Alleged father disputing', 'DNA challenge / Respondent representation.');
+  addEdge(branchERouting, branchE_mother);
+  addEdge(branchERouting, branchE_father);
+  addEdge(branchERouting, branchE_dispute);
 
+  // ── BRANCH F - ADOPTION & GUARDIANSHIP ──────────────────────────────────
   const branchFRouting = addNode('decision', 'Branch F - Adoption / Guardianship', {
     description: 'What type of adoption or guardianship matter do you need help with? For example: stepparent adoption, foster-to-adopt, private adoption, kinship adoption, guardianship of a minor, or guardianship of an adult with a disability?',
-  }, 900);
-  addEdge(q5, branchFRouting, 'Adoption or guardianship');
+  });
+  const q5_f = response('Adoption or guardianship');
+  addEdge(q5, q5_f);
+  addEdge(q5_f, branchFRouting);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH G - JUVENILE DELINQUENCY & PINS [D-Petition / PINS, FCA Art. 3 & 7]
-  // ═══════════════════════════════════════════════════════════════════════════
+  const branchF_any = response('Any type');
+  addEdge(branchFRouting, branchF_any);
 
+  // ── BRANCH G - JUVENILE ──────────────────────────────────────────────────
   const branchGRouting = addNode('decision', 'Branch G - Juvenile Matter', {
     description: 'Can you tell me more about the juvenile matter? Is this about an alleged crime or delinquent act, or about truancy or a child beyond parental control?',
-  }, 1200);
-  addEdge(q5, branchGRouting, 'Juvenile matter');
+  });
+  const q5_g = response('A juvenile matter');
+  addEdge(q5, q5_g);
+  addEdge(q5_g, branchGRouting);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH H - OTHER / MISCELLANEOUS
-  // ═══════════════════════════════════════════════════════════════════════════
+  const branchG_any = response('Any type');
+  addEdge(branchGRouting, branchG_any);
 
+  // ── BRANCH H - OTHER ────────────────────────────────────────────────────
   const branchHRouting = addNode('decision', 'Branch H - Other Legal Matter', {
     description: 'Can you tell me what kind of legal matter you need help with? For example: name change, termination of parental rights, Special Immigrant Juvenile Status (SIJS), or something else?',
-  }, 1500);
-  addEdge(q5, branchHRouting, 'Something else');
+  });
+  const q5_h = response('Something else');
+  addEdge(q5, q5_h);
+  addEdge(q5_h, branchHRouting);
+
+  const branchH_any = response('Any type');
+  addEdge(branchHRouting, branchH_any);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TRANSFER PROTOCOL - HANDOFF TO ATTORNEY
@@ -373,7 +335,7 @@ export function createAndersonBowmanTemplate() {
     message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need to help you effectively. Please hold for just a moment - I'm connecting you now with a member of our legal team.",
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
-  }, 0);
+  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CONNECT OR SCHEDULE - offered before every non-emergency transfer
@@ -381,11 +343,12 @@ export function createAndersonBowmanTemplate() {
 
   const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
     question: 'Would you prefer to speak with an attorney right now, or would you like to schedule a consultation for a later time?',
-    options: [
-      { label: 'Connect me now', value: 'now', instruction: 'Proceed to transfer immediately.' },
-      { label: 'Schedule a consultation', value: 'schedule', instruction: 'Proceed to book an appointment.' },
-    ],
-  }, 0);
+  });
+
+  const cos_now      = response('Connect me now', 'Proceed to transfer immediately.');
+  const cos_schedule = response('Schedule a consultation', 'Proceed to book an appointment.');
+  addEdge(connectOrSchedule, cos_now);      addEdge(cos_now, transferId);
+  addEdge(connectOrSchedule, cos_schedule);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // APPOINTMENT BOOKING PATH
@@ -393,55 +356,73 @@ export function createAndersonBowmanTemplate() {
 
   const appointmentNode = addNode('action', 'Book Consultation', {
     actionType: 'book_appointment',
-    note: 'Call the bookAppointment tool with the caller name, phone number, matter category, and petition type. Read back the confirmed date and time to the caller.',
-  }, 200);
+    note: 'Call the bookAppointment tool with caller name, phone number, matter category, and petition type. Read back the confirmed date and time to the caller.',
+  });
+  addEdge(cos_schedule, appointmentNode);
 
   const nothingElseNode = addNode('question', 'Anything Else?', {
     question: 'Is there anything else I can help you with today?',
-    options: [
-      { label: 'No, that is all', value: 'no', instruction: 'Thank them warmly and proceed to end the call.' },
-      { label: 'Yes, I have another question', value: 'yes', instruction: 'Address their question briefly, then proceed to end the call.' },
-    ],
-  }, 200);
+  });
+  addEdge(appointmentNode, nothingElseNode);
 
   const endAfterSchedule = addNode('end', 'End - After Scheduling', {
     closingMessage: 'Wonderful. We look forward to speaking with you at your consultation. Have a great day. Goodbye!',
-  }, 200);
-
-  // Appointment booking chain
-  addEdge(appointmentNode, nothingElseNode);
-  addEdge(nothingElseNode, endAfterSchedule, 'No, that is all');
-  addEdge(nothingElseNode, endAfterSchedule, 'Yes, I have another question');
-
-  // Connect or Schedule routing
-  addEdge(connectOrSchedule, transferId, 'Connect me now');
-  addEdge(connectOrSchedule, appointmentNode, 'Schedule a consultation');
+  });
+  const ae_no  = response('No, that is all', 'Thank them warmly and end the call.');
+  const ae_yes = response('Yes, I have another question', 'Address their question briefly, then end the call.');
+  addEdge(nothingElseNode, ae_no);  addEdge(ae_no, endAfterSchedule);
+  addEdge(nothingElseNode, ae_yes); addEdge(ae_yes, endAfterSchedule);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH ENDPOINTS
-  // Emergency paths bypass scheduling and go directly to transfer
-  // All routine paths go through Connect or Schedule first
+  // BRANCH ENDPOINTS -> Connect or Schedule (or direct transfer for emergencies)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Branch A - urgent bypasses scheduling, routine goes through it
-  addEdge(a4, transferId, 'Urgent - emergency custody');
-  addEdge(a4, connectOrSchedule, 'Routine - proceed to transfer');
+  // A4 urgency: urgent goes direct to transfer, routine goes to connect-or-schedule
+  const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away." Proceed immediately to Transfer.');
+  const a4_routine = response('No - routine matter', 'Proceed to connect or schedule.');
+  addEdge(a4, a4_urgent);  addEdge(a4_urgent, transferId);       // emergency bypass
+  addEdge(a4, a4_routine); addEdge(a4_routine, connectOrSchedule);
 
-  // Emergency (Branch C) - always direct transfer, no scheduling
-  addEdge(cEmergency, transferId, 'Emergency transfer');
+  // Emergency (Branch C) - direct transfer, no scheduling
+  addEdge(cEmergency, transferId);
 
-  // All other branch endpoints route through Connect or Schedule
-  addEdge(b3, connectOrSchedule, 'Proceed to transfer');
-  addEdge(c2, connectOrSchedule, 'Proceed to transfer');
-  addEdge(d1, connectOrSchedule, 'Proceed to transfer');
-  addEdge(d2, connectOrSchedule, 'Proceed to transfer');
-  addEdge(branchDRouting, connectOrSchedule, 'Concerned about child elsewhere');
-  addEdge(branchERouting, connectOrSchedule, 'Mother seeking to establish');
-  addEdge(branchERouting, connectOrSchedule, 'Father seeking rights');
-  addEdge(branchERouting, connectOrSchedule, 'Alleged father disputing');
-  addEdge(branchFRouting, connectOrSchedule, 'Any type');
-  addEdge(branchGRouting, connectOrSchedule, 'Any type');
-  addEdge(branchHRouting, connectOrSchedule, 'Any type');
+  // C2 responses all lead to connect-or-schedule
+  const c2_spouse   = response('Spouse or former spouse');
+  const c2_coparent = response('Co-parent or parent of my child');
+  const c2_family   = response('Parent or sibling (family member)');
+  const c2_partner  = response('Intimate partner / boyfriend / girlfriend');
+  addEdge(c2, c2_spouse);   addEdge(c2_spouse, connectOrSchedule);
+  addEdge(c2, c2_coparent); addEdge(c2_coparent, connectOrSchedule);
+  addEdge(c2, c2_family);   addEdge(c2_family, connectOrSchedule);
+  addEdge(c2, c2_partner);  addEdge(c2_partner, connectOrSchedule);
+
+  // B3 responses
+  const b3_petitioner  = response('Receiving support (Petitioner)');
+  const b3_respondent  = response('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
+  addEdge(b3, b3_petitioner);  addEdge(b3_petitioner, connectOrSchedule);
+  addEdge(b3, b3_respondent);  addEdge(b3_respondent, connectOrSchedule);
+
+  // D1 responses
+  addEdge(d1_investigation, connectOrSchedule);
+  addEdge(d1_court, connectOrSchedule);
+
+  // D2 responses
+  addEdge(d2_placement, connectOrSchedule);
+  addEdge(d2_adopt, connectOrSchedule);
+  addEdge(d2_dispute, connectOrSchedule);
+
+  // Branch D "concerned about child elsewhere"
+  addEdge(branchD_child, connectOrSchedule);
+
+  // Branch E responses
+  addEdge(branchE_mother, connectOrSchedule);
+  addEdge(branchE_father, connectOrSchedule);
+  addEdge(branchE_dispute, connectOrSchedule);
+
+  // Branch F, G, H
+  addEdge(branchF_any, connectOrSchedule);
+  addEdge(branchG_any, connectOrSchedule);
+  addEdge(branchH_any, connectOrSchedule);
 
   return {
     name: 'Family Court Intake Example',
