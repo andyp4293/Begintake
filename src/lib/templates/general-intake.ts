@@ -100,8 +100,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(q3, q3_no); addEdge(q3_no, q4);
 
   const q5 = addNode('question', 'Q5. Tell Me What\'s Going On', {
-    question: "I'm sorry to hear you're going through a difficult time. Can you tell me a bit about what's been happening? Just describe it in your own words - there are no wrong answers. I'm here to listen, and once I understand your situation I'll make sure you speak with exactly the right attorney.",
-    note: 'OPEN-ENDED INTAKE - Do NOT read out a list of legal categories. Listen empathetically without interrupting. Ask gentle follow-up questions if needed ("Can you tell me a little more about that?" or "How long has this been going on?"). Once you have enough context, silently determine the practice area and proceed to the matching branch. The caller should feel heard, not interrogated.',
+    note: 'Ask the caller to describe their situation in their own words. Be warm and empathetic - say something like "I\'m sorry to hear that. Can you tell me a bit more about what\'s been going on?" Do NOT read a list of legal categories. Listen carefully, ask gentle follow-up questions if needed ("How long has this been going on?" or "Can you tell me a little more about that?"). Once you understand the situation, silently route to the correct practice area branch. The caller should feel heard, not processed.',
   });
   const q4_self = resp('For myself', 'Proceed to Q5.');
   const q4_other = resp('On behalf of someone else', 'Ask: "What is your relationship to them?" Note it, then proceed to Q5.');

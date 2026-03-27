@@ -91,9 +91,9 @@ function NodeCard({
           <input type="text" value={node.label} onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
             className="flex-1 bg-transparent text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600 px-1" />
           {childEdges.length > 0 && !expanded && (
-            <span className="text-[9px] text-zinc-600">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
+            <span className="text-[9px] text-zinc-400">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
           )}
-          <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-500 hover:text-white px-1">{editing ? 'Done' : 'Edit'}</button>
+          <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-300 hover:text-white px-1">{editing ? 'Done' : 'Edit'}</button>
           {node.type !== 'start' && (
             <button onClick={async () => {
               const ok = await confirm({ title: 'Delete Step', message: `Delete "${node.label}"? This will also remove any steps connected only to this one.`, confirmLabel: 'Delete', destructive: true });
@@ -106,18 +106,18 @@ function NodeCard({
         {!editing && (
           <div className="px-3 pb-2 space-y-1">
             {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
-              <p className="text-[11px] text-zinc-400 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
+              <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
             )}
             {node.type === 'question' && (
               <>
                 {!node.config?.question && !node.config?.note && (
                   <p className="text-[10px] text-red-400/80">Requires a verbatim question or AI guidance.</p>
                 )}
-                {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
-                {node.config?.note && <p className="text-[10px] text-amber-500/70 leading-relaxed">{node.config.note}</p>}
+                {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
+                {node.config?.note && <p className="text-[10px] text-amber-400 leading-relaxed">{node.config.note}</p>}
                 {node.config?.collectFields?.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1 mt-1">
-                    <span className="text-[9px] text-zinc-600 mr-0.5">Collect:</span>
+                    <span className="text-[9px] text-zinc-400 mr-0.5">Collect:</span>
                     {node.config.collectFields.map((f: any, i: number) => (
                       <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
                     ))}
@@ -131,16 +131,16 @@ function NodeCard({
                   <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
                 )}
                 {node.config?.instruction && (
-                  <p className="text-[10px] text-zinc-500 italic mt-0.5">{node.config.instruction}</p>
+                  <p className="text-[10px] text-zinc-300 italic mt-0.5">{node.config.instruction}</p>
                 )}
               </>
             )}
             {node.type === 'decision' && node.config?.description && (
-              <p className="text-[11px] text-zinc-400 italic">"{node.config.description}"</p>
+              <p className="text-[11px] text-zinc-300 italic">"{node.config.description}"</p>
             )}
             {node.type === 'action' && (
               <>
-                <p className="text-[10px] text-zinc-500">
+                <p className="text-[10px] text-zinc-300">
                   {(!node.config?.actionType || node.config.actionType === 'set_flag') && (node.config?.flagValue || node.config?.petitionType) && (
                     <><span className="text-zinc-400">Set:</span> {node.config.flagName ? `${node.config.flagName} = ` : ''}{node.config.flagValue || node.config.petitionType}</>
                   )}
@@ -148,12 +148,12 @@ function NodeCard({
                   {node.config?.actionType === 'call_tool' && <><span className="text-zinc-400">Call tool:</span> {node.config.toolName}</>}
                   {node.config?.actionType === 'send_email' && <span className="text-zinc-400">Send Email</span>}
                 </p>
-                {node.config?.note && <p className="text-[10px] text-amber-500/70">{node.config.note}</p>}
+                {node.config?.note && <p className="text-[10px] text-amber-400">{node.config.note}</p>}
               </>
             )}
             {node.type === 'collect_info' && (
               <>
-                {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
+                {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
                 {node.config?.fields?.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
                     {node.config.fields.map((f: any, i: number) => (
@@ -164,7 +164,7 @@ function NodeCard({
               </>
             )}
             {node.type === 'end' && node.config?.closingMessage && (
-              <p className="text-[11px] text-zinc-400 italic">"{node.config.closingMessage}"</p>
+              <p className="text-[11px] text-zinc-300 italic">"{node.config.closingMessage}"</p>
             )}
           </div>
         )}
@@ -178,7 +178,7 @@ function NodeCard({
                   onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
                   rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <p className="text-[9px] text-zinc-600">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> for assistant name and <span className="text-zinc-400 font-mono">{'{firm}'}</span> for firm name.</p>
+                <p className="text-[9px] text-zinc-400">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> for assistant name and <span className="text-zinc-400 font-mono">{'{firm}'}</span> for firm name.</p>
               </>
             )}
             {node.type === 'question' && (
@@ -191,11 +191,11 @@ function NodeCard({
                   rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-xs text-white focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
                 <textarea value={node.config?.note || ''} placeholder='AI guidance - e.g. "Ask about their situation empathetically. Listen and follow up naturally."'
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
-                  rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-[11px] text-amber-500/80 placeholder:text-zinc-600 focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
-                <p className="text-[9px] text-zinc-600">Use the <span className="text-zinc-400">verbatim question</span> for a scripted line, or <span className="text-amber-500/60">AI guidance</span> to describe how to ask. Either or both.</p>
-                <p className="text-[9px] text-zinc-600 mt-0.5">Add <span className="text-zinc-400">Response</span> child nodes for each possible answer.</p>
+                  rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-[11px] text-amber-400 placeholder:text-zinc-400 focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
+                <p className="text-[9px] text-zinc-400">Use the <span className="text-zinc-400">verbatim question</span> for a scripted line, or <span className="text-amber-400">AI guidance</span> to describe how to ask. Either or both.</p>
+                <p className="text-[9px] text-zinc-400 mt-0.5">Add <span className="text-zinc-400">Response</span> child nodes for each possible answer.</p>
                 <div className="space-y-2 pt-2 border-t border-zinc-700/50">
-                  <label className="text-[10px] text-zinc-500">Collect info (optional):</label>
+                  <label className="text-[10px] text-zinc-300">Collect info (optional):</label>
                   {(node.config?.collectFields || []).map((field: any, i: number) => (
                     <div key={i} className="flex items-center gap-2">
                       <input type="text" value={field.label || ''} placeholder="e.g. Full name, Hair color, Best phone number..."
@@ -214,7 +214,7 @@ function NodeCard({
                   <button onClick={() => {
                     const cf = [...(node.config?.collectFields || []), { name: `field_${Date.now()}`, label: '', type: 'text', required: true }];
                     onUpdateNode(node.id, { config: { ...node.config, collectFields: cf } });
-                  }} className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
+                  }} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white transition-colors">
                     <Plus className="w-3 h-3" /> Add field to collect
                   </button>
                 </div>
@@ -264,10 +264,10 @@ function NodeCard({
                     className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
                 )}
                 {node.config?.actionType === 'book_appointment' && (
-                  <p className="text-[10px] text-zinc-500">Calls the bookAppointment tool with collected caller data and confirms the date/time.</p>
+                  <p className="text-[10px] text-zinc-300">Calls the bookAppointment tool with collected caller data and confirms the date/time.</p>
                 )}
                 {node.config?.actionType === 'send_email' && (
-                  <p className="text-[10px] text-zinc-500">Sends an email summary to the matched attorney.</p>
+                  <p className="text-[10px] text-zinc-300">Sends an email summary to the matched attorney.</p>
                 )}
                 <textarea value={node.config?.note || ''} placeholder="Internal note (optional)..."
                   rows={2}
@@ -280,7 +280,7 @@ function NodeCard({
                 <textarea value={node.config?.question || ''} placeholder="Question to ask (optional)..."
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
                   rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <label className="text-[10px] text-zinc-500">Fields to collect:</label>
+                <label className="text-[10px] text-zinc-300">Fields to collect:</label>
                 {(node.config?.fields || []).map((field: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
                     <input type="text" value={field.label || ''} placeholder="Field label"
@@ -299,7 +299,7 @@ function NodeCard({
                 <button onClick={() => {
                   const fields = [...(node.config?.fields || []), { name: `field_${Date.now()}`, label: '', type: 'text', required: true }];
                   onUpdateNode(node.id, { config: { ...node.config, fields } });
-                }} className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
+                }} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white transition-colors">
                   <Plus className="w-3 h-3" /> Add field
                 </button>
               </div>
@@ -333,7 +333,7 @@ function NodeCard({
               <div className="ml-6 pl-4 mb-2 group/jump">
                 <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900/50 border border-zinc-800 border-dashed rounded-lg">
                   <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
-                  <span className="text-[10px] text-zinc-500">Continues to:</span>
+                  <span className="text-[10px] text-zinc-300">Continues to:</span>
                   <button
                     onClick={() => {
                       const el = document.getElementById(`flow-node-${childNode.id}`);
@@ -418,15 +418,15 @@ function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeI
   return (
     <div className="relative inline-block">
       <button onClick={() => { setOpen(!open); setShowLinkPicker(false); setLinkSearch(''); }}
-        className="flex items-center gap-1 px-2 py-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
-        <Plus className="w-3 h-3" /> Add step under <span className="text-zinc-500 ml-0.5">{shortParent}</span>
+        className="flex items-center gap-1 px-2 py-1 text-[10px] text-zinc-400 hover:text-white transition-colors">
+        <Plus className="w-3 h-3" /> Add step under <span className="text-zinc-300 ml-0.5">{shortParent}</span>
       </button>
       {open && (
         <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-56">
           {!showLinkPicker ? (
             <>
               {isQuestion && (
-                <p className="text-[9px] text-zinc-600 px-2 pb-1.5">Questions branch through Response nodes only.</p>
+                <p className="text-[9px] text-zinc-400 px-2 pb-1.5">Questions branch through Response nodes only.</p>
               )}
               {Object.entries(NODE_LABELS)
                 .filter(([type]) => {
@@ -443,36 +443,36 @@ function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeI
               {!isQuestion && (
                 <div className="border-t border-zinc-800 mt-1 pt-1">
                   <button onClick={() => setShowLinkPicker(true)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800 rounded transition-colors">
                     <Link2 className="w-3 h-3" /> Link to existing step
                   </button>
                 </div>
               )}
-              <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1">Cancel</button>
+              <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-400 hover:text-white py-1">Cancel</button>
             </>
           ) : (
             <>
               <div className="flex items-center gap-1.5 mb-2">
-                <button onClick={() => setShowLinkPicker(false)} className="text-zinc-500 hover:text-white text-[10px]">← Back</button>
-                <span className="text-[10px] text-zinc-500">Link to existing step</span>
+                <button onClick={() => setShowLinkPicker(false)} className="text-zinc-300 hover:text-white text-[10px]">← Back</button>
+                <span className="text-[10px] text-zinc-300">Link to existing step</span>
               </div>
               <input type="text" value={linkSearch} onChange={(e) => setLinkSearch(e.target.value)}
                 placeholder="Search steps..." autoFocus
                 className="w-full px-2 py-1 mb-1 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
               <div className="max-h-48 overflow-y-auto space-y-0.5">
                 {filteredNodes.length === 0 && (
-                  <p className="text-[10px] text-zinc-600 px-2 py-1">No steps found</p>
+                  <p className="text-[10px] text-zinc-400 px-2 py-1">No steps found</p>
                 )}
                 {filteredNodes.map((n) => (
                   <button key={n.id} onClick={() => { onLinkExisting(parentId, n.id); setOpen(false); setLinkSearch(''); }}
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-zinc-800 rounded transition-colors">
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: NODE_COLORS[n.type] || '#666' }} />
                     <span className="text-[10px] text-zinc-300 truncate">{n.label}</span>
-                    <span className="text-[9px] text-zinc-600 shrink-0 ml-auto">{NODE_LABELS[n.type] ?? n.type}</span>
+                    <span className="text-[9px] text-zinc-400 shrink-0 ml-auto">{NODE_LABELS[n.type] ?? n.type}</span>
                   </button>
                 ))}
               </div>
-              <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1 border-t border-zinc-800 pt-1">Cancel</button>
+              <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-400 hover:text-white py-1 border-t border-zinc-800 pt-1">Cancel</button>
             </>
           )}
         </div>
@@ -604,11 +604,11 @@ export default function FlowEditorPage() {
             <input type="text" value={flowName} maxLength={80}
               onChange={(e) => setFlowName(e.target.value)}
               className="bg-transparent text-white font-semibold text-sm focus:outline-none border-b border-transparent focus:border-zinc-600 px-1 w-full max-w-md" />
-            <span className="text-[9px] text-zinc-600 shrink-0">{flowName.length}/80</span>
+            <span className="text-[9px] text-zinc-400 shrink-0">{flowName.length}/80</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-600 mr-2">{nodes.length} nodes · {edges.length} edges</span>
+          <span className="text-[10px] text-zinc-400 mr-2">{nodes.length} nodes · {edges.length} edges</span>
           <button onClick={saveFlow} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 hover:text-white transition-colors">
             <Save className="w-3 h-3" /> Save
           </button>
@@ -621,7 +621,7 @@ export default function FlowEditorPage() {
       <div className="flex">
         {/* ── Left legend sidebar ── */}
         <aside className="w-56 shrink-0 sticky top-[53px] h-[calc(100vh-53px)] overflow-y-auto border-r border-zinc-800 px-4 py-6 space-y-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-4">Node Types</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-4">Node Types</p>
 
           {([
             {
@@ -665,7 +665,7 @@ export default function FlowEditorPage() {
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: NODE_COLORS[type] }} />
                 <span className="text-[11px] font-semibold text-zinc-300">{title}</span>
               </div>
-              <p className="text-[10px] text-zinc-500 leading-relaxed pl-3.5">{desc}</p>
+              <p className="text-[10px] text-zinc-300 leading-relaxed pl-3.5">{desc}</p>
             </div>
           ))}
 
@@ -674,7 +674,7 @@ export default function FlowEditorPage() {
               <Link2 className="w-3 h-3 text-zinc-500" />
               <span className="text-[11px] font-semibold text-zinc-300">Link to existing</span>
             </div>
-            <p className="text-[10px] text-zinc-500 leading-relaxed pl-3.5">Use "Link to existing step" in the Add menu to connect any node to an already-existing step without duplicating it. Shows as a dashed "Continues to" indicator.</p>
+            <p className="text-[10px] text-zinc-300 leading-relaxed pl-3.5">Use "Link to existing step" in the Add menu to connect any node to an already-existing step without duplicating it. Shows as a dashed "Continues to" indicator.</p>
           </div>
         </aside>
 
