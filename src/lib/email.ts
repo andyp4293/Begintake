@@ -12,6 +12,10 @@ interface CallSummaryEmailParams {
   summary: string;
   notes: string;
   legalArea: string;
+  petitionType?: string;
+  urgencyFlag?: string;
+  matterCategory?: string;
+  partyRole?: string;
   availabilityLink?: string;
 }
 
@@ -57,6 +61,18 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
   addText(`Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, 10);
   y += 4;
   addLine();
+
+  // Case flags
+  if (params.petitionType || params.urgencyFlag || params.matterCategory || params.partyRole) {
+    addText('CASE FLAGS', 10, 'bold', [50, 50, 50]);
+    y += 2;
+    if (params.petitionType)  addText(`Petition Type:    ${params.petitionType}`, 10);
+    if (params.matterCategory) addText(`Matter Category:  ${params.matterCategory}`, 10);
+    if (params.partyRole)     addText(`Party Role:       ${params.partyRole}`, 10);
+    if (params.urgencyFlag)   addText(`Urgency:          ${params.urgencyFlag}`, 10, 'bold', [200, 0, 0]);
+    y += 4;
+    addLine();
+  }
 
   // Summary
   addText('CALL SUMMARY', 10, 'bold', [50, 50, 50]);
@@ -129,6 +145,16 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
             ${params.callerEmail ? `<p><strong>Email:</strong> <a href="mailto:${params.callerEmail}">${params.callerEmail}</a></p>` : ''}
             <p><strong>Legal Area:</strong> ${params.legalArea}</p>
           </div>
+
+          ${(params.petitionType || params.urgencyFlag || params.matterCategory || params.partyRole) ? `
+            <div style="background: #fff8f0; border-left: 4px solid #f97316; padding: 14px 16px; border-radius: 0 8px 8px 0; margin: 16px 0;">
+              <p style="margin: 0 0 8px; font-weight: bold; font-size: 13px; color: #333;">Case Flags</p>
+              ${params.petitionType   ? `<p style="margin: 4px 0; font-size: 13px;"><strong>Petition Type:</strong> ${params.petitionType}</p>` : ''}
+              ${params.matterCategory ? `<p style="margin: 4px 0; font-size: 13px;"><strong>Matter Category:</strong> ${params.matterCategory}</p>` : ''}
+              ${params.partyRole      ? `<p style="margin: 4px 0; font-size: 13px;"><strong>Party Role:</strong> ${params.partyRole}</p>` : ''}
+              ${params.urgencyFlag    ? `<p style="margin: 4px 0; font-size: 13px; color: #dc2626;"><strong>⚠ Urgency:</strong> ${params.urgencyFlag}</p>` : ''}
+            </div>
+          ` : ''}
 
           <h3 style="color: #333;">Call Summary</h3>
           <p style="line-height: 1.6;">${params.summary}</p>

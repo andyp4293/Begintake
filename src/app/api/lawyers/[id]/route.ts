@@ -13,7 +13,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const body = await req.json();
-    const { name, email, phone, specialties, available } = body;
+    const { name, email, phone, specialties, available, availabilityStart, availabilityEnd } = body;
 
     const lawyer = await prisma.lawyer.update({
       where: { id },
@@ -23,6 +23,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(phone !== undefined && { phone: phone || null }),
         ...(specialties !== undefined && { specialties: Array.isArray(specialties) ? specialties : [] }),
         ...(available !== undefined && { available }),
+        ...(availabilityStart !== undefined && { availabilityStart }),
+        ...(availabilityEnd !== undefined && { availabilityEnd }),
       },
     });
 

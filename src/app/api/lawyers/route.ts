@@ -18,6 +18,8 @@ export async function GET() {
       phone: true,
       specialties: true,
       available: true,
+      availabilityStart: true,
+      availabilityEnd: true,
     },
   });
 
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, email, phone, specialties, available } = body;
+    const { name, email, phone, specialties, available, availabilityStart, availabilityEnd } = body;
 
     if (!name || !email) {
       return NextResponse.json({ error: 'Name and email are required' }, { status: 400 });
@@ -45,6 +47,8 @@ export async function POST(req: NextRequest) {
         phone: phone || null,
         specialties: Array.isArray(specialties) ? specialties : [],
         available: available !== false,
+        availabilityStart: typeof availabilityStart === 'number' ? availabilityStart : 9,
+        availabilityEnd: typeof availabilityEnd === 'number' ? availabilityEnd : 17,
       },
     });
 

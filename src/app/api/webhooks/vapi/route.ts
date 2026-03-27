@@ -184,6 +184,10 @@ function getToolDefinitions() {
             callerEmail: { type: 'string', description: 'Caller email address' },
             issue: { type: 'string', description: 'Summary of the legal issue discussed' },
             notes: { type: 'string', description: 'Detailed notes from the conversation' },
+            petitionType: { type: 'string', description: 'Petition type flag set during intake (e.g. V-Petition, F-Petition, O-Petition)' },
+            matterCategory: { type: 'string', description: 'Matter category determined during intake (e.g. custody, support, family_offense)' },
+            partyRole: { type: 'string', description: 'Whether caller is petitioner or respondent' },
+            urgencyFlag: { type: 'string', description: 'Urgency level if flagged during intake (e.g. safety_first, urgent)' },
           },
           required: ['callerName', 'callerPhone', 'issue'],
         },
@@ -375,12 +379,26 @@ async function handleScheduleConsultation(args: Record<string, unknown>) {
 
 async function handleTransferCall(args: Record<string, unknown>) {
   const reason = typeof args.reason === 'string' ? args.reason : 'Client requested transfer';
+  const legalAreaHint = typeof args.legalArea === 'string' ? args.legalArea : null;
 
-  // Try the provided number first, then look up the user's configured transfer number
+  // Try the provided number first
   let phoneNumber = typeof args.phoneNumber === 'string' ? args.phoneNumber : null;
+  let transferringToName: string | null = null;
 
   if (!phoneNumber) {
-    // Get the first user's transfer number (single-tenant demo)
+    // Try to find the best matched attorney and use their direct phone
+    if (legalAreaHint) {
+      const legalArea = identifyLegalArea(legalAreaHint);
+      const lawyer = await findBestLawyer(legalArea);
+      if (lawyer?.phone) {
+        phoneNumber = lawyer.phone;
+        transferringToName = lawyer.name;
+      }
+    }
+  }
+
+  if (!phoneNumber) {
+    // Fall back to the firm's general transfer number
     const user = await prisma.user.findFirst({
       where: { transferPhoneNumber: { not: null } },
       select: { transferPhoneNumber: true },
@@ -401,7 +419,9 @@ async function handleTransferCall(args: Record<string, unknown>) {
     destination: {
       type: 'number',
       number: phoneNumber,
-      message: `Transferring the call. Reason: ${reason}`,
+      message: transferringToName
+        ? `Transferring to ${transferringToName}. Reason: ${reason}`
+        : `Transferring the call. Reason: ${reason}`,
     },
   };
 }
@@ -413,6 +433,10 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
   const callerEmail = typeof args.callerEmail === 'string' ? args.callerEmail : '';
   const issue = typeof args.issue === 'string' ? args.issue : '';
   const notes = typeof args.notes === 'string' ? args.notes : '';
+  const petitionType = typeof args.petitionType === 'string' ? args.petitionType : undefined;
+  const matterCategory = typeof args.matterCategory === 'string' ? args.matterCategory : undefined;
+  const partyRole = typeof args.partyRole === 'string' ? args.partyRole : undefined;
+  const urgencyFlag = typeof args.urgencyFlag === 'string' ? args.urgencyFlag : undefined;
 
   // Identify the right lawyer
   const legalArea = identifyLegalArea(issue);
@@ -460,6 +484,10 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
           notes,
           lawyerId: lawyer?.id,
           ...(effectivePhone && !existing.callerPhone ? { callerPhone: effectivePhone } : {}),
+          ...(petitionType  !== undefined ? { petitionType }  : {}),
+          ...(matterCategory !== undefined ? { matterCategory } : {}),
+          ...(partyRole     !== undefined ? { partyRole }     : {}),
+          ...(urgencyFlag   !== undefined ? { urgencyFlag }   : {}),
         },
       })
     : await prisma.callSession.create({
@@ -474,12 +502,17 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
           summary: issue,
           notes,
           lawyerId: lawyer?.id,
+          ...(petitionType   !== undefined ? { petitionType }   : {}),
+          ...(matterCategory !== undefined ? { matterCategory } : {}),
+          ...(partyRole      !== undefined ? { partyRole }      : {}),
+          ...(urgencyFlag    !== undefined ? { urgencyFlag }    : {}),
         },
       });
 
   // Email the summary to the lawyer
   if (lawyer) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // Merge: prefer args-provided flags, fall back to what was already on the session
     await sendCallSummaryEmail({
       lawyerEmail: lawyer.email,
       lawyerName: lawyer.name,
@@ -489,6 +522,10 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
       summary: issue,
       notes,
       legalArea,
+      petitionType:   petitionType   ?? callSession.petitionType   ?? undefined,
+      matterCategory: matterCategory ?? callSession.matterCategory ?? undefined,
+      partyRole:      partyRole      ?? callSession.partyRole      ?? undefined,
+      urgencyFlag:    urgencyFlag    ?? callSession.urgencyFlag    ?? undefined,
       availabilityLink: `${appUrl}?tab=appointments`,
     });
   }

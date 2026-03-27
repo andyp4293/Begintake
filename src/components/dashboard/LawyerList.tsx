@@ -13,7 +13,15 @@ interface Lawyer {
   phone: string | null;
   specialties: string[];
   available: boolean;
+  availabilityStart: number;
+  availabilityEnd: number;
 }
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => {
+  const ampm = i < 12 ? 'AM' : 'PM';
+  const h = i === 0 ? 12 : i > 12 ? i - 12 : i;
+  return { value: i, label: `${h}:00 ${ampm}` };
+});
 
 const SPECIALTY_OPTIONS = [
   'Family', 'Criminal', 'Immigration', 'Personal Injury', 'Corporate',
@@ -36,10 +44,12 @@ function LawyerFormModal({
   const [phone, setPhone] = useState(lawyer?.phone || '');
   const [specialties, setSpecialties] = useState<string[]>(lawyer?.specialties || []);
   const [available, setAvailable] = useState(lawyer?.available ?? true);
+  const [availabilityStart, setAvailabilityStart] = useState(lawyer?.availabilityStart ?? 9);
+  const [availabilityEnd, setAvailabilityEnd] = useState(lawyer?.availabilityEnd ?? 17);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = { name, email, phone, specialties, available };
+      const payload = { name, email, phone, specialties, available, availabilityStart, availabilityEnd };
       const url = isEditing ? `/api/lawyers/${lawyer.id}` : '/api/lawyers';
       const method = isEditing ? 'PUT' : 'POST';
 
@@ -159,6 +169,33 @@ function LawyerFormModal({
                 }`}
               />
             </button>
+          </div>
+
+          {/* Call hours */}
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-2">Call hours</label>
+            <div className="flex items-center gap-2">
+              <select
+                value={availabilityStart}
+                onChange={(e) => setAvailabilityStart(Number(e.target.value))}
+                className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-zinc-500 transition-colors"
+              >
+                {HOUR_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <span className="text-zinc-500 text-xs">to</span>
+              <select
+                value={availabilityEnd}
+                onChange={(e) => setAvailabilityEnd(Number(e.target.value))}
+                className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-zinc-500 transition-colors"
+              >
+                {HOUR_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[10px] text-zinc-600 mt-1">Calls will only be transferred to this attorney during these hours.</p>
           </div>
         </div>
 

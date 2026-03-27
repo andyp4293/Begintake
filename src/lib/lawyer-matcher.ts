@@ -128,16 +128,26 @@ export function identifyLegalArea(description: string): LegalArea {
 }
 
 export async function findBestLawyer(legalArea: LegalArea) {
+  const currentHour = new Date().getHours(); // 0-23 server local time
+
   const lawyers = await prisma.lawyer.findMany({
     where: { available: true },
   });
 
+  // Filter to attorneys whose call window covers the current hour
+  const availableNow = lawyers.filter(
+    (l) => currentHour >= l.availabilityStart && currentHour < l.availabilityEnd
+  );
+
   const areaKeywords = LEGAL_AREA_KEYWORDS[legalArea] || [];
+
+  // Score within the currently-available pool; fall back to all available if none are in-hours
+  const pool = availableNow.length > 0 ? availableNow : lawyers;
 
   let bestLawyer = null;
   let bestScore = 0;
 
-  for (const lawyer of lawyers) {
+  for (const lawyer of pool) {
     const score = lawyer.specialties.filter((s) =>
       areaKeywords.some((kw) => s.toLowerCase().includes(kw) || kw.includes(s.toLowerCase()))
     ).length;
@@ -148,9 +158,9 @@ export async function findBestLawyer(legalArea: LegalArea) {
     }
   }
 
-  // Fallback: return any available lawyer
-  if (!bestLawyer && lawyers.length > 0) {
-    bestLawyer = lawyers[0];
+  // Fallback: return any attorney from the pool
+  if (!bestLawyer && pool.length > 0) {
+    bestLawyer = pool[0];
   }
 
   return bestLawyer;

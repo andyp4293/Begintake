@@ -31,12 +31,14 @@ model Lawyer {
   id               String        @id @default(cuid())
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
-  name             String
-  email            String        @unique
-  phone            String?
-  specialties      String[]
-  available        Boolean       @default(true)
-  googleCalendarId String?
+  name              String
+  email             String        @unique
+  phone             String?
+  specialties       String[]
+  available         Boolean       @default(true)
+  availabilityStart Int           @default(9)
+  availabilityEnd   Int           @default(17)
+  googleCalendarId  String?
   clients          Client[]
   callSessions     CallSession[]
   appointments     Appointment[]
