@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/prisma';
-import { createAndersonBowmanTemplate } from '@/lib/templates/anderson-bowman';
+import { createFamilyIntakeTemplate } from '@/lib/templates/family-intake';
 import { createGeneralIntakeTemplate } from '@/lib/templates/general-intake';
 
 export async function GET() {
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const template = templateId === 'general-intake'
     ? createGeneralIntakeTemplate()
-    : createAndersonBowmanTemplate();
+    : createFamilyIntakeTemplate();
 
   const flow = await prisma.intakeFlow.create({
     data: {

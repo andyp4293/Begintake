@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { compileFlowToPrompt, extractToolsFromFlow } from './flow-compiler';
-import { createAndersonBowmanTemplate } from './templates/anderson-bowman';
+import { createFamilyIntakeTemplate as createAndersonBowmanTemplate } from './templates/family-intake';
 
 // ─── compileFlowToPrompt ──────────────────────────────────────────────────────
 

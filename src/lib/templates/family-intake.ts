@@ -1,18 +1,17 @@
 /**
- * Anderson Bowman PLLC - AI Receptionist Intake Script
- * Family Court Practice Group - Kew Gardens, New York
+ * Family Court Intake Script
  *
- * Uses the new Response node pattern:
+ * Uses the Response node pattern:
  *   Question -> Response (per answer) -> next step
  * This gives each answer its own visible branch in the flow builder.
  */
 
 let nodeCounter = 0;
-function nodeId() { return `ab-node-${++nodeCounter}`; }
+function nodeId() { return `fi-node-${++nodeCounter}`; }
 let edgeCounter = 0;
-function edgeId() { return `ab-edge-${++edgeCounter}`; }
+function edgeId() { return `fi-edge-${++edgeCounter}`; }
 
-export function createAndersonBowmanTemplate() {
+export function createFamilyIntakeTemplate() {
   nodeCounter = 0;
   edgeCounter = 0;
 
@@ -425,7 +424,7 @@ export function createAndersonBowmanTemplate() {
   addEdge(branchH_any, connectOrSchedule);
 
   return {
-    name: 'Family Court Intake Example',
+    name: 'Family Court Intake',
     description: 'Complete AI intake script for prospective family law clients. Uses {firm} and {name} variables. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters.',
     isTemplate: true,
     nodes,
