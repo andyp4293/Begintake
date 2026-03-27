@@ -123,6 +123,7 @@ function NodeCard({
 }) {
   const [expanded, setExpanded] = useState(() => !node.config?.defaultCollapsed);
   const [editing, setEditing] = useState(false);
+  const [contentExpanded, setContentExpanded] = useState(false);
   // Force-expanded when parent clicked "Continues to" and this node is on the path
   const displayExpanded = expandedOverrides.has(node.id) || expanded;
   const color = NODE_COLORS[node.type] || '#666';
@@ -137,7 +138,7 @@ function NodeCard({
   return (
     <div className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
       {/* Node card */}
-      <div id={`flow-node-${node.id}`} className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden min-w-72 w-fit" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
+      <div id={`flow-node-${node.id}`} className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden w-72" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
         <div className="flex items-center gap-2 px-3 py-2">
           <button onClick={() => setExpanded(!displayExpanded)} className="text-zinc-500 hover:text-white">
             {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
@@ -162,67 +163,75 @@ function NodeCard({
         {/* Content preview */}
         {!editing && (
           <div className="px-3 pb-2 space-y-1">
-            {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
-              <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
-            )}
-            {node.type === 'question' && (
-              <>
-                {!node.config?.question && !node.config?.note && (
-                  <p className="text-[10px] text-red-400/80">Requires a verbatim question or AI guidance.</p>
-                )}
-                {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
-                {node.config?.note && <p className="text-[10px] text-amber-400 leading-relaxed">{node.config.note}</p>}
-                {node.config?.collectFields?.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 mt-1">
-                    <span className="text-[9px] text-zinc-400 mr-0.5">Collect:</span>
-                    {node.config.collectFields.map((f: any, i: number) => (
-                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            {node.type === 'response' && (
-              <>
-                {node.config?.response && (
-                  <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
-                )}
-                {node.config?.instruction && (
-                  <p className="text-[10px] text-zinc-300 italic mt-0.5">{node.config.instruction}</p>
-                )}
-              </>
-            )}
-            {node.type === 'decision' && (node.config?.description || node.config?.note) && (
-              <p className="text-[11px] text-zinc-300 italic">"{node.config.description || node.config.note}"</p>
-            )}
-            {node.type === 'action' && (
-              <>
-                <p className="text-[10px] text-zinc-300">
-                  {(!node.config?.actionType || node.config.actionType === 'set_flag') && (node.config?.flagValue || node.config?.petitionType) && (
-                    <><span className="text-zinc-400">Set:</span> {node.config.flagName ? `${node.config.flagName} = ` : ''}{node.config.flagValue || node.config.petitionType}</>
+            <div className={contentExpanded ? '' : 'line-clamp-2'}>
+              {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
+                <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
+              )}
+              {node.type === 'question' && (
+                <>
+                  {!node.config?.question && !node.config?.note && (
+                    <p className="text-[10px] text-red-400/80">Requires a verbatim question or AI guidance.</p>
                   )}
-                  {node.config?.actionType === 'book_appointment' && <span className="text-zinc-400">Book Appointment</span>}
-                  {node.config?.actionType === 'call_tool' && <><span className="text-zinc-400">Call tool:</span> {node.config.toolName}</>}
-                  {node.config?.actionType === 'send_email' && <span className="text-zinc-400">Send Email</span>}
-                </p>
-                {node.config?.note && <p className="text-[10px] text-amber-400">{node.config.note}</p>}
-              </>
-            )}
-            {node.type === 'collect_info' && (
-              <>
-                {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
-                {node.config?.fields?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {node.config.fields.map((f: any, i: number) => (
-                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            {node.type === 'end' && node.config?.closingMessage && (
-              <p className="text-[11px] text-zinc-300 italic">"{node.config.closingMessage}"</p>
-            )}
+                  {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
+                  {node.config?.note && <p className="text-[10px] text-amber-400 leading-relaxed">{node.config.note}</p>}
+                  {node.config?.collectFields?.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      <span className="text-[9px] text-zinc-400 mr-0.5">Collect:</span>
+                      {node.config.collectFields.map((f: any, i: number) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {node.type === 'response' && (
+                <>
+                  {node.config?.response && (
+                    <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
+                  )}
+                  {node.config?.instruction && (
+                    <p className="text-[10px] text-zinc-300 italic mt-0.5">{node.config.instruction}</p>
+                  )}
+                </>
+              )}
+              {node.type === 'decision' && (node.config?.description || node.config?.note) && (
+                <p className="text-[11px] text-zinc-300 italic">"{node.config.description || node.config.note}"</p>
+              )}
+              {node.type === 'action' && (
+                <>
+                  <p className="text-[10px] text-zinc-300">
+                    {(!node.config?.actionType || node.config.actionType === 'set_flag') && (node.config?.flagValue || node.config?.petitionType) && (
+                      <><span className="text-zinc-400">Set:</span> {node.config.flagName ? `${node.config.flagName} = ` : ''}{node.config.flagValue || node.config.petitionType}</>
+                    )}
+                    {node.config?.actionType === 'book_appointment' && <span className="text-zinc-400">Book Appointment</span>}
+                    {node.config?.actionType === 'call_tool' && <><span className="text-zinc-400">Call tool:</span> {node.config.toolName}</>}
+                    {node.config?.actionType === 'send_email' && <span className="text-zinc-400">Send Email</span>}
+                  </p>
+                  {node.config?.note && <p className="text-[10px] text-amber-400">{node.config.note}</p>}
+                </>
+              )}
+              {node.type === 'collect_info' && (
+                <>
+                  {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
+                  {node.config?.fields?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {node.config.fields.map((f: any, i: number) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {node.type === 'end' && node.config?.closingMessage && (
+                <p className="text-[11px] text-zinc-300 italic">"{node.config.closingMessage}"</p>
+              )}
+            </div>
+            <button
+              onClick={() => setContentExpanded(!contentExpanded)}
+              className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              {contentExpanded ? '▲ show less' : '▼ show more'}
+            </button>
           </div>
         )}
 
