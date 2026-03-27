@@ -306,6 +306,16 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
         sections.push('');
         sections.push('CRITICAL: You MUST call endCall after saying goodbye. Do NOT keep talking. Do NOT skip endCall.');
         sections.push('');
+        sections.push('IF NO ATTORNEY IS AVAILABLE (transfer fails or no one answers):');
+        sections.push('Do NOT end the call abruptly. Instead:');
+        sections.push('  1. Say warmly: "I\'m so sorry - our attorneys are currently with other clients and aren\'t available to take your call right now."');
+        sections.push('  2. Reassure: "Everything you\'ve shared has been saved. An attorney will personally call you back as soon as possible."');
+        sections.push('  3. Confirm callback number: "Just to confirm - is [the number they gave] still the best way to reach you?"');
+        sections.push('  4. Offer scheduling: "Would you also like to book a scheduled consultation so you have a guaranteed time slot?"');
+        sections.push('     - If yes: call the bookAppointment tool, confirm the date and time, then say "You\'re all set. We\'ll see you then."');
+        sections.push('     - If no: say "Understood. You\'re all set - expect a call from our team soon."');
+        sections.push('  5. Close warmly and call endCall.');
+        sections.push('');
         break;
       }
 

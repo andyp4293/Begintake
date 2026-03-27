@@ -39,10 +39,10 @@ export function createGeneralIntakeTemplate() {
   });
 
   const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
-    question: 'Would you prefer to speak with an attorney right now, or schedule a consultation for a later time?',
+    note: 'Ask whether they want to speak with an attorney now or book a time for later. Be natural - something like "Would you like me to connect you with an attorney right now, or would a scheduled consultation work better for you?" Acknowledge their preference warmly before proceeding.',
   });
-  const cos_now = resp('Connect me now', 'Proceed to transfer immediately.');
-  const cos_schedule = resp('Schedule a consultation', 'Proceed to book an appointment.');
+  const cos_now = resp('Wants to speak with someone now', 'They want to be connected immediately. Proceed to transfer.');
+  const cos_schedule = resp('Prefers to book a time for later', 'They want a scheduled appointment rather than an immediate transfer. Proceed to book an appointment.');
   addEdge(connectOrSchedule, cos_now); addEdge(cos_now, transferId);
   addEdge(connectOrSchedule, cos_schedule);
 

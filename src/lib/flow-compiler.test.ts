@@ -467,9 +467,9 @@ describe('Anderson Bowman template', () => {
       template.nodes.find((n: any) => n.id === e.targetNodeId)
     );
     expect(responseNodes.every((n: any) => n.type === 'response')).toBe(true);
-    const responseLabels = responseNodes.map((n: any) => n.label);
-    expect(responseLabels).toContain('Connect me now');
-    expect(responseLabels).toContain('Schedule a consultation');
+    // Responses use intent-based labels, not verbatim phrases
+    expect(responseNodes.some((n: any) => n.config?.response?.toLowerCase().includes('now') || n.config?.response?.toLowerCase().includes('connect'))).toBe(true);
+    expect(responseNodes.some((n: any) => n.config?.response?.toLowerCase().includes('schedule') || n.config?.response?.toLowerCase().includes('later') || n.config?.response?.toLowerCase().includes('book'))).toBe(true);
   });
 
   it('Connect or Schedule routes to both transfer and appointment booking', () => {
@@ -668,11 +668,12 @@ describe('Anderson Bowman template', () => {
     }
   });
 
-  it('all question nodes in the template have a question text', () => {
+  it('all question nodes in the template have a question text or guidance note', () => {
     const template = createAndersonBowmanTemplate();
     const questionNodes = template.nodes.filter((n: any) => n.type === 'question');
     for (const node of questionNodes) {
-      expect(node.config.question).toBeTruthy();
+      // A question must have at least one of: verbatim question text or AI guidance note
+      expect(node.config.question || node.config.note).toBeTruthy();
     }
   });
 

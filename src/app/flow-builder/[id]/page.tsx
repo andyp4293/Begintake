@@ -51,6 +51,43 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
   return primaryParent;
 }
 
+// ─── Custom select ────────────────────────────────────────────────────────
+
+function CustomSelect({ value, options, onChange }: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none hover:border-zinc-500 transition-colors"
+      >
+        <span>{selected?.label ?? value}</span>
+        <ChevronDown className="w-3 h-3 text-zinc-400 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-xs transition-colors ${opt.value === value ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-300 hover:bg-zinc-800'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Node card component ──────────────────────────────────────────────────
 
 function NodeCard({
@@ -222,10 +259,12 @@ function NodeCard({
             )}
             {node.type === 'response' && (
               <div className="space-y-2">
-                <input type="text" value={node.config?.response || ''} placeholder="Caller's response text, e.g. Yes, let's begin"
+                <input type="text" value={node.config?.response || ''}
+                  placeholder="Describe the caller's intent, e.g. Wants to connect now or Prefers to schedule later"
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, response: e.target.value } })}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
-                <textarea value={node.config?.instruction || ''} placeholder="AI instruction (optional) - e.g. Briefly explain then proceed..."
+                <p className="text-[9px] text-zinc-400">Describe intent, not exact words. e.g. &ldquo;Wants to talk now&rdquo; not &ldquo;Yes connect me now&rdquo;.</p>
+                <textarea value={node.config?.instruction || ''} placeholder="AI instruction (optional) - e.g. Acknowledge their preference warmly then proceed..."
                   rows={2}
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, instruction: e.target.value } })}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-400 focus:outline-none focus:text-white resize-none" />
@@ -238,16 +277,16 @@ function NodeCard({
             )}
             {node.type === 'action' && (
               <div className="space-y-2">
-                <select
+                <CustomSelect
                   value={node.config?.actionType || 'set_flag'}
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, actionType: e.target.value } })}
-                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none"
-                >
-                  <option value="set_flag">Set Flag</option>
-                  <option value="book_appointment">Book Appointment</option>
-                  <option value="call_tool">Call Tool</option>
-                  <option value="send_email">Send Email</option>
-                </select>
+                  onChange={(v) => onUpdateNode(node.id, { config: { ...node.config, actionType: v } })}
+                  options={[
+                    { value: 'set_flag',          label: 'Set Flag' },
+                    { value: 'book_appointment',  label: 'Book Appointment' },
+                    { value: 'call_tool',         label: 'Call Tool' },
+                    { value: 'send_email',        label: 'Send Email' },
+                  ]}
+                />
                 {(!node.config?.actionType || node.config.actionType === 'set_flag') && (
                   <>
                     <input type="text" value={node.config?.flagName || ''} placeholder="Flag name, e.g. petitionType"
