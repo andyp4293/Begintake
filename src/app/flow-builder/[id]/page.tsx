@@ -217,7 +217,7 @@ function NodeCard({
 
         {/* Config editor */}
         {editing && (
-          <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
+          <div className="px-3 pb-3 space-y-3 border-t border-zinc-800 pt-2">
             {(node.type === 'start' || node.type === 'transfer') && (
               <>
                 {node.type === 'transfer' && (
@@ -233,31 +233,41 @@ function NodeCard({
                     />
                   </div>
                 )}
-                <textarea value={node.config?.greeting || node.config?.message || ''}
-                  onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
-                  rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}
-                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <p className="text-[9px] text-zinc-400">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> for assistant name and <span className="text-zinc-400 font-mono">{'{firm}'}</span> for firm name.</p>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                    {node.type === 'start' ? 'Opening greeting' : 'Handoff message'}
+                  </label>
+                  <textarea value={node.config?.greeting || node.config?.message || ''}
+                    onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
+                    rows={3}
+                    className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
+                  <p className="text-[9px] text-zinc-500 mt-1">Use <span className="font-mono text-zinc-400">{'{name}'}</span> for assistant name and <span className="font-mono text-zinc-400">{'{firm}'}</span> for firm name.</p>
+                </div>
               </>
             )}
             {node.type === 'question' && (
               <>
                 {!node.config?.question && !node.config?.note && (
-                  <p className="text-[10px] text-red-400/80 mb-1">At least one field is required.</p>
+                  <p className="text-[10px] text-red-400/80">At least one field is required.</p>
                 )}
-                <textarea value={node.config?.question || ''} placeholder='Verbatim question - e.g. "Are you calling for yourself?"'
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
-                  rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-xs text-white focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
-                <textarea value={node.config?.note || ''} placeholder='AI guidance - e.g. "Ask about their situation empathetically. Listen and follow up naturally."'
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
-                  rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-[11px] text-amber-400 placeholder:text-zinc-400 focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
-                <p className="text-[9px] text-zinc-400">Use the <span className="text-zinc-400">verbatim question</span> for a scripted line, or <span className="text-amber-400">AI guidance</span> to describe how to ask. Either or both.</p>
-                <p className="text-[9px] text-zinc-400 mt-0.5">Add <span className="text-zinc-400">Response</span> child nodes for each possible answer.</p>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1">Verbatim question <span className="text-zinc-600 font-normal">(exact words the AI says)</span></label>
+                  <textarea value={node.config?.question || ''}
+                    onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
+                    rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-xs text-white focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-amber-500/80 mb-1">AI guidance <span className="text-zinc-600 font-normal">(instructions for how to ask, not scripted)</span></label>
+                  <textarea value={node.config?.note || ''}
+                    onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
+                    rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-[11px] text-amber-400 placeholder:text-zinc-600 focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
+                </div>
+                <p className="text-[9px] text-zinc-500">Add <span className="text-zinc-400">Response</span> child nodes below for each possible answer.</p>
                 <div className="space-y-2 pt-2 border-t border-zinc-700/50">
-                  <label className="text-[10px] text-zinc-300">Collect info (optional):</label>
+                  <label className="text-[10px] font-medium text-zinc-400">Fields to collect <span className="text-zinc-600 font-normal">(optional — data to capture from this step)</span></label>
                   {(node.config?.collectFields || []).map((field: any, i: number) => (
                     <div key={i} className="flex items-center gap-2">
-                      <input type="text" value={field.label || ''} placeholder="e.g. Full name, Hair color, Best phone number..."
+                      <input type="text" value={field.label || ''} placeholder="e.g. Full name, Best phone number…"
                         onChange={(e) => {
                           const cf = [...(node.config?.collectFields || [])];
                           cf[i] = { ...cf[i], label: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') };
@@ -280,68 +290,85 @@ function NodeCard({
               </>
             )}
             {node.type === 'response' && (
-              <div className="space-y-2">
+              <div>
+                <label className="block text-[10px] font-medium text-zinc-400 mb-1">Caller response label <span className="text-zinc-600 font-normal">(describe their intent, not exact words)</span></label>
                 <input type="text" value={node.config?.response || ''}
-                  placeholder="Describe the caller's intent, e.g. Wants to connect now or Prefers to schedule later"
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, response: e.target.value } })}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
-                <p className="text-[9px] text-zinc-400">Describe intent, not exact words. e.g. &ldquo;Wants to talk now&rdquo; not &ldquo;Yes connect me now&rdquo;.</p>
-                <textarea value={node.config?.instruction || ''} placeholder="AI instruction (optional) - e.g. Acknowledge their preference warmly then proceed..."
-                  rows={2}
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, instruction: e.target.value } })}
-                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-400 focus:outline-none focus:text-white resize-none" />
+                <p className="text-[9px] text-zinc-500 mt-1">e.g. &ldquo;Wants to talk now&rdquo; — not &ldquo;Yes connect me please&rdquo;</p>
               </div>
             )}
             {node.type === 'decision' && (
-              <textarea value={node.config?.description || node.config?.note || ''} placeholder="Question or routing guidance..."
-                onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, description: e.target.value, note: e.target.value } })}
-                rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
+              <div>
+                <label className="block text-[10px] font-medium text-zinc-400 mb-1">Routing guidance</label>
+                <textarea value={node.config?.description || node.config?.note || ''} placeholder="Question or routing guidance..."
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, description: e.target.value, note: e.target.value } })}
+                  rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
+              </div>
             )}
             {node.type === 'action' && (
-              <div className="space-y-2">
-                <CustomSelect
-                  value={node.config?.actionType || 'set_flag'}
-                  onChange={(v) => onUpdateNode(node.id, { config: { ...node.config, actionType: v } })}
-                  options={[
-                    { value: 'set_flag',          label: 'Set Flag' },
-                    { value: 'book_appointment',  label: 'Book Appointment' },
-                    { value: 'call_tool',         label: 'Call Tool' },
-                    { value: 'send_email',        label: 'Send Email' },
-                  ]}
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1">Action type</label>
+                  <CustomSelect
+                    value={node.config?.actionType || 'set_flag'}
+                    onChange={(v) => onUpdateNode(node.id, { config: { ...node.config, actionType: v } })}
+                    options={[
+                      { value: 'set_flag',          label: 'Set Flag' },
+                      { value: 'book_appointment',  label: 'Book Appointment' },
+                      { value: 'call_tool',         label: 'Call Tool' },
+                      { value: 'send_email',        label: 'Send Email' },
+                    ]}
+                  />
+                </div>
                 {(!node.config?.actionType || node.config.actionType === 'set_flag') && (
                   <>
-                    <input type="text" value={node.config?.flagName || ''} placeholder="Flag name, e.g. petitionType"
-                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, flagName: e.target.value } })}
-                      className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
-                    <input type="text" value={node.config?.flagValue || node.config?.petitionType || ''} placeholder="Flag value, e.g. V-Petition - new"
-                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, flagValue: e.target.value, petitionType: e.target.value } })}
-                      className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                    <div>
+                      <label className="block text-[10px] font-medium text-zinc-400 mb-1">Flag name <span className="text-zinc-600 font-normal">(internal key)</span></label>
+                      <input type="text" value={node.config?.flagName || ''}
+                        onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, flagName: e.target.value } })}
+                        className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-zinc-400 mb-1">Flag value <span className="text-zinc-600 font-normal">(what it gets set to)</span></label>
+                      <input type="text" value={node.config?.flagValue || node.config?.petitionType || ''}
+                        onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, flagValue: e.target.value, petitionType: e.target.value } })}
+                        className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                    </div>
                   </>
                 )}
                 {node.config?.actionType === 'call_tool' && (
-                  <input type="text" value={node.config?.toolName || ''} placeholder="Tool name, e.g. lookupClient"
-                    onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, toolName: e.target.value } })}
-                    className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                  <div>
+                    <label className="block text-[10px] font-medium text-zinc-400 mb-1">Tool name</label>
+                    <input type="text" value={node.config?.toolName || ''}
+                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, toolName: e.target.value } })}
+                      className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                  </div>
                 )}
                 {node.config?.actionType === 'book_appointment' && (
-                  <p className="text-[10px] text-zinc-300">Calls the bookAppointment tool with collected caller data and confirms the date/time.</p>
+                  <p className="text-[10px] text-zinc-400">Calls the bookAppointment tool with collected caller data and confirms the date/time.</p>
                 )}
                 {node.config?.actionType === 'send_email' && (
-                  <p className="text-[10px] text-zinc-300">Sends an email summary to the matched attorney.</p>
+                  <p className="text-[10px] text-zinc-400">Sends an email summary to the matched attorney.</p>
                 )}
-                <textarea value={node.config?.note || ''} placeholder="Internal note (optional)..."
-                  rows={2}
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
-                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-400 focus:outline-none focus:text-white resize-none" />
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1">Internal note <span className="text-zinc-600 font-normal">(optional, not seen by AI)</span></label>
+                  <textarea value={node.config?.note || ''}
+                    rows={2}
+                    onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
+                    className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-400 focus:outline-none focus:text-white resize-none" />
+                </div>
               </div>
             )}
             {node.type === 'collect_info' && (
               <div className="space-y-2">
-                <textarea value={node.config?.question || ''} placeholder="Question to ask (optional)..."
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
-                  rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <label className="text-[10px] text-zinc-300">Fields to collect:</label>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1">Question to ask <span className="text-zinc-600 font-normal">(optional)</span></label>
+                  <textarea value={node.config?.question || ''}
+                    onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
+                    rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
+                </div>
+                <label className="block text-[10px] font-medium text-zinc-400">Fields to collect</label>
                 {(node.config?.fields || []).map((field: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
                     <input type="text" value={field.label || ''} placeholder="Field label"
@@ -366,9 +393,12 @@ function NodeCard({
               </div>
             )}
             {node.type === 'end' && (
-              <input type="text" value={node.config?.closingMessage || ''} placeholder="Closing message..."
-                onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, closingMessage: e.target.value } })}
-                className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+              <div>
+                <label className="block text-[10px] font-medium text-zinc-400 mb-1">Closing message <span className="text-zinc-600 font-normal">(what the AI says before ending the call)</span></label>
+                <input type="text" value={node.config?.closingMessage || ''}
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, closingMessage: e.target.value } })}
+                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+              </div>
             )}
           </div>
         )}
