@@ -78,7 +78,7 @@ function NodeCard({
   if (!isPrimary) return null;
 
   return (
-    <div className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
+    <div id={`flow-node-${node.id}`} className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
       {/* Node card */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
         <div className="flex items-center gap-2 px-3 py-2">
@@ -282,7 +282,24 @@ function NodeCard({
                 <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900/50 border border-zinc-800 border-dashed rounded-lg">
                   <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
                   <span className="text-[10px] text-zinc-500">Continues to:</span>
-                  <span className="text-[10px] text-zinc-300 font-medium truncate">{childNode.label}</span>
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById(`flow-node-${childNode.id}`);
+                      if (!el) return;
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      el.style.transition = 'outline 0s';
+                      el.style.outline = '2px solid #3b82f6';
+                      el.style.borderRadius = '8px';
+                      setTimeout(() => {
+                        el.style.transition = 'outline 0.6s ease';
+                        el.style.outline = '2px solid transparent';
+                        setTimeout(() => { el.style.outline = ''; el.style.transition = ''; el.style.borderRadius = ''; }, 700);
+                      }, 800);
+                    }}
+                    className="text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate underline-offset-2 hover:underline transition-colors"
+                  >
+                    {childNode.label}
+                  </button>
                   <button onClick={async () => {
                     const ok = await confirm({ title: 'Remove Link', message: `Remove the link to "${childNode.label}"?`, confirmLabel: 'Remove', destructive: true });
                     if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
