@@ -80,7 +80,7 @@ function NodeCard({
   return (
     <div id={`flow-node-${node.id}`} className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
       {/* Node card */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 overflow-hidden w-80" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
         <div className="flex items-center gap-2 px-3 py-2">
           <button onClick={() => setExpanded(!expanded)} className="text-zinc-500 hover:text-white">
             {childEdges.length > 0 ? (expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
@@ -317,7 +317,7 @@ function NodeCard({
       {expanded && (
         <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
           <AddNodeMenu
-            parentId={node.id} parentLabel={node.label}
+            parentId={node.id} parentLabel={node.label} parentType={node.type}
             allNodes={allNodes} currentNodeId={node.id}
             onAdd={onAddChild} onLinkExisting={onLinkExisting}
           />
@@ -329,9 +329,10 @@ function NodeCard({
 
 // ─── Add node menu ────────────────────────────────────────────────────────
 
-function AddNodeMenu({ parentId, parentLabel, allNodes, currentNodeId, onAdd, onLinkExisting }: {
+function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeId, onAdd, onLinkExisting }: {
   parentId: string;
   parentLabel: string;
+  parentType: string;
   allNodes: FNode[];
   currentNodeId: string;
   onAdd: (parentId: string, type: string) => void;
@@ -342,6 +343,9 @@ function AddNodeMenu({ parentId, parentLabel, allNodes, currentNodeId, onAdd, on
   const [showLinkPicker, setShowLinkPicker] = useState(false);
 
   const shortParent = parentLabel.length > 25 ? parentLabel.slice(0, 25) + '...' : parentLabel;
+
+  // Questions can only branch via Response nodes
+  const isQuestion = parentType === 'question';
 
   const linkableNodes = allNodes.filter((n) => n.id !== currentNodeId && n.type !== 'start');
   const filteredNodes = linkSearch
@@ -358,8 +362,15 @@ function AddNodeMenu({ parentId, parentLabel, allNodes, currentNodeId, onAdd, on
         <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-56">
           {!showLinkPicker ? (
             <>
+              {isQuestion && (
+                <p className="text-[9px] text-zinc-600 px-2 pb-1.5">Questions branch through Response nodes only.</p>
+              )}
               {Object.entries(NODE_LABELS)
-                .filter(([type]) => type !== 'start' && type !== 'collect_info')
+                .filter(([type]) => {
+                  if (type === 'start' || type === 'collect_info') return false;
+                  if (isQuestion) return type === 'response';
+                  return true;
+                })
                 .map(([type, label]) => (
                   <button key={type} onClick={() => { onAdd(parentId, type); setOpen(false); }}
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
