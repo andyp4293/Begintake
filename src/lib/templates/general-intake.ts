@@ -124,7 +124,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(q3, q3_no); addEdge(q3_no, q4);
 
   const q5 = addNode('question', 'Q5. Tell Me What\'s Going On', {
-    note: 'Ask the caller to describe their situation in their own words. Be warm and empathetic - say something like "I\'m sorry to hear that. Can you tell me a bit more about what\'s been going on?" Do NOT read a list of legal categories. Listen carefully, ask gentle follow-up questions if needed ("How long has this been going on?" or "Can you tell me a little more about that?"). Once you understand the situation, silently route to the correct practice area branch. The caller should feel heard, not processed.',
+    note: 'Ask the caller to describe their situation in their own words. Be warm and inviting - say something like "Of course, I\'d be happy to help. Can you tell me a little about what\'s been going on?" Do NOT read a list of legal categories. Listen carefully, ask gentle follow-up questions if needed ("How long has this been going on?" or "Can you tell me a little more about that?"). Once you understand the situation, silently route to the correct practice area branch. The caller should feel heard, not processed.',
   });
   const q4_self = resp('For myself');
   const q4_other = resp('On behalf of someone else', 'Ask: "What is your relationship to them?" Note it.');
