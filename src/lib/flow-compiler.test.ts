@@ -565,13 +565,15 @@ describe('Anderson Bowman template', () => {
     const emergency = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
     const a4 = template.nodes.find((n: any) => n.label === 'A4. Urgency / Safety Screen');
     const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
+    const q1b = template.nodes.find((n: any) => n.label === 'Q1b. New or Existing Client?');
 
     // In the new Response-node pattern, edges to transfer can come from:
     // 1. cEmergency (emergency action node) - direct bypass
     // 2. a4_urgent (Response child of a4) - urgent bypass
     // 3. cos_now (Response child of cos) - the "Connect me now" path
+    // 4. q1b_existing (Response child of q1b) - existing client early bypass
 
-    // Get Response children of a4 and cos
+    // Get Response children of a4, cos, and q1b
     const a4ResponseIds = new Set(
       template.edges
         .filter((e: any) => e.sourceNodeId === a4!.id)
@@ -582,11 +584,17 @@ describe('Anderson Bowman template', () => {
         .filter((e: any) => e.sourceNodeId === cos!.id)
         .map((e: any) => e.targetNodeId)
     );
+    const q1bResponseIds = new Set(
+      template.edges
+        .filter((e: any) => e.sourceNodeId === q1b!.id)
+        .map((e: any) => e.targetNodeId)
+    );
 
     const allowedDirectToTransfer = new Set([
       emergency!.id,
       ...Array.from(a4ResponseIds),
       ...Array.from(cosResponseIds),
+      ...Array.from(q1bResponseIds),
     ]);
 
     const directToTransfer = template.edges.filter(

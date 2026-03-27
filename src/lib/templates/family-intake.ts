@@ -33,6 +33,13 @@ export function createFamilyIntakeTemplate() {
     return addNode('response', label, { response: label, instruction: instruction || '' });
   }
 
+  // Transfer node declared early so it can be referenced by any branch (including existing-client bypass)
+  const transferId = addNode('transfer', 'Transfer to Attorney', {
+    message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need to help you effectively. Please hold for just a moment - I'm connecting you now with a member of our legal team.",
+    includeNotes: true,
+    transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // SECTION 0 - OPENING & CALLER IDENTIFICATION
   // ═══════════════════════════════════════════════════════════════════════════
@@ -45,19 +52,33 @@ export function createFamilyIntakeTemplate() {
   const q1 = addNode('question', 'Q1. Shall we get started?', { question: 'Shall we get started?' });
   addEdge(startId, q1);
 
+  // Q1b. New or existing client
+  const q1b = addNode('question', 'Q1b. New or Existing Client?', {
+    question: 'Have you worked with our firm before, or is this your first time reaching out to us?',
+    note: 'This helps us route you correctly. Listen for any indication they are a returning client.',
+  });
+
+  // Q1 responses - both lead to Q1b
+  const q1_yes = response("Yes, let's begin", 'Proceed to Q1b.');
+  const q1_explain = response("What is this for?", "Briefly explain: \"Of course - I'm going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes.\" Then proceed to Q1b.");
+  addEdge(q1, q1_yes);
+  addEdge(q1_yes, q1b);
+  addEdge(q1, q1_explain);
+  addEdge(q1_explain, q1b);
+
+  // Q1b responses
+  const q1b_existing = response('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with your attorney right away.\" Proceed directly to transfer.");
+  const q1b_new      = response('New client - first time calling', 'Proceed to Q2 to collect their information.');
+  addEdge(q1b, q1b_existing);
+  addEdge(q1b_existing, transferId);   // existing clients bypass intake → straight to attorney
+  addEdge(q1b, q1b_new);
+
   // Q2. Caller name (collect field, no branching)
   const q2 = addNode('question', 'Q2. Caller Name', {
     question: 'Could I start with your first and last name?',
     collectFields: [{ name: 'caller_name', label: 'First and last name', type: 'text', required: true }],
   });
-
-  // Q1 responses - both lead to Q2
-  const q1_yes = response("Yes, let's begin", 'Proceed to Q2.');
-  const q1_explain = response("What is this for?", "Briefly explain: \"Of course - I'm going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes.\" Then proceed to Q2.");
-  addEdge(q1, q1_yes);
-  addEdge(q1_yes, q2);
-  addEdge(q1, q1_explain);
-  addEdge(q1_explain, q2); // shared target - shows as "Continues to: Q2"
+  addEdge(q1b_new, q2);
 
   // Q3. Best phone number
   const q3 = addNode('question', 'Q3. Best Number to Reach You', {
@@ -327,14 +348,8 @@ export function createFamilyIntakeTemplate() {
   addEdge(branchHRouting, branchH_any);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TRANSFER PROTOCOL - HANDOFF TO ATTORNEY
+  // TRANSFER PROTOCOL - HANDOFF TO ATTORNEY (node declared at top of function)
   // ═══════════════════════════════════════════════════════════════════════════
-
-  const transferId = addNode('transfer', 'Transfer to Attorney', {
-    message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need to help you effectively. Please hold for just a moment - I'm connecting you now with a member of our legal team.",
-    includeNotes: true,
-    transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
-  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CONNECT OR SCHEDULE - offered before every non-emergency transfer

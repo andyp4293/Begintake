@@ -80,15 +80,28 @@ export function createGeneralIntakeTemplate() {
   const q1 = addNode('question', 'Q1. Shall we get started?', { question: 'Shall we get started?' });
   addEdge(startId, q1);
 
+  // Q1b. New or existing client
+  const q1b = addNode('question', 'Q1b. New or Existing Client?', {
+    question: 'Have you worked with our firm before, or is this your first time reaching out to us?',
+    note: "This helps us route you correctly. Listen for any indication they are a returning client.",
+  });
+
+  const q1_yes  = resp("Yes, let's begin", 'Proceed to Q1b.');
+  const q1_what = resp('What is this for?', "Briefly explain: \"I'll collect some basic information about your situation, then connect you with an attorney who can help. It only takes a few minutes.\" Then proceed to Q1b.");
+  addEdge(q1, q1_yes);  addEdge(q1_yes, q1b);
+  addEdge(q1, q1_what); addEdge(q1_what, q1b);
+
+  // Q1b responses
+  const q1b_existing = resp('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with your attorney right away.\" Proceed directly to transfer.");
+  const q1b_new      = resp('New client - first time calling', 'Proceed to Q2 to collect their information.');
+  addEdge(q1b, q1b_existing); addEdge(q1b_existing, transferId);
+  addEdge(q1b, q1b_new);
+
   const q2 = addNode('question', 'Q2. Caller Name', {
     question: 'Could I start with your first and last name?',
     collectFields: [{ name: 'caller_name', label: 'First and last name', type: 'text', required: true }],
   });
-
-  const q1_yes = resp("Yes, let's begin", 'Proceed to Q2.');
-  const q1_what = resp('What is this for?', "Briefly explain: \"I'll collect some basic information about your situation, then connect you with an attorney who can help. It only takes a few minutes.\" Then proceed to Q2.");
-  addEdge(q1, q1_yes); addEdge(q1_yes, q2);
-  addEdge(q1, q1_what); addEdge(q1_what, q2);
+  addEdge(q1b_new, q2);
 
   const q3 = addNode('question', 'Q3. Best Phone Number', {
     question: "Is the number you're calling from the best number to reach you if we get disconnected?",
