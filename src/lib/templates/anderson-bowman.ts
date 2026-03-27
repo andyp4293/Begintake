@@ -375,21 +375,73 @@ export function createAndersonBowmanTemplate() {
     transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
   }, 0);
 
-  // Connect ALL branch endpoints to transfer
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONNECT OR SCHEDULE - offered before every non-emergency transfer
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
+    question: 'Would you prefer to speak with an attorney right now, or would you like to schedule a consultation for a later time?',
+    options: [
+      { label: 'Connect me now', value: 'now', instruction: 'Proceed to transfer immediately.' },
+      { label: 'Schedule a consultation', value: 'schedule', instruction: 'Proceed to book an appointment.' },
+    ],
+  }, 0);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // APPOINTMENT BOOKING PATH
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const appointmentNode = addNode('action', 'Book Consultation', {
+    actionType: 'book_appointment',
+    note: 'Call the bookAppointment tool with the caller name, phone number, matter category, and petition type. Read back the confirmed date and time to the caller.',
+  }, 200);
+
+  const nothingElseNode = addNode('question', 'Anything Else?', {
+    question: 'Is there anything else I can help you with today?',
+    options: [
+      { label: 'No, that is all', value: 'no', instruction: 'Thank them warmly and proceed to end the call.' },
+      { label: 'Yes, I have another question', value: 'yes', instruction: 'Address their question briefly, then proceed to end the call.' },
+    ],
+  }, 200);
+
+  const endAfterSchedule = addNode('end', 'End - After Scheduling', {
+    closingMessage: 'Wonderful. We look forward to speaking with you at your consultation. Have a great day. Goodbye!',
+  }, 200);
+
+  // Appointment booking chain
+  addEdge(appointmentNode, nothingElseNode);
+  addEdge(nothingElseNode, endAfterSchedule, 'No, that is all');
+  addEdge(nothingElseNode, endAfterSchedule, 'Yes, I have another question');
+
+  // Connect or Schedule routing
+  addEdge(connectOrSchedule, transferId, 'Connect me now');
+  addEdge(connectOrSchedule, appointmentNode, 'Schedule a consultation');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BRANCH ENDPOINTS
+  // Emergency paths bypass scheduling and go directly to transfer
+  // All routine paths go through Connect or Schedule first
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Branch A - urgent bypasses scheduling, routine goes through it
   addEdge(a4, transferId, 'Urgent - emergency custody');
-  addEdge(a4, transferId, 'Routine - proceed to transfer');
-  addEdge(b3, transferId, 'Proceed to transfer');
+  addEdge(a4, connectOrSchedule, 'Routine - proceed to transfer');
+
+  // Emergency (Branch C) - always direct transfer, no scheduling
   addEdge(cEmergency, transferId, 'Emergency transfer');
-  addEdge(c2, transferId, 'Proceed to transfer');
-  addEdge(d1, transferId, 'Proceed to transfer');
-  addEdge(d2, transferId, 'Proceed to transfer');
-  addEdge(branchDRouting, transferId, 'Concerned about child elsewhere');
-  addEdge(branchERouting, transferId, 'Mother seeking to establish');
-  addEdge(branchERouting, transferId, 'Father seeking rights');
-  addEdge(branchERouting, transferId, 'Alleged father disputing');
-  addEdge(branchFRouting, transferId, 'Any type');
-  addEdge(branchGRouting, transferId, 'Any type');
-  addEdge(branchHRouting, transferId, 'Any type');
+
+  // All other branch endpoints route through Connect or Schedule
+  addEdge(b3, connectOrSchedule, 'Proceed to transfer');
+  addEdge(c2, connectOrSchedule, 'Proceed to transfer');
+  addEdge(d1, connectOrSchedule, 'Proceed to transfer');
+  addEdge(d2, connectOrSchedule, 'Proceed to transfer');
+  addEdge(branchDRouting, connectOrSchedule, 'Concerned about child elsewhere');
+  addEdge(branchERouting, connectOrSchedule, 'Mother seeking to establish');
+  addEdge(branchERouting, connectOrSchedule, 'Father seeking rights');
+  addEdge(branchERouting, connectOrSchedule, 'Alleged father disputing');
+  addEdge(branchFRouting, connectOrSchedule, 'Any type');
+  addEdge(branchGRouting, connectOrSchedule, 'Any type');
+  addEdge(branchHRouting, connectOrSchedule, 'Any type');
 
   return {
     name: 'Family Court Intake Example',

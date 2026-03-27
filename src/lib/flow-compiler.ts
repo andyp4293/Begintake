@@ -250,6 +250,11 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
         if (config.actionType === 'send_email') {
           sections.push(`Send an email summary to the matched attorney.`);
         }
+        if (config.actionType === 'book_appointment') {
+          sections.push(`Call the bookAppointment tool to schedule a consultation.`);
+          sections.push(`Pass: caller name, caller phone, matter category, and petition type.`);
+          sections.push(`Read back the confirmed date and time to the caller before continuing.`);
+        }
         if (config.note) {
           sections.push(`Note: ${config.note}`);
         }
@@ -333,6 +338,9 @@ export function extractToolsFromFlow(flow: FlowData): string[] {
     }
     if (node.type === 'transfer') {
       tools.add('generateTransferSummary');
+    }
+    if (node.type === 'action' && node.config?.actionType === 'book_appointment') {
+      tools.add('bookAppointment');
     }
   }
 
