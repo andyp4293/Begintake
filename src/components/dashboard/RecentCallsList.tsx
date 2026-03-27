@@ -263,7 +263,7 @@ export function RecentCallsList() {
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                               call.urgencyFlag === 'safety_first' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
                             }`}>
-                              {call.urgencyFlag === 'safety_first' ? 'URGENT — SAFETY' : 'URGENT'}
+                              {call.urgencyFlag === 'safety_first' ? 'URGENT - SAFETY' : 'URGENT'}
                             </span>
                           </p>
                         )}

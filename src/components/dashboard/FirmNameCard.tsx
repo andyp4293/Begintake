@@ -59,7 +59,7 @@ export function FirmNameCard() {
         </div>
         <div>
           <h3 className="text-sm font-medium text-zinc-300">Firm Name</h3>
-          <p className="text-xs text-zinc-500">Used as {'{firm}'} in flow scripts — e.g. &quot;Thank you for calling {'{firm}'}&quot;</p>
+          <p className="text-xs text-zinc-500">Used as {'{firm}'} in flow scripts - e.g. &quot;Thank you for calling {'{firm}'}&quot;</p>
         </div>
       </div>
 

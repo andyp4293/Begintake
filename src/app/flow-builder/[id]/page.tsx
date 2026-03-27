@@ -190,7 +190,7 @@ function NodeCard({
                           onUpdateNode(node.id, { config: { ...node.config, options: opts } });
                         }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
                       </div>
-                      <input type="text" value={opt.instruction || ''} placeholder="Instruction — e.g. Proceed to Q2, or: Briefly explain then proceed..."
+                      <input type="text" value={opt.instruction || ''} placeholder="Instruction - e.g. Proceed to Q2, or: Briefly explain then proceed..."
                         onChange={(e) => {
                           const opts = [...(node.config?.options || [])];
                           opts[i] = { ...opts[i], instruction: e.target.value };
@@ -207,7 +207,7 @@ function NodeCard({
                   </button>
                 </div>
                 <div className="space-y-2 pt-2 border-t border-zinc-700/50">
-                  <label className="text-[10px] text-zinc-500">Collect info (optional) — any value you want, e.g. &quot;Hair color&quot;, &quot;Best phone number&quot;:</label>
+                  <label className="text-[10px] text-zinc-500">Collect info (optional) - any value you want, e.g. &quot;Hair color&quot;, &quot;Best phone number&quot;:</label>
                   {(node.config?.collectFields || []).map((field: any, i: number) => (
                     <div key={i} className="flex items-center gap-2">
                       <input type="text" value={field.label || ''} placeholder="e.g. Full name, Hair color, Best phone number..."
@@ -240,7 +240,7 @@ function NodeCard({
             {node.type === 'action' && (
               <input type="text" value={node.config?.petitionType || node.config?.flagValue || ''}
                 onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, petitionType: e.target.value, flagValue: e.target.value, actionType: 'set_flag' } })}
-                placeholder="e.g. V-Petition — new" className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                placeholder="e.g. V-Petition - new" className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
             )}
             {node.type === 'collect_info' && (
               <div className="space-y-2">
@@ -250,7 +250,7 @@ function NodeCard({
                 <label className="text-[10px] text-zinc-500">Fields to collect:</label>
                 {(node.config?.fields || []).map((field: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
-                    <input type="text" value={field.label || ''} placeholder="Field label — e.g. Best phone number to reach you"
+                    <input type="text" value={field.label || ''} placeholder="Field label - e.g. Best phone number to reach you"
                       onChange={(e) => {
                         const fields = [...(node.config?.fields || [])];
                         fields[i] = { ...fields[i], label: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') };
@@ -417,7 +417,7 @@ export default function FlowEditorPage() {
       decision: { description: '' },
       collect_info: { fields: [{ name: 'field_1', label: '', type: 'text', required: true }] },
       action: { actionType: 'set_flag', flagName: '', flagValue: '' },
-      transfer: { message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need. Please hold — I'm connecting you now." },
+      transfer: { message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need. Please hold - I'm connecting you now." },
       end: { closingMessage: 'Thank you for calling! Have a wonderful day. Goodbye!' },
     };
     const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type], config: defaultConfigs[type] || {}, sortOrder: nodes.length };
@@ -445,7 +445,7 @@ export default function FlowEditorPage() {
     try {
       const res = await fetch(`/api/flows/${flowId}/activate`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed');
-      toast.success('Flow activated — calls will use this script');
+      toast.success('Flow activated - calls will use this script');
     } catch { toast.error('Failed to activate'); }
   };
 
@@ -487,7 +487,7 @@ export default function FlowEditorPage() {
             {
               type: 'question',
               title: 'Question',
-              desc: 'Ask the caller something. Add answer options with routing instructions, and optionally collect specific values (name, phone, hair color — anything).',
+              desc: 'Ask the caller something. Add answer options with routing instructions, and optionally collect specific values (name, phone, hair color - anything).',
             },
             {
               type: 'decision',

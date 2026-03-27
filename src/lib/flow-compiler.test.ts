@@ -196,7 +196,7 @@ describe('question node with collectFields', () => {
     expect(prompt).toContain('Preferred contact method (required): options are Phone, Email, Text');
   });
 
-  it('requires no collectFields for a plain question — backward compat', () => {
+  it('requires no collectFields for a plain question - backward compat', () => {
     const flow = makeFlow({
       question: 'What brings you in today?',
       options: [{ label: 'Custody', value: 'custody' }, { label: 'Support', value: 'support' }],
@@ -374,14 +374,14 @@ describe('Anderson Bowman template', () => {
 
   it('has custody branch (Branch A) as a decision node', () => {
     const template = createAndersonBowmanTemplate();
-    const custodyNode = template.nodes.find((n: any) => n.label === 'Branch A — Custody Order Status');
+    const custodyNode = template.nodes.find((n: any) => n.label === 'Branch A - Custody Order Status');
     expect(custodyNode).toBeDefined();
     expect(custodyNode!.type).toBe('decision');
   });
 
   it('has safety-first protocol for family offense (Branch C)', () => {
     const template = createAndersonBowmanTemplate();
-    const safetyNode = template.nodes.find((n: any) => n.label === 'Branch C — Safety Check');
+    const safetyNode = template.nodes.find((n: any) => n.label === 'Branch C - Safety Check');
     expect(safetyNode).toBeDefined();
     expect(safetyNode!.type).toBe('question');
     expect(safetyNode!.config.question).toContain('safe');
@@ -389,13 +389,13 @@ describe('Anderson Bowman template', () => {
 
   it('has emergency action node with safety flag and O-Petition', () => {
     const template = createAndersonBowmanTemplate();
-    const emergencyNode = template.nodes.find((n: any) => n.label === 'EMERGENCY — Advise 911');
+    const emergencyNode = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
     expect(emergencyNode).toBeDefined();
     expect(emergencyNode!.config.flagValue).toBe('safety_first');
     expect(emergencyNode!.config.petitionType).toContain('O-Petition');
   });
 
-  it('Q2 (Caller Name) is now a question node with collectFields — not collect_info', () => {
+  it('Q2 (Caller Name) is now a question node with collectFields - not collect_info', () => {
     const template = createAndersonBowmanTemplate();
     const q2 = template.nodes.find((n: any) => n.label === 'Q2. Caller Name');
     expect(q2).toBeDefined();
@@ -418,7 +418,7 @@ describe('Anderson Bowman template', () => {
     expect(a3!.config.collectFields[1].name).toBe('children_ages');
   });
 
-  it('has NO standalone collect_info nodes — all converted to question+collectFields', () => {
+  it('has NO standalone collect_info nodes - all converted to question+collectFields', () => {
     const template = createAndersonBowmanTemplate();
     const collectInfoNodes = template.nodes.filter((n: any) => n.type === 'collect_info');
     expect(collectInfoNodes).toHaveLength(0);

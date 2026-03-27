@@ -44,7 +44,7 @@ describe('GET /api/calls/[id]/intake-data', () => {
       callOutcome: 'transferred',
       legalArea: 'family',
       urgencyFlag: 'standard',
-      petitionType: 'V-Petition — new',
+      petitionType: 'V-Petition - new',
       matterCategory: 'Custody & Visitation',
       partyRole: 'self',
       summary: 'Custody dispute',
@@ -64,7 +64,7 @@ describe('GET /api/calls/[id]/intake-data', () => {
     const res = await GET(req, { params: Promise.resolve({ id: 'cs1' }) });
     const data = await res.json();
 
-    expect(data.petitionType).toBe('V-Petition — new');
+    expect(data.petitionType).toBe('V-Petition - new');
     expect(data.matterCategory).toBe('Custody & Visitation');
     expect(data.urgencyFlag).toBe('standard');
     expect(data.partyRole).toBe('self');

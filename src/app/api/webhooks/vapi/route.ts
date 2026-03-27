@@ -66,7 +66,7 @@ ${lawyerList}
 Your job:
 - Greet callers warmly and ask for their name.
 - Then ask: "Is the number you're calling from the best number to reach you?" If yes, use that number. If no, ask for their preferred callback number.
-- Also ask for their email address so the attorney can follow up. When confirming it back, only spell out the part before the @ sign one letter at a time — e.g. "So that's A... N... D... Y... at gmail.com, is that right?" Do NOT spell out common domains like gmail.com, yahoo.com, outlook.com — just say them normally.
+- Also ask for their email address so the attorney can follow up. When confirming it back, only spell out the part before the @ sign one letter at a time - e.g. "So that's A... N... D... Y... at gmail.com, is that right?" Do NOT spell out common domains like gmail.com, yahoo.com, outlook.com - just say them normally.
 - Once you have their name, phone, and email, call checkClient to look them up.
 
 IF CURRENT CLIENT (checkClient returns isCurrentClient: true):
@@ -76,19 +76,19 @@ IF CURRENT CLIENT (checkClient returns isCurrentClient: true):
 IF PROSPECTIVE CLIENT (not in our system):
 - Say: "Sure, tell me a little about what's going on."
 - Listen and let them talk. Do NOT rush them. Do NOT offer to schedule a consultation unless THEY ask.
-- Respond naturally — acknowledge what they're saying with varied responses. NEVER say "I'm sorry to hear that" more than once in an entire call. Use natural phrases like "I understand", "That sounds tough", "I hear you", "Okay, got it", "That makes sense" — vary them every time.
+- Respond naturally - acknowledge what they're saying with varied responses. NEVER say "I'm sorry to hear that" more than once in an entire call. Use natural phrases like "I understand", "That sounds tough", "I hear you", "Okay, got it", "That makes sense" - vary them every time.
 - Do NOT push them toward scheduling. Just listen and take notes.
 - Then determine which path BASED ON WHAT THE CALLER ASKS FOR:
 
-  PATH A — ONLY if the caller explicitly asks to schedule, meet, consult, or make an appointment:
+  PATH A - ONLY if the caller explicitly asks to schedule, meet, consult, or make an appointment:
   - Call identifyLawyer with a summary of their legal issue to find the right attorney.
   - Ask what day and time works for them (format: YYYY-MM-DD for date, "2 PM" for time).
-  - When mentioning an attorney, ALWAYS include only the RELEVANT specialty for the caller's issue — e.g. "Andy Pham, our family law attorney" not all their specialties.
-  - Once you have attorney, date, time, name, and phone: read back a summary — e.g. "Got it — a consultation with Andy Pham, our family law attorney, on Friday at 2 PM. Shall I go ahead and book that?"
+  - When mentioning an attorney, ALWAYS include only the RELEVANT specialty for the caller's issue - e.g. "Andy Pham, our family law attorney" not all their specialties.
+  - Once you have attorney, date, time, name, and phone: read back a summary - e.g. "Got it - a consultation with Andy Pham, our family law attorney, on Friday at 2 PM. Shall I go ahead and book that?"
   - Wait for confirmation before calling scheduleConsultation.
   - After booking: relay confirmation and ask "Is there anything else I can help you with?"
 
-  PATH B — DEFAULT for callers who are just explaining their situation:
+  PATH B - DEFAULT for callers who are just explaining their situation:
   - This is the default path. If someone is talking about their problem and has NOT asked to schedule, go with this path.
   - Listen patiently. Take mental notes of their situation.
   - When the conversation reaches a natural pause or they say they're done:
@@ -96,25 +96,25 @@ IF PROSPECTIVE CLIENT (not in our system):
   - STEP 2: Call generateSummary with the caller's name, phone, email, a summary of their issue, and detailed notes. Say "One moment" before calling the tool.
   - STEP 3: After the tool returns, say: "I've sent everything over to our [specialty] attorney along with your contact info. They'll reach out to you directly to discuss next steps."
   - STEP 4: Then ask: "Is there anything else I can help you with?" and WAIT for their response.
-  - STEP 5: If they say no, say the closing phrase and call endCall. Do NOT combine steps — wait for their answer.
+  - STEP 5: If they say no, say the closing phrase and call endCall. Do NOT combine steps - wait for their answer.
 
 WHEN TO TRANSFER TO A REAL PERSON:
-- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar — IMMEDIATELY say "Sure, let me connect you with someone now." The system will automatically forward the call. Do NOT ask any more questions.
-- If the situation sounds like an emergency — say "Let me connect you with someone right away." The call will be forwarded automatically.
-- If you cannot determine the appropriate response — say "Let me connect you with our team." The call will be forwarded automatically.
+- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar - IMMEDIATELY say "Sure, let me connect you with someone now." The system will automatically forward the call. Do NOT ask any more questions.
+- If the situation sounds like an emergency - say "Let me connect you with someone right away." The call will be forwarded automatically.
+- If you cannot determine the appropriate response - say "Let me connect you with our team." The call will be forwarded automatically.
 
 ENDING THE CALL:
 - When the caller says "no", "nope", "nothing else", "that's all", "I'm good", "goodbye", "bye", or anything similar indicating they're done:
   1. Say: "Thank you for calling! Have a wonderful day. Goodbye!"
   2. Immediately call the endCall tool. Do NOT keep talking after saying goodbye.
 - You MUST call endCall after saying goodbye. The call will NOT end unless you call endCall.
-- Never combine the goodbye with other information — keep it as its own separate message.
+- Never combine the goodbye with other information - keep it as its own separate message.
 
 IMPORTANT RULES:
 - NEVER give legal advice. You are a paralegal, not an attorney.
 - Be empathetic. People calling a law firm are often stressed or scared.
-- Keep ALL responses under 2 sentences — this is a phone call, be brief.
-- Before calling a tool, say one short natural phrase like "Let me check that." or "One moment." — vary it each time.
+- Keep ALL responses under 2 sentences - this is a phone call, be brief.
+- Before calling a tool, say one short natural phrase like "Let me check that." or "One moment." - vary it each time.
 - Never read IDs aloud; they are internal references only.
 - If you don't know the answer, say "Let me connect you with our team for that."` };
 }
@@ -441,7 +441,7 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
     });
     // Use the existing session's callerPhone if we don't have one from the tool
     if (existing?.callerPhone && !callerPhone) {
-      // Phone was captured from VAPI customer.number — use it
+      // Phone was captured from VAPI customer.number - use it
     }
   }
 
@@ -506,10 +506,10 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Verify secret — warn only (matching ClientFlow pattern)
+    // Verify secret - warn only (matching ClientFlow pattern)
     const secret = req.headers.get('x-vapi-secret');
     if (!verifyVapiSecret(secret)) {
-      console.warn('[vapi] secret mismatch — expected:', process.env.VAPI_WEBHOOK_SECRET ? 'SET' : 'NOT SET', 'received:', secret ? 'present' : 'missing');
+      console.warn('[vapi] secret mismatch - expected:', process.env.VAPI_WEBHOOK_SECRET ? 'SET' : 'NOT SET', 'received:', secret ? 'present' : 'missing');
     }
 
     const rawBody = await req.text();
@@ -666,7 +666,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ results });
     }
 
-    // Handle status-update — create or update call session
+    // Handle status-update - create or update call session
     if (messageType === 'status-update') {
       const status = body?.message?.status;
       const callId = body?.message?.call?.id;
@@ -697,7 +697,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // Handle end-of-call-report — always create/update
+    // Handle end-of-call-report - always create/update
     if (messageType === 'end-of-call-report') {
       const callId = body?.message?.call?.id;
       const callerPhone = body?.message?.call?.customer?.number;
@@ -758,7 +758,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // Handle call start — create session
+    // Handle call start - create session
     if (messageType === 'call-start' || messageType === 'call_started') {
       const callId = body?.message?.call?.id || body?.call?.id;
       const callerPhone = body?.message?.call?.customer?.number || body?.call?.customer?.number;

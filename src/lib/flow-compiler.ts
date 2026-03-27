@@ -100,9 +100,9 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
   sections.push(`Today is ${today}.`);
   sections.push('');
   sections.push('FOLLOW THIS SCRIPT EXACTLY. Ask each question one at a time. Wait for answers before proceeding.');
-  sections.push('Keep ALL responses under 2 sentences — this is a phone call.');
+  sections.push('Keep ALL responses under 2 sentences - this is a phone call.');
   sections.push('NEVER give legal advice. You are an intake assistant, not an attorney.');
-  sections.push('Before calling any tool, say a short natural phrase like "One moment." — vary it each time.');
+  sections.push('Before calling any tool, say a short natural phrase like "One moment." - vary it each time.');
   sections.push('');
 
   // Process each visited node
@@ -146,7 +146,7 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
             sections.push(`- ${field.label}${required}`);
           }
         }
-        sections.push(`Store all collected data mentally — you will need it at transfer.`);
+        sections.push(`Store all collected data mentally - you will need it at transfer.`);
         if (edges.length === 1) {
           sections.push(`After collecting, proceed to SECTION ${sectionIds.get(edges[0].targetNodeId)}.`);
         }
@@ -207,7 +207,7 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
               sections.push(`- ${field.label || field.name}${req}`);
             }
           }
-          sections.push(`Store all collected data — you will need it at transfer.`);
+          sections.push(`Store all collected data - you will need it at transfer.`);
         }
 
         sections.push('');
@@ -315,7 +315,7 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
   sections.push('- Never read IDs aloud.');
   sections.push('- Be empathetic. People calling a law firm are often stressed.');
   sections.push('- Everything shared is confidential.');
-  sections.push('- Keep ALL responses under 2 sentences — this is a phone call, not a letter.');
+  sections.push('- Keep ALL responses under 2 sentences - this is a phone call, not a letter.');
 
   // Replace all {name} variables with the assistant's name
   return resolveVars(sections.join('\n'));
