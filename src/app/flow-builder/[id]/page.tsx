@@ -5,7 +5,7 @@ import { redirect, useParams } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Link2,
+  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -52,14 +52,13 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents,
-  onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
+  onUpdateNode, onDeleteNode, onAddChild, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
   parentId: string | null; primaryParents: Map<string, string>;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string, edgeLabel?: string) => void;
-  onLinkExisting: (parentId: string, targetId: string, edgeLabel?: string) => void;
   onDeleteEdge: (sourceId: string, targetId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(depth < 3);
@@ -68,26 +67,11 @@ function NodeCard({
 
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
 
-  // Show merge reference if this node's primary parent is NOT the current parent
+  // Skip rendering if this node's primary parent is NOT the current parent (already rendered elsewhere)
   const isRoot = parentId === null;
   const isPrimary = isRoot || primaryParents.get(node.id) === parentId;
 
-  if (!isPrimary) {
-    return (
-      <div className={depth > 0 ? 'ml-6 border-l border-zinc-800/50 pl-4' : ''}>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800/50 border-dashed rounded-lg mb-2"
-          style={{ borderLeftColor: `${color}60`, borderLeftWidth: 3 }}>
-          <Link2 className="w-3 h-3 text-zinc-600" />
-          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: `${color}99` }}>
-            {NODE_LABELS[node.type]}
-          </span>
-          <span className="text-[10px] text-zinc-500">
-            → merges to: <span className="text-zinc-400">{node.label}</span>
-          </span>
-        </div>
-      </div>
-    );
-  }
+  if (!isPrimary) return null;
 
   return (
     <div className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
@@ -223,7 +207,7 @@ function NodeCard({
               node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
               parentId={node.id} primaryParents={primaryParents}
               onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-              onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+              onAddChild={onAddChild} onDeleteEdge={onDeleteEdge}
             />
           </div>
         );
@@ -232,8 +216,7 @@ function NodeCard({
       {/* Add child */}
       {expanded && (
         <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
-          <AddNodeMenu parentId={node.id} allNodes={allNodes} edges={edges}
-            onAdd={onAddChild} onLink={onLinkExisting} />
+          <AddNodeMenu parentId={node.id} onAdd={onAddChild} />
         </div>
       )}
     </div>
@@ -242,17 +225,12 @@ function NodeCard({
 
 // ─── Add node menu ────────────────────────────────────────────────────────
 
-function AddNodeMenu({ parentId, allNodes, edges, onAdd, onLink }: {
-  parentId: string; allNodes: FNode[]; edges: FEdge[];
+function AddNodeMenu({ parentId, onAdd }: {
+  parentId: string;
   onAdd: (parentId: string, type: string, edgeLabel?: string) => void;
-  onLink: (parentId: string, targetId: string, edgeLabel?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<'new' | 'link'>('new');
   const [edgeLabel, setEdgeLabel] = useState('');
-
-  const existingChildIds = new Set(edges.filter((e) => e.sourceNodeId === parentId).map((e) => e.targetNodeId));
-  const linkableNodes = allNodes.filter((n) => n.id !== parentId && !existingChildIds.has(n.id));
 
   return (
     <div className="relative inline-block">
@@ -260,41 +238,15 @@ function AddNodeMenu({ parentId, allNodes, edges, onAdd, onLink }: {
         <Plus className="w-3 h-3" /> Add step
       </button>
       {open && (
-        <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-60">
-          <div className="flex gap-1 mb-2">
-            <button onClick={() => setMode('new')}
-              className={`flex-1 text-[10px] py-1 rounded ${mode === 'new' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}>
-              New Step
-            </button>
-            <button onClick={() => setMode('link')}
-              className={`flex-1 text-[10px] py-1 rounded ${mode === 'link' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}>
-              <Link2 className="w-3 h-3 inline mr-1" />Link Existing
-            </button>
-          </div>
+        <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-52">
           <input type="text" value={edgeLabel} onChange={(e) => setEdgeLabel(e.target.value)} placeholder="Branch label (optional)"
             className="w-full px-2 py-1 mb-2 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
-          {mode === 'new' ? (
-            Object.entries(NODE_LABELS).map(([type, label]) => (
-              <button key={type} onClick={() => { onAdd(parentId, type, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
-              </button>
-            ))
-          ) : (
-            <div className="max-h-48 overflow-y-auto">
-              {linkableNodes.length === 0 ? (
-                <p className="text-[10px] text-zinc-600 px-2 py-2">No nodes to link to</p>
-              ) : (
-                linkableNodes.map((n) => (
-                  <button key={n.id} onClick={() => { onLink(parentId, n.id, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[n.type] }} />
-                    <span className="truncate">{n.label}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
+          {Object.entries(NODE_LABELS).map(([type, label]) => (
+            <button key={type} onClick={() => { onAdd(parentId, type, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
+            </button>
+          ))}
           <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1">Cancel</button>
         </div>
       )}
@@ -359,11 +311,6 @@ export default function FlowEditorPage() {
     setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: newNode.id, label: edgeLabel || null, condition: null, sortOrder: prev.length }]);
   };
 
-  const linkExisting = (parentId: string, targetId: string, edgeLabel?: string) => {
-    if (edges.some((e) => e.sourceNodeId === parentId && e.targetNodeId === targetId)) return;
-    setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: targetId, label: edgeLabel || null, condition: null, sortOrder: prev.length }]);
-  };
-
   const deleteEdge = (sourceId: string, targetId: string) => {
     setEdges((prev) => prev.filter((e) => !(e.sourceNodeId === sourceId && e.targetNodeId === targetId)));
   };
@@ -418,7 +365,7 @@ export default function FlowEditorPage() {
             node={rootNode} edges={edges} allNodes={nodes} depth={0}
             parentId={null} primaryParents={primaryParents}
             onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
-            onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
+            onDeleteEdge={deleteEdge}
           />
         )}
       </main>
