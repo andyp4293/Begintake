@@ -66,16 +66,16 @@ export function createFamilyIntakeTemplate() {
   });
 
   // Q1 responses - both lead to Q1b
-  const q1_yes = response("Yes, let's begin", 'Proceed to Q1b.');
-  const q1_explain = response("What is this for?", "Briefly explain: \"Of course - I'm going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes.\" Then proceed to Q1b.");
+  const q1_yes = response("Yes, let's begin");
+  const q1_explain = response("What is this for?", "Briefly explain: \"Of course - I'm going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes.\"");
   addEdge(q1, q1_yes);
   addEdge(q1_yes, q1b);
   addEdge(q1, q1_explain);
   addEdge(q1_explain, q1b);
 
   // Q1b responses
-  const q1b_existing = response('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with your attorney right away.\" Proceed directly to transfer.");
-  const q1b_new      = response('New client - first time calling', 'Proceed to Q2 to collect their information.');
+  const q1b_existing = response('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with our team right away.\"");
+  const q1b_new      = response('New client - first time calling');
   addEdge(q1b, q1b_existing);
   addEdge(q1b_existing, transferParalegalId);   // existing clients → paralegal/reception, not attorney
   addEdge(q1b, q1b_new);
@@ -99,8 +99,8 @@ export function createFamilyIntakeTemplate() {
   });
 
   // Q3 responses - both lead to Q4
-  const q3_yes = response('Yes, this number is fine', "Note the caller's phone number from the call. Proceed to Q4.");
-  const q3_no = response('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note the number, then proceed to Q4.");
+  const q3_yes = response('Yes, this number is fine', "Note the caller's phone number from the call.");
+  const q3_no = response('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note the number.");
   addEdge(q3, q3_yes);
   addEdge(q3_yes, q4);
   addEdge(q3, q3_no);
@@ -112,8 +112,8 @@ export function createFamilyIntakeTemplate() {
   });
 
   // Q4 responses - both lead to Q5
-  const q4_self = response('For myself', 'Proceed to Q5.');
-  const q4_family = response('For a family member', 'Ask follow-up: "What is your relationship to them? For example, are you a parent, grandparent, or someone else?" Note the relationship, then proceed to Q5.');
+  const q4_self = response('For myself');
+  const q4_family = response('For a family member', 'Ask: "What is your relationship to them? For example, are you a parent, grandparent, or someone else?" Note the relationship.');
   addEdge(q4, q4_self);
   addEdge(q4_self, q5);
   addEdge(q4, q4_family);
@@ -254,7 +254,7 @@ export function createFamilyIntakeTemplate() {
   });
 
   const cSafety_unsafe = response("No, or I'm not sure", 'EMERGENCY: Advise caller to call 911 immediately. Offer immediate attorney transfer.');
-  const cSafety_safe   = response('Yes, I am safe', 'Continue intake.');
+  const cSafety_safe   = response('Yes, I am safe');
   addEdge(cSafety, cSafety_unsafe); addEdge(cSafety_unsafe, cEmergency);
   addEdge(cSafety, cSafety_safe);   addEdge(cSafety_safe, c1);
 
@@ -366,8 +366,8 @@ export function createFamilyIntakeTemplate() {
     note: 'Ask whether they want to speak with an attorney now or book a time for later. Be natural - something like "Would you like me to connect you with an attorney right now, or would a scheduled consultation work better for you?" Acknowledge their preference warmly before proceeding.',
   });
 
-  const cos_now      = response('Wants to speak with someone now', 'They want to be connected immediately. Proceed to transfer.');
-  const cos_schedule = response('Prefers to book a time for later', 'They want a scheduled appointment rather than an immediate transfer. Proceed to book an appointment.');
+  const cos_now      = response('Wants to speak with someone now');
+  const cos_schedule = response('Prefers to book a time for later');
   addEdge(connectOrSchedule, cos_now);      addEdge(cos_now, transferId);
   addEdge(connectOrSchedule, cos_schedule);
 
@@ -399,8 +399,8 @@ export function createFamilyIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // A4 urgency: urgent goes direct to transfer, routine goes to connect-or-schedule
-  const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away." Proceed immediately to Transfer.');
-  const a4_routine = response('No - routine matter', 'Proceed to connect or schedule.');
+  const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away."');
+  const a4_routine = response('No - routine matter');
   addEdge(a4, a4_urgent);  addEdge(a4_urgent, transferId);       // emergency bypass
   addEdge(a4, a4_routine); addEdge(a4_routine, connectOrSchedule);
 

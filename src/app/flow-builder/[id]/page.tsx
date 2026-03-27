@@ -167,9 +167,6 @@ function NodeCard({
                   {node.config?.response && (
                     <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
                   )}
-                  {node.config?.instruction && (
-                    <p className="text-[10px] text-zinc-300 italic mt-0.5">{node.config.instruction}</p>
-                  )}
                 </>
               )}
               {node.type === 'decision' && (node.config?.description || node.config?.note) && (

@@ -52,8 +52,8 @@ export function createGeneralIntakeTemplate() {
   const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
     note: 'Ask whether they want to speak with an attorney now or book a time for later. Be natural - something like "Would you like me to connect you with an attorney right now, or would a scheduled consultation work better for you?" Acknowledge their preference warmly before proceeding.',
   });
-  const cos_now = resp('Wants to speak with someone now', 'They want to be connected immediately. Proceed to transfer.');
-  const cos_schedule = resp('Prefers to book a time for later', 'They want a scheduled appointment rather than an immediate transfer. Proceed to book an appointment.');
+  const cos_now = resp('Wants to speak with someone now');
+  const cos_schedule = resp('Prefers to book a time for later');
   addEdge(connectOrSchedule, cos_now); addEdge(cos_now, transferId);
   addEdge(connectOrSchedule, cos_schedule);
 
@@ -93,14 +93,14 @@ export function createGeneralIntakeTemplate() {
     note: "This helps us route you correctly. Listen for any indication they are a returning client.",
   });
 
-  const q1_yes  = resp("Yes, let's begin", 'Proceed to Q1b.');
-  const q1_what = resp('What is this for?', "Briefly explain: \"I'll collect some basic information about your situation, then connect you with an attorney who can help. It only takes a few minutes.\" Then proceed to Q1b.");
+  const q1_yes  = resp("Yes, let's begin");
+  const q1_what = resp('What is this for?', "Briefly explain: \"I'll collect some basic information about your situation, then connect you with an attorney who can help. It only takes a few minutes.\"");
   addEdge(q1, q1_yes);  addEdge(q1_yes, q1b);
   addEdge(q1, q1_what); addEdge(q1_what, q1b);
 
   // Q1b responses
-  const q1b_existing = resp('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with your attorney right away.\" Proceed directly to transfer.");
-  const q1b_new      = resp('New client - first time calling', 'Proceed to Q2 to collect their information.');
+  const q1b_existing = resp('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with our team right away.\"");
+  const q1b_new      = resp('New client - first time calling');
   addEdge(q1b, q1b_existing); addEdge(q1b_existing, transferParalegalId);
   addEdge(q1b, q1b_new);
 
@@ -118,16 +118,16 @@ export function createGeneralIntakeTemplate() {
   const q4 = addNode('question', 'Q4. Self or On Behalf Of', {
     question: 'Are you calling for yourself, or on behalf of someone else?',
   });
-  const q3_yes = resp('Yes, this number is fine', "Note the caller's phone number from the call. Proceed to Q4.");
-  const q3_no = resp('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note it, then proceed to Q4.");
+  const q3_yes = resp('Yes, this number is fine', "Note the caller's phone number from the call.");
+  const q3_no = resp('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note it.");
   addEdge(q3, q3_yes); addEdge(q3_yes, q4);
   addEdge(q3, q3_no); addEdge(q3_no, q4);
 
   const q5 = addNode('question', 'Q5. Tell Me What\'s Going On', {
     note: 'Ask the caller to describe their situation in their own words. Be warm and empathetic - say something like "I\'m sorry to hear that. Can you tell me a bit more about what\'s been going on?" Do NOT read a list of legal categories. Listen carefully, ask gentle follow-up questions if needed ("How long has this been going on?" or "Can you tell me a little more about that?"). Once you understand the situation, silently route to the correct practice area branch. The caller should feel heard, not processed.',
   });
-  const q4_self = resp('For myself', 'Proceed to Q5.');
-  const q4_other = resp('On behalf of someone else', 'Ask: "What is your relationship to them?" Note it, then proceed to Q5.');
+  const q4_self = resp('For myself');
+  const q4_other = resp('On behalf of someone else', 'Ask: "What is your relationship to them?" Note it.');
   addEdge(q4, q4_self); addEdge(q4_self, q5);
   addEdge(q4, q4_other); addEdge(q4_other, q5);
 
@@ -198,7 +198,7 @@ export function createGeneralIntakeTemplate() {
   });
   addEdge(famA3, famA4);
   const famA4_urgent  = resp('Yes - immediate safety concern', 'FLAG URGENT. Say: "Your safety is the priority - let me connect you with an attorney right away." Proceed immediately to transfer.');
-  const famA4_routine = resp('No - routine matter', 'Proceed to connect or schedule.');
+  const famA4_routine = resp('No - routine matter');
   addEdge(famA4, famA4_urgent);  addEdge(famA4_urgent,  transferId);
   addEdge(famA4, famA4_routine); addEdge(famA4_routine, connectOrSchedule);
 
@@ -258,7 +258,7 @@ export function createGeneralIntakeTemplate() {
   const famC1 = addNode('question', 'FC1. Nature of Conduct', { question: 'Can you tell me a little about what has been happening?' });
 
   const famCS_unsafe = resp("No, or I'm not sure", 'EMERGENCY: Advise 911 immediately. Offer immediate attorney transfer.');
-  const famCS_safe   = resp('Yes, I am safe', 'Continue intake.');
+  const famCS_safe   = resp('Yes, I am safe');
   addEdge(famCSafety, famCS_unsafe); addEdge(famCS_unsafe, famCEmergency); addEdge(famCEmergency, transferId);
   addEdge(famCSafety, famCS_safe);   addEdge(famCS_safe,   famC1);
 
