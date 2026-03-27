@@ -63,7 +63,7 @@ function NodeCard({
   onAddChild: (parentId: string, type: string, edgeLabel?: string) => void;
   onDeleteEdge: (sourceId: string, targetId: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(depth < 3);
+  const [expanded, setExpanded] = useState(true);
   const [editing, setEditing] = useState(false);
   const color = NODE_COLORS[node.type] || '#666';
 
@@ -255,8 +255,10 @@ function NodeCard({
                 <span className="text-[10px] font-medium text-amber-500/70 bg-amber-500/5 px-2 py-0.5 rounded-full border border-amber-500/10">
                   {edge.label}
                 </span>
-                <button onClick={() => onDeleteEdge(edge.sourceNodeId, edge.targetNodeId)}
-                  className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/edge:opacity-100 transition-opacity">
+                <button onClick={async () => {
+                  const ok = await confirm({ title: 'Remove Path', message: `Remove the "${edge.label}" path? The connected step will become disconnected.`, confirmLabel: 'Remove', destructive: true });
+                  if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
+                }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/edge:opacity-100 transition-opacity">
                   <Trash2 className="w-2.5 h-2.5" />
                 </button>
               </div>

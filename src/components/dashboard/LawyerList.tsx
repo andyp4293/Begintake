@@ -3,6 +3,7 @@
 import { User, Briefcase, Plus, Pencil, Trash2, X, Check } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 
 interface Lawyer {
@@ -186,6 +187,7 @@ export function LawyerList() {
   const [showForm, setShowForm] = useState(false);
   const [editingLawyer, setEditingLawyer] = useState<Lawyer | null>(null);
   const queryClient = useQueryClient();
+  const confirmDialog = useConfirm();
 
   const { data: lawyers, isLoading } = useQuery<Lawyer[]>({
     queryKey: ['lawyers'],
@@ -215,10 +217,9 @@ export function LawyerList() {
     setShowForm(true);
   };
 
-  const handleDelete = (lawyer: Lawyer) => {
-    if (confirm(`Remove ${lawyer.name}?`)) {
-      deleteMutation.mutate(lawyer.id);
-    }
+  const handleDelete = async (lawyer: Lawyer) => {
+    const ok = await confirmDialog({ title: 'Remove Attorney', message: `Remove ${lawyer.name} from the team? This cannot be undone.`, confirmLabel: 'Remove', destructive: true });
+    if (ok) deleteMutation.mutate(lawyer.id);
   };
 
   const handleClose = () => {
