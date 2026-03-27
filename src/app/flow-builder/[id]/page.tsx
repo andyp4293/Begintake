@@ -328,14 +328,25 @@ function NodeCard({
                       const el = document.getElementById(`flow-node-${childNode.id}`);
                       if (!el) return;
                       el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-                      el.style.transition = 'outline 0s';
+                      // Clear any existing highlight first
+                      document.querySelectorAll('[data-highlighted]').forEach((n) => {
+                        (n as HTMLElement).style.outline = '';
+                        (n as HTMLElement).style.borderRadius = '';
+                        (n as HTMLElement).removeAttribute('data-highlighted');
+                      });
+                      // Apply persistent highlight
                       el.style.outline = '2px solid #3b82f6';
                       el.style.borderRadius = '8px';
+                      el.setAttribute('data-highlighted', 'true');
+                      // Dismiss on next click anywhere
                       setTimeout(() => {
-                        el.style.transition = 'outline 0.6s ease';
-                        el.style.outline = '2px solid transparent';
-                        setTimeout(() => { el.style.outline = ''; el.style.transition = ''; el.style.borderRadius = ''; }, 700);
-                      }, 800);
+                        document.addEventListener('click', function dismiss() {
+                          el.style.outline = '';
+                          el.style.borderRadius = '';
+                          el.removeAttribute('data-highlighted');
+                          document.removeEventListener('click', dismiss);
+                        }, { once: true });
+                      }, 50);
                     }}
                     className="text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate underline-offset-2 hover:underline transition-colors"
                   >

@@ -19,6 +19,13 @@ vi.mock('@/lib/prisma', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    appointment: {
+      deleteMany: vi.fn(),
+    },
+    callSession: {
+      updateMany: vi.fn(),
+    },
+    $transaction: vi.fn((ops: any[]) => Promise.all(ops)),
   },
 }));
 
@@ -215,6 +222,8 @@ describe('Lawyers CRUD API', () => {
 
     it('deletes lawyer successfully', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.appointment.deleteMany).mockResolvedValue({ count: 0 } as any);
+      vi.mocked(prisma.callSession.updateMany).mockResolvedValue({ count: 0 } as any);
       vi.mocked(prisma.lawyer.delete).mockResolvedValue({} as any);
 
       const req = new NextRequest('http://localhost/api/lawyers/l1', { method: 'DELETE' });
@@ -226,6 +235,8 @@ describe('Lawyers CRUD API', () => {
 
     it('returns 404 when lawyer not found', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.appointment.deleteMany).mockResolvedValue({ count: 0 } as any);
+      vi.mocked(prisma.callSession.updateMany).mockResolvedValue({ count: 0 } as any);
       vi.mocked(prisma.lawyer.delete).mockRejectedValue({ code: 'P2025' });
 
       const req = new NextRequest('http://localhost/api/lawyers/nonexistent', { method: 'DELETE' });

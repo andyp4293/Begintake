@@ -73,12 +73,12 @@ describe('identifyLegalArea', () => {
     expect(identifyLegalArea('I have a business contract dispute')).toBe('corporate');
   });
 
-  it('identifies corporate from real estate', () => {
-    expect(identifyLegalArea('I need help with a real estate transaction')).toBe('corporate');
+  it('identifies real_estate from real estate transaction', () => {
+    expect(identifyLegalArea('I need help with a real estate transaction')).toBe('real_estate');
   });
 
-  it('identifies corporate from employment', () => {
-    expect(identifyLegalArea('I was wrongfully terminated from employment')).toBe('corporate');
+  it('identifies employment from wrongful termination', () => {
+    expect(identifyLegalArea('I was wrongfully terminated from employment')).toBe('employment');
   });
 
   it('identifies corporate from LLC', () => {
