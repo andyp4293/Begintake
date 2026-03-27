@@ -124,6 +124,19 @@ function NodeCard({
   const [expanded, setExpanded] = useState(() => !node.config?.defaultCollapsed);
   const [editing, setEditing] = useState(false);
   const [contentExpanded, setContentExpanded] = useState(false);
+  const [isClamped, setIsClamped] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const check = () => setIsClamped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [node.config, contentExpanded]);
+
   // Force-expanded when parent clicked "Continues to" and this node is on the path
   const displayExpanded = expandedOverrides.has(node.id) || expanded;
   const color = NODE_COLORS[node.type] || '#666';
@@ -163,7 +176,7 @@ function NodeCard({
         {/* Content preview */}
         {!editing && (
           <div className="px-3 pb-2 space-y-1">
-            <div className={contentExpanded ? '' : 'line-clamp-2'}>
+            <div ref={contentRef} className={contentExpanded ? '' : 'line-clamp-2'}>
               {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
                 <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
               )}
@@ -226,12 +239,14 @@ function NodeCard({
                 <p className="text-[11px] text-zinc-300 italic">"{node.config.closingMessage}"</p>
               )}
             </div>
-            <button
-              onClick={() => setContentExpanded(!contentExpanded)}
-              className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              {contentExpanded ? '▲ show less' : '▼ show more'}
-            </button>
+            {(isClamped || contentExpanded) && (
+              <button
+                onClick={() => setContentExpanded(!contentExpanded)}
+                className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                {contentExpanded ? '▲ show less' : '▼ show more'}
+              </button>
+            )}
           </div>
         )}
 
