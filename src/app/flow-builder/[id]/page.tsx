@@ -418,12 +418,14 @@ function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeI
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
                   </button>
                 ))}
-              <div className="border-t border-zinc-800 mt-1 pt-1">
-                <button onClick={() => setShowLinkPicker(true)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
-                  <Link2 className="w-3 h-3" /> Link to existing step
-                </button>
-              </div>
+              {!isQuestion && (
+                <div className="border-t border-zinc-800 mt-1 pt-1">
+                  <button onClick={() => setShowLinkPicker(true)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
+                    <Link2 className="w-3 h-3" /> Link to existing step
+                  </button>
+                </div>
+              )}
               <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1">Cancel</button>
             </>
           ) : (
