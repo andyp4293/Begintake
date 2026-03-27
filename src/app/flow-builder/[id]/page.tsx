@@ -274,7 +274,7 @@ function NodeCard({
       {/* Add child */}
       {expanded && (
         <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
-          <AddNodeMenu parentId={node.id} onAdd={onAddChild} />
+          <AddNodeMenu parentId={node.id} parentLabel={node.label} onAdd={onAddChild} />
         </div>
       )}
     </div>
@@ -283,17 +283,21 @@ function NodeCard({
 
 // ─── Add node menu ────────────────────────────────────────────────────────
 
-function AddNodeMenu({ parentId, onAdd }: {
+function AddNodeMenu({ parentId, parentLabel, onAdd }: {
   parentId: string;
+  parentLabel: string;
   onAdd: (parentId: string, type: string, edgeLabel?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [edgeLabel, setEdgeLabel] = useState('');
 
+  // Truncate parent label for display
+  const shortParent = parentLabel.length > 25 ? parentLabel.slice(0, 25) + '...' : parentLabel;
+
   return (
     <div className="relative inline-block">
       <button onClick={() => setOpen(!open)} className="flex items-center gap-1 px-2 py-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
-        <Plus className="w-3 h-3" /> Add step
+        <Plus className="w-3 h-3" /> Add step under <span className="text-zinc-500 ml-0.5">{shortParent}</span>
       </button>
       {open && (
         <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-52">
