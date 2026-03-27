@@ -134,11 +134,18 @@ function NodeCard({
             {node.type === 'decision' && node.config?.description && (
               <p className="text-[11px] text-zinc-400 italic">"{node.config.description}"</p>
             )}
-            {node.type === 'action' && (node.config?.petitionType || node.config?.flagValue) && (
-              <p className="text-[10px] text-zinc-500">Flag: <span className="text-zinc-400">{node.config?.petitionType || node.config?.flagValue}</span></p>
-            )}
-            {node.type === 'action' && node.config?.note && (
-              <p className="text-[10px] text-amber-500/70">{node.config.note}</p>
+            {node.type === 'action' && (
+              <>
+                <p className="text-[10px] text-zinc-500">
+                  {(!node.config?.actionType || node.config.actionType === 'set_flag') && (node.config?.flagValue || node.config?.petitionType) && (
+                    <><span className="text-zinc-400">Set:</span> {node.config.flagName ? `${node.config.flagName} = ` : ''}{node.config.flagValue || node.config.petitionType}</>
+                  )}
+                  {node.config?.actionType === 'book_appointment' && <span className="text-zinc-400">Book Appointment</span>}
+                  {node.config?.actionType === 'call_tool' && <><span className="text-zinc-400">Call tool:</span> {node.config.toolName}</>}
+                  {node.config?.actionType === 'send_email' && <span className="text-zinc-400">Send Email</span>}
+                </p>
+                {node.config?.note && <p className="text-[10px] text-amber-500/70">{node.config.note}</p>}
+              </>
             )}
             {node.type === 'collect_info' && (
               <>
@@ -219,9 +226,43 @@ function NodeCard({
                 rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
             )}
             {node.type === 'action' && (
-              <input type="text" value={node.config?.petitionType || node.config?.flagValue || ''}
-                onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, petitionType: e.target.value, flagValue: e.target.value, actionType: 'set_flag' } })}
-                placeholder="e.g. V-Petition - new" className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+              <div className="space-y-2">
+                <select
+                  value={node.config?.actionType || 'set_flag'}
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, actionType: e.target.value } })}
+                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none"
+                >
+                  <option value="set_flag">Set Flag</option>
+                  <option value="book_appointment">Book Appointment</option>
+                  <option value="call_tool">Call Tool</option>
+                  <option value="send_email">Send Email</option>
+                </select>
+                {(!node.config?.actionType || node.config.actionType === 'set_flag') && (
+                  <>
+                    <input type="text" value={node.config?.flagName || ''} placeholder="Flag name, e.g. petitionType"
+                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, flagName: e.target.value } })}
+                      className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                    <input type="text" value={node.config?.flagValue || node.config?.petitionType || ''} placeholder="Flag value, e.g. V-Petition - new"
+                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, flagValue: e.target.value, petitionType: e.target.value } })}
+                      className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                  </>
+                )}
+                {node.config?.actionType === 'call_tool' && (
+                  <input type="text" value={node.config?.toolName || ''} placeholder="Tool name, e.g. lookupClient"
+                    onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, toolName: e.target.value } })}
+                    className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                )}
+                {node.config?.actionType === 'book_appointment' && (
+                  <p className="text-[10px] text-zinc-500">Calls the bookAppointment tool with collected caller data and confirms the date/time.</p>
+                )}
+                {node.config?.actionType === 'send_email' && (
+                  <p className="text-[10px] text-zinc-500">Sends an email summary to the matched attorney.</p>
+                )}
+                <textarea value={node.config?.note || ''} placeholder="Internal note (optional)..."
+                  rows={2}
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
+                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-400 focus:outline-none focus:text-white resize-none" />
+              </div>
             )}
             {node.type === 'collect_info' && (
               <div className="space-y-2">
