@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { normalizePhoneNumber, normalizeOptionalPhoneNumber } from '@/lib/phone';
 import { verifyVapiSecret, parseToolArguments } from '@/lib/vapi';
 import { identifyLegalArea, findBestLawyer } from '@/lib/lawyer-matcher';
-import { createCalendarEvent } from '@/lib/google-calendar';
+import { createCalendarEvent, checkAttorneyBusy } from '@/lib/google-calendar';
 import { sendCallSummaryEmail } from '@/lib/email';
 import { compileFlowToPrompt } from '@/lib/flow-compiler';
 
@@ -168,6 +168,21 @@ function getToolDefinitions() {
             preferredTime: { type: 'string', description: 'Preferred time (e.g. "2 PM", "14:00")' },
           },
           required: ['clientName', 'clientPhone', 'lawyerId', 'preferredDate', 'preferredTime'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'checkAttorneyAvailability',
+        description: 'Check whether the best matched attorney is available right now — combines their business hours and live Google Calendar status. Call this before transferring to an attorney to avoid sending callers to someone who is busy.',
+        parameters: {
+          type: 'object',
+          properties: {
+            legalArea: { type: 'string', description: 'The legal area of the caller\'s issue, used to select the best matched attorney' },
+            proposedTime: { type: 'string', description: 'ISO 8601 datetime to check availability for (optional, defaults to now)' },
+          },
+          required: [],
         },
       },
     },
@@ -446,6 +461,50 @@ async function handleTransferCall(args: Record<string, unknown>) {
         ? `Transferring to ${transferringToName}. Reason: ${reason}`
         : `Transferring the call. Reason: ${reason}`,
     },
+  };
+}
+
+async function handleCheckAttorneyAvailability(args: Record<string, unknown>) {
+  const legalAreaHint = typeof args.legalArea === 'string' ? args.legalArea : '';
+  const proposedTimeStr = typeof args.proposedTime === 'string' ? args.proposedTime : null;
+  const checkTime = proposedTimeStr ? new Date(proposedTimeStr) : new Date();
+
+  // Find best matched attorney
+  const legalArea = identifyLegalArea(legalAreaHint || 'other');
+  const lawyer = await findBestLawyer(legalArea);
+
+  if (!lawyer) {
+    return {
+      available: false,
+      reason: 'No attorneys are currently configured in the system.',
+      lawyerName: null,
+      lawyerPhone: null,
+    };
+  }
+
+  // Use email as calendar ID (works with service account + domain delegation or shared calendars)
+  // Fall back to googleCalendarId if set
+  const calendarId = lawyer.googleCalendarId || lawyer.email;
+
+  const availability = await checkAttorneyBusy({
+    calendarId,
+    timeMin: checkTime,
+    timeMax: new Date(checkTime.getTime() + 30 * 60 * 1000),
+    availabilityStart: lawyer.availabilityStart,
+    availabilityEnd: lawyer.availabilityEnd,
+  });
+
+  return {
+    available: availability.available,
+    lawyerName: lawyer.name,
+    lawyerPhone: lawyer.phone || null,
+    withinBusinessHours: availability.withinBusinessHours,
+    calendarChecked: availability.calendarChecked,
+    reason: availability.reason || null,
+    nextFreeAt: availability.nextFreeAt || null,
+    message: availability.available
+      ? `${lawyer.name} is available${availability.calendarChecked ? ' and has no calendar conflicts' : ' (based on business hours)'}.`
+      : `${lawyer.name} is not available right now. ${availability.reason || ''}${availability.nextFreeAt ? ` They may be free around ${new Date(availability.nextFreeAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })}.` : ''}`,
   };
 }
 
@@ -749,6 +808,9 @@ export async function POST(req: NextRequest) {
             break;
           case 'transferCall':
             result = await handleTransferCall(args);
+            break;
+          case 'checkAttorneyAvailability':
+            result = await handleCheckAttorneyAvailability(args);
             break;
           case 'generateTransferSummary':
             result = await handleGenerateTransferSummary(args);

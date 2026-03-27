@@ -86,22 +86,28 @@ interface TimeSlot {
   end: Date;
 }
 
-export async function getAvailableSlots(params: GetSlotsParams): Promise<TimeSlot[]> {
+export async function getAvailableSlots(params: GetSlotsParams & { availabilityStart?: number; availabilityEnd?: number }): Promise<TimeSlot[]> {
   try {
     const calendar = await getCalendarClient();
 
-    const dayStart = new Date(`${params.date}T09:00:00-05:00`);
-    const dayEnd = new Date(`${params.date}T17:00:00-05:00`);
+    const startHour = params.availabilityStart ?? 9;
+    const endHour   = params.availabilityEnd   ?? 17;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tz = 'America/New_York';
+    const dayStart = new Date(`${params.date}T${pad(startHour)}:00:00-05:00`);
+    const dayEnd   = new Date(`${params.date}T${pad(endHour)}:00:00-05:00`);
 
+    const calId = params.calendarId || 'primary';
     const busyResponse = await calendar.freebusy.query({
       requestBody: {
         timeMin: dayStart.toISOString(),
         timeMax: dayEnd.toISOString(),
-        items: [{ id: params.calendarId || 'primary' }],
+        timeZone: tz,
+        items: [{ id: calId }],
       },
     });
 
-    const busySlots = busyResponse.data.calendars?.[params.calendarId || 'primary']?.busy || [];
+    const busySlots = busyResponse.data.calendars?.[calId]?.busy || [];
 
     const slots: TimeSlot[] = [];
     let current = new Date(dayStart);
@@ -127,5 +133,86 @@ export async function getAvailableSlots(params: GetSlotsParams): Promise<TimeSlo
   } catch (error: any) {
     console.error('Failed to get available slots:', error?.message || error);
     return [];
+  }
+}
+
+// ─── Check if an attorney is busy right now (or at a specific time) ──────────
+
+export interface AttorneyAvailabilityResult {
+  available: boolean;
+  reason?: string;          // why unavailable
+  nextFreeAt?: string;      // ISO string suggestion if busy
+  withinBusinessHours: boolean;
+  calendarChecked: boolean;
+}
+
+export async function checkAttorneyBusy(params: {
+  /** Attorney's email address or googleCalendarId */
+  calendarId: string;
+  /** Start of window to check (defaults to now) */
+  timeMin?: Date;
+  /** End of window to check (defaults to timeMin + 30 min) */
+  timeMax?: Date;
+  /** Attorney's configured business-hours start (0-23) */
+  availabilityStart?: number;
+  /** Attorney's configured business-hours end (0-23) */
+  availabilityEnd?: number;
+}): Promise<AttorneyAvailabilityResult> {
+  const now = params.timeMin ?? new Date();
+  const windowEnd = params.timeMax ?? new Date(now.getTime() + 30 * 60 * 1000);
+  const startHour = params.availabilityStart ?? 9;
+  const endHour   = params.availabilityEnd   ?? 17;
+
+  // Convert to Eastern time hour for business hours check
+  const easternHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getHours();
+  const withinBusinessHours = easternHour >= startHour && easternHour < endHour;
+
+  if (!withinBusinessHours) {
+    const ampm = (h: number) => h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+    return {
+      available: false,
+      withinBusinessHours: false,
+      calendarChecked: false,
+      reason: `Outside business hours (available ${ampm(startHour)}–${ampm(endHour)} ET)`,
+    };
+  }
+
+  // Query Google Calendar freebusy
+  try {
+    const calendar = await getCalendarClient();
+    const busyResponse = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: now.toISOString(),
+        timeMax: windowEnd.toISOString(),
+        timeZone: 'America/New_York',
+        items: [{ id: params.calendarId }],
+      },
+    });
+
+    const busy = busyResponse.data.calendars?.[params.calendarId]?.busy ?? [];
+    const isBusy = busy.length > 0;
+
+    // Find earliest free time after current busy block
+    let nextFreeAt: string | undefined;
+    if (isBusy && busy[0]?.end) {
+      nextFreeAt = busy[0].end;
+    }
+
+    return {
+      available: !isBusy,
+      withinBusinessHours: true,
+      calendarChecked: true,
+      reason: isBusy ? 'Attorney has a calendar conflict in the next 30 minutes' : undefined,
+      nextFreeAt,
+    };
+  } catch (err: any) {
+    // Calendar not accessible — fall back to hours-only check
+    console.warn('[calendar] freebusy check failed, falling back to hours only:', err?.message);
+    return {
+      available: true,
+      withinBusinessHours: true,
+      calendarChecked: false,
+      reason: 'Calendar not accessible — availability based on business hours only',
+    };
   }
 }

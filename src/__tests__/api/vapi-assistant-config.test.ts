@@ -116,7 +116,8 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(toolNames).toContain('scheduleConsultation');
     expect(toolNames).toContain('generateSummary');
     expect(toolNames).toContain('generateTransferSummary');
-    expect(assistant.model.tools).toHaveLength(6); // 5 function tools + endCall
+    expect(toolNames).toContain('checkAttorneyAvailability');
+    expect(assistant.model.tools).toHaveLength(7); // 6 function tools + endCall
   });
 
   it('each function tool has type, function.name, function.description, function.parameters', async () => {
