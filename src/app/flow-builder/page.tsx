@@ -61,7 +61,7 @@ export default function FlowListPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] });
-      toast.success('Anderson Bowman template loaded');
+      toast.success('General example loaded');
     },
     onError: () => toast.error('Failed to load template'),
   });
@@ -132,7 +132,7 @@ export default function FlowListPage() {
           <div className="text-center py-16">
             <Workflow className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
             <h2 className="text-lg font-medium text-zinc-400 mb-2">No flows yet</h2>
-            <p className="text-sm text-zinc-600 mb-6">Create a new flow or load the Anderson Bowman template to get started.</p>
+            <p className="text-sm text-zinc-600 mb-6">Create a new flow or load the general example to get started.</p>
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={() => loadTemplateMutation.mutate()}
