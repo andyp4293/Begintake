@@ -2,10 +2,10 @@
 
 import { useSession } from 'next-auth/react';
 import { redirect, useParams } from 'next/navigation';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Link2,
+  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, ChevronLeft, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -415,6 +415,26 @@ export default function FlowEditorPage() {
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollButtons = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollButtons();
+    el.addEventListener('scroll', updateScrollButtons, { passive: true });
+    const ro = new ResizeObserver(updateScrollButtons);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', updateScrollButtons); ro.disconnect(); };
+  }, [updateScrollButtons, nodes, edges]);
 
   const { data: flow, isLoading } = useQuery({
     queryKey: ['flow', flowId],
@@ -583,16 +603,38 @@ export default function FlowEditorPage() {
         </aside>
 
         {/* ── Main flow canvas ── */}
-        <main className="flex-1 max-w-4xl mx-auto px-6 py-8">
-          {rootNode && (
-            <NodeCard
-              node={rootNode} edges={edges} allNodes={nodes} depth={0}
-              parentId={null} primaryParents={primaryParents} confirm={confirm}
-              onUpdateNode={updateNode} onDeleteNode={deleteNode}
-              onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
-            />
+        <div className="flex-1 relative overflow-hidden">
+          {/* Left scroll button */}
+          {canScrollLeft && (
+            <button
+              onClick={() => scrollRef.current?.scrollBy({ left: -480, behavior: 'smooth' })}
+              className="fixed left-[248px] top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-8 h-8 bg-zinc-800 border border-zinc-700 rounded-full shadow-lg hover:bg-zinc-700 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4 text-zinc-300" />
+            </button>
           )}
-        </main>
+          {/* Right scroll button */}
+          {canScrollRight && (
+            <button
+              onClick={() => scrollRef.current?.scrollBy({ left: 480, behavior: 'smooth' })}
+              className="fixed right-4 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-8 h-8 bg-zinc-800 border border-zinc-700 rounded-full shadow-lg hover:bg-zinc-700 transition-colors"
+            >
+              <ChevronRight className="w-4 h-4 text-zinc-300" />
+            </button>
+          )}
+          <div ref={scrollRef} className="h-full overflow-x-auto overflow-y-auto">
+            <div className="px-6 py-8 min-w-max">
+              {rootNode && (
+                <NodeCard
+                  node={rootNode} edges={edges} allNodes={nodes} depth={0}
+                  parentId={null} primaryParents={primaryParents} confirm={confirm}
+                  onUpdateNode={updateNode} onDeleteNode={deleteNode}
+                  onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
