@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 const NODE_COLORS: Record<string, string> = {
   start: '#22c55e', question: '#3b82f6', response: '#7c3aed',
@@ -64,43 +65,6 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
   }
   dfs(rootId);
   return primaryParent;
-}
-
-// ─── Custom select ────────────────────────────────────────────────────────
-
-function CustomSelect({ value, options, onChange }: {
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none hover:border-zinc-500 transition-colors"
-      >
-        <span>{selected?.label ?? value}</span>
-        <ChevronDown className="w-3 h-3 text-zinc-400 shrink-0" />
-      </button>
-      {open && (
-        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-xs transition-colors ${opt.value === value ? 'bg-zinc-700 text-white font-medium' : 'text-zinc-300 hover:bg-zinc-800'}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Node card component ──────────────────────────────────────────────────
@@ -259,14 +223,14 @@ function NodeCard({
                 {node.type === 'transfer' && (
                   <div>
                     <label className="block text-[10px] font-medium text-zinc-400 mb-1">Transfer to</label>
-                    <select
+                    <CustomSelect
                       value={node.config?.transferTarget || 'attorney'}
-                      onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, transferTarget: e.target.value } })}
-                      className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none"
-                    >
-                      <option value="attorney">Attorney (AI selects best match)</option>
-                      <option value="paralegal">Paralegal / Reception (firm number)</option>
-                    </select>
+                      options={[
+                        { value: 'attorney', label: 'Attorney (AI selects best match)' },
+                        { value: 'paralegal', label: 'Paralegal / Reception (firm number)' },
+                      ]}
+                      onChange={(v) => onUpdateNode(node.id, { config: { ...node.config, transferTarget: v } })}
+                    />
                   </div>
                 )}
                 <textarea value={node.config?.greeting || node.config?.message || ''}

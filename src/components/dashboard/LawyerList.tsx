@@ -1,6 +1,7 @@
 'use client';
 
 import { User, Briefcase, Plus, Pencil, Trash2, X, Check } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
@@ -175,25 +176,19 @@ function LawyerFormModal({
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-2">Call hours</label>
             <div className="flex items-center gap-2">
-              <select
-                value={availabilityStart}
-                onChange={(e) => setAvailabilityStart(Number(e.target.value))}
-                className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-zinc-500 transition-colors"
-              >
-                {HOUR_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <span className="text-zinc-500 text-xs">to</span>
-              <select
-                value={availabilityEnd}
-                onChange={(e) => setAvailabilityEnd(Number(e.target.value))}
-                className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-zinc-500 transition-colors"
-              >
-                {HOUR_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <CustomSelect
+                value={String(availabilityStart)}
+                options={HOUR_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+                onChange={(v) => setAvailabilityStart(Number(v))}
+                className="flex-1"
+              />
+              <span className="text-zinc-500 text-xs shrink-0">to</span>
+              <CustomSelect
+                value={String(availabilityEnd)}
+                options={HOUR_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+                onChange={(v) => setAvailabilityEnd(Number(v))}
+                className="flex-1"
+              />
             </div>
             <p className="text-[10px] text-zinc-600 mt-1">Calls will only be transferred to this attorney during these hours.</p>
           </div>
