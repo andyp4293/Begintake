@@ -153,14 +153,39 @@ function NodeCard({
                 <textarea value={node.config?.question || ''} placeholder="What to ask..."
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
                   rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                {node.config?.options?.length > 0 && (
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500">Options:</label>
-                    {node.config.options.map((opt: any, i: number) => (
-                      <div key={i} className="text-[10px] text-zinc-400 pl-2">• {opt.label}</div>
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-2 mt-1">
+                  <label className="text-[10px] text-zinc-500">Options:</label>
+                  {(node.config?.options || []).map((opt: any, i: number) => (
+                    <div key={i} className="bg-zinc-800/50 rounded-lg p-2 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={opt.label || ''} placeholder="Option label..."
+                          onChange={(e) => {
+                            const opts = [...(node.config?.options || [])];
+                            opts[i] = { ...opts[i], label: e.target.value };
+                            onUpdateNode(node.id, { config: { ...node.config, options: opts } });
+                          }}
+                          className="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-white focus:outline-none" />
+                        <button onClick={() => {
+                          const opts = (node.config?.options || []).filter((_: any, j: number) => j !== i);
+                          onUpdateNode(node.id, { config: { ...node.config, options: opts } });
+                        }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+                      </div>
+                      <input type="text" value={opt.instruction || ''} placeholder="Instruction — e.g. Proceed to Q2, or: Briefly explain then proceed..."
+                        onChange={(e) => {
+                          const opts = [...(node.config?.options || [])];
+                          opts[i] = { ...opts[i], instruction: e.target.value };
+                          onUpdateNode(node.id, { config: { ...node.config, options: opts } });
+                        }}
+                        className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-zinc-400 focus:outline-none focus:text-white" />
+                    </div>
+                  ))}
+                  <button onClick={() => {
+                    const opts = [...(node.config?.options || []), { label: '', value: `opt_${Date.now()}`, instruction: '' }];
+                    onUpdateNode(node.id, { config: { ...node.config, options: opts } });
+                  }} className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
+                    <Plus className="w-3 h-3" /> Add option
+                  </button>
+                </div>
               </>
             )}
             {node.type === 'decision' && (
