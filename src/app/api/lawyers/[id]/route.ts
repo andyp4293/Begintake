@@ -48,7 +48,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
 
   try {
-    await prisma.lawyer.delete({ where: { id } });
+    // Remove required foreign key references before deleting the lawyer.
+    // Appointments require a lawyerId so they must be deleted first.
+    // CallSessions have a nullable lawyerId so we just unlink them.
+    await prisma.$transaction([
+      prisma.appointment.deleteMany({ where: { lawyerId: id } }),
+      prisma.callSession.updateMany({ where: { lawyerId: id }, data: { lawyerId: null } }),
+      prisma.lawyer.delete({ where: { id } }),
+    ]);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     if (error?.code === 'P2025') {
