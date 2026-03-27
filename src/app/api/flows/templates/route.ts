@@ -1,34 +1,38 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/prisma';
 import { createAndersonBowmanTemplate } from '@/lib/templates/anderson-bowman';
+import { createGeneralIntakeTemplate } from '@/lib/templates/general-intake';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // Return available templates
   return NextResponse.json([
     {
       id: 'family-court-intake',
-      name: 'Family Court Intake Example',
-      description: 'Complete AI intake script for family law. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters. Uses {firm} and {name} variables.',
+      name: 'Family Court Intake',
+      description: 'Deep intake script for family law: custody, divorce, support, family offense, child welfare, paternity, adoption, and juvenile matters. Built for a dedicated family law firm.',
+    },
+    {
+      id: 'general-intake',
+      name: 'General Legal Intake',
+      description: 'Comprehensive intake covering all 13 practice areas: Family, Criminal, Immigration, Personal Injury, Corporate, Real Estate, Employment, Bankruptcy, Tax, Estate Planning, Intellectual Property, Civil Rights, and Environmental.',
     },
   ]);
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const template = createAndersonBowmanTemplate();
+  const { templateId } = await req.json().catch(() => ({ templateId: 'family-court-intake' }));
 
-  // Create the flow first
+  const template = templateId === 'general-intake'
+    ? createGeneralIntakeTemplate()
+    : createAndersonBowmanTemplate();
+
   const flow = await prisma.intakeFlow.create({
     data: {
       name: template.name,
@@ -38,7 +42,6 @@ export async function POST() {
     },
   });
 
-  // Create nodes with new unique IDs, keeping a mapping from old to new
   const idMap = new Map<string, string>();
   for (const n of template.nodes) {
     const node = await prisma.flowNode.create({
@@ -55,7 +58,6 @@ export async function POST() {
     idMap.set(n.id, node.id);
   }
 
-  // Create edges using the new node IDs
   for (const e of template.edges) {
     const sourceId = idMap.get(e.sourceNodeId);
     const targetId = idMap.get(e.targetNodeId);
