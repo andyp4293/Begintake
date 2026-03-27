@@ -160,7 +160,8 @@ function NodeCard({
             {NODE_LABELS[node.type] ?? node.type}
           </span>
           <input type="text" value={node.label} onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
-            className="flex-1 min-w-0 bg-transparent text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600 px-1 truncate" />
+            maxLength={60}
+            className="flex-1 min-w-0 bg-transparent text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600 px-1" />
           {childEdges.length > 0 && !displayExpanded && (
             <span className="text-[9px] text-zinc-400 flex-shrink-0">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
           )}
