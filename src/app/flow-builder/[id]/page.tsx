@@ -247,11 +247,16 @@ function NodeCard({
         return (
           <div key={`${edge.sourceNodeId}-${edge.targetNodeId}-${edge.label}`}>
             {edge.label && (
-              <div className="ml-6 pl-4 flex items-center gap-2 mb-1">
-                <div className="w-4 h-px bg-zinc-700" />
-                <span className="text-[10px] text-zinc-500 italic">{edge.label}</span>
+              <div className="ml-6 pl-4 flex items-center gap-2 mb-1.5 group/edge">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-px bg-amber-500/40" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500/40" />
+                </div>
+                <span className="text-[10px] font-medium text-amber-500/70 bg-amber-500/5 px-2 py-0.5 rounded-full border border-amber-500/10">
+                  {edge.label}
+                </span>
                 <button onClick={() => onDeleteEdge(edge.sourceNodeId, edge.targetNodeId)}
-                  className="text-zinc-700 hover:text-red-400 opacity-0 hover:opacity-100 transition-opacity">
+                  className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/edge:opacity-100 transition-opacity">
                   <Trash2 className="w-2.5 h-2.5" />
                 </button>
               </div>
@@ -360,7 +365,16 @@ export default function FlowEditorPage() {
   };
 
   const addChild = (parentId: string, type: string, edgeLabel?: string) => {
-    const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type], config: {}, sortOrder: nodes.length };
+    // Default configs per type so new nodes are useful immediately
+    const defaultConfigs: Record<string, any> = {
+      question: { question: '', options: [{ label: 'Yes', value: 'yes', instruction: '' }, { label: 'No', value: 'no', instruction: '' }] },
+      decision: { description: '' },
+      collect_info: { fields: [{ name: 'field_1', label: '', type: 'text', required: true }] },
+      action: { actionType: 'set_flag', flagName: '', flagValue: '' },
+      transfer: { message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need. Please hold — I'm connecting you now." },
+      end: { closingMessage: 'Thank you for calling! Have a wonderful day. Goodbye!' },
+    };
+    const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type], config: defaultConfigs[type] || {}, sortOrder: nodes.length };
     setNodes((prev) => [...prev, newNode]);
     setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: newNode.id, label: edgeLabel || null, condition: null, sortOrder: prev.length }]);
   };
