@@ -16,8 +16,6 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
-    $queryRaw: vi.fn(),
-    $executeRawUnsafe: vi.fn(),
   },
 }));
 
@@ -38,27 +36,44 @@ describe('Settings API', () => {
       expect(res.status).toBe(401);
     });
 
-    it('returns transfer phone number when set', async () => {
+    it('returns all three fields when set', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
-      vi.mocked(prisma.$queryRaw).mockResolvedValue([{
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
         transferPhoneNumber: '+15551234567',
         assistantName: 'Alex',
-      }]);
+        firmName: 'Smith & Jones',
+      } as any);
 
       const res = await GET();
       const data = await res.json();
       expect(data.transferPhoneNumber).toBe('+15551234567');
       expect(data.assistantName).toBe('Alex');
+      expect(data.firmName).toBe('Smith & Jones');
     });
 
-    it('returns empty strings when no settings', async () => {
+    it('returns empty strings when no settings saved', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
-      vi.mocked(prisma.$queryRaw).mockResolvedValue([{}]);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        transferPhoneNumber: null,
+        assistantName: null,
+        firmName: null,
+      } as any);
 
       const res = await GET();
       const data = await res.json();
       expect(data.transferPhoneNumber).toBe('');
       expect(data.assistantName).toBe('');
+      expect(data.firmName).toBe('');
+    });
+
+    it('queries the correct user id', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'user-abc' } } as any);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+
+      await GET();
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'user-abc' } })
+      );
     });
   });
 
@@ -72,6 +87,38 @@ describe('Settings API', () => {
       });
       const res = await PUT(req);
       expect(res.status).toBe(401);
+    });
+
+    it('saves assistant name', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({} as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ assistantName: 'Jordan' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await PUT(req);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { assistantName: 'Jordan' } })
+      );
+    });
+
+    it('saves firm name', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({} as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ firmName: 'Anderson Bowman PLLC' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      await PUT(req);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { firmName: 'Anderson Bowman PLLC' } })
+      );
     });
 
     it('saves transfer phone number', async () => {
@@ -94,21 +141,48 @@ describe('Settings API', () => {
       );
     });
 
-    it('clears transfer number when empty string', async () => {
+    it('saves all three fields at once', async () => {
       vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
       vi.mocked(prisma.user.update).mockResolvedValue({} as any);
 
       const req = new NextRequest('http://localhost/api/settings', {
         method: 'PUT',
-        body: JSON.stringify({ transferPhoneNumber: '' }),
+        body: JSON.stringify({ assistantName: 'Alex', firmName: 'Law Firm', transferPhoneNumber: '+15550001111' }),
         headers: { 'content-type': 'application/json' },
       });
       await PUT(req);
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { transferPhoneNumber: null },
+          data: { assistantName: 'Alex', firmName: 'Law Firm', transferPhoneNumber: '+15550001111' },
         })
       );
+    });
+
+    it('clears a field when empty string sent', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({} as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ assistantName: '' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      await PUT(req);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { assistantName: null } })
+      );
+    });
+
+    it('does not call update when body has no known fields', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ unknownField: 'value' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      await PUT(req);
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 });

@@ -9,15 +9,10 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let user: any;
-  try {
-    const rows = await prisma.$queryRaw<Array<any>>`
-      SELECT "transferPhoneNumber", "assistantName", "firmName" FROM "User" WHERE "id" = ${session.user.id} LIMIT 1
-    `;
-    user = rows[0] || {};
-  } catch {
-    user = {};
-  }
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { transferPhoneNumber: true, assistantName: true, firmName: true },
+  });
 
   return NextResponse.json({
     transferPhoneNumber: user?.transferPhoneNumber || '',
@@ -34,32 +29,13 @@ export async function PUT(req: NextRequest) {
 
   const body = await req.json();
 
-  const data: any = {};
-  if ('transferPhoneNumber' in body) {
-    data.transferPhoneNumber = body.transferPhoneNumber || null;
-  }
-  if ('assistantName' in body) {
-    data.assistantName = body.assistantName || null;
-  }
-  if ('firmName' in body) {
-    data.firmName = body.firmName || null;
-  }
+  const data: { transferPhoneNumber?: string | null; assistantName?: string | null; firmName?: string | null } = {};
+  if ('transferPhoneNumber' in body) data.transferPhoneNumber = body.transferPhoneNumber || null;
+  if ('assistantName' in body)       data.assistantName       = body.assistantName || null;
+  if ('firmName' in body)            data.firmName            = body.firmName || null;
 
   if (Object.keys(data).length > 0) {
-    try {
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data,
-      });
-    } catch {
-      // If Prisma client doesn't know about new fields, use raw
-      for (const [key, value] of Object.entries(data)) {
-        await prisma.$executeRawUnsafe(
-          `UPDATE "User" SET "${key}" = $1 WHERE "id" = $2`,
-          value, session.user.id
-        );
-      }
-    }
+    await prisma.user.update({ where: { id: session.user.id }, data });
   }
 
   return NextResponse.json({ success: true });
