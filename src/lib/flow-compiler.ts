@@ -214,6 +214,26 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
         break;
       }
 
+      case 'response': {
+        const config = node.config || {};
+        sections.push(`=== SECTION ${sectionId}: CALLER RESPONSE ===`);
+        if (config.response) {
+          sections.push(`If the caller responds with "${config.response}":`);
+        }
+        if (config.instruction) {
+          sections.push(config.instruction);
+        }
+        if (edges.length === 1) {
+          sections.push(`Then proceed to SECTION ${sectionIds.get(edges[0].targetNodeId)}.`);
+        } else if (edges.length > 1) {
+          for (const edge of edges) {
+            sections.push(`- proceed to SECTION ${sectionIds.get(edge.targetNodeId)}`);
+          }
+        }
+        sections.push('');
+        break;
+      }
+
       case 'decision': {
         const config = node.config || {};
         sections.push(`=== SECTION ${sectionId}: ${node.label.toUpperCase()} ===`);

@@ -5,19 +5,21 @@ import { redirect, useParams } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight,
+  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 
 const NODE_COLORS: Record<string, string> = {
-  start: '#22c55e', question: '#3b82f6', collect_info: '#a855f7',
-  decision: '#f59e0b', action: '#06b6d4', transfer: '#f97316', end: '#ef4444',
+  start: '#22c55e', question: '#3b82f6', response: '#7c3aed',
+  collect_info: '#a855f7', decision: '#f59e0b', action: '#06b6d4',
+  transfer: '#f97316', end: '#ef4444',
 };
 const NODE_LABELS: Record<string, string> = {
-  start: 'Start', question: 'Question', collect_info: 'Collect Info',
-  decision: 'Decision', action: 'Action', transfer: 'Transfer', end: 'End Call',
+  start: 'Start', question: 'Question', response: 'Response',
+  collect_info: 'Collect Info', decision: 'Decision',
+  action: 'Action', transfer: 'Transfer', end: 'End Call',
 };
 
 interface FNode { id: string; type: string; label: string; config: any; sortOrder: number; }
@@ -53,14 +55,15 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents, confirm,
-  onUpdateNode, onDeleteNode, onAddChild, onDeleteEdge,
+  onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
   parentId: string | null; primaryParents: Map<string, string>;
   confirm: (opts: { title?: string; message: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
-  onAddChild: (parentId: string, type: string, edgeLabel?: string) => void;
+  onAddChild: (parentId: string, type: string) => void;
+  onLinkExisting: (parentId: string, targetId: string) => void;
   onDeleteEdge: (sourceId: string, targetId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -69,7 +72,6 @@ function NodeCard({
 
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
 
-  // Skip rendering if this node's primary parent is NOT the current parent (already rendered elsewhere)
   const isRoot = parentId === null;
   const isPrimary = isRoot || primaryParents.get(node.id) === parentId;
 
@@ -84,7 +86,7 @@ function NodeCard({
             {childEdges.length > 0 ? (expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
           </button>
           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color, backgroundColor: `${color}15` }}>
-            {NODE_LABELS[node.type]}
+            {NODE_LABELS[node.type] ?? node.type}
           </span>
           <input type="text" value={node.label} onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
             className="flex-1 bg-transparent text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600 px-1" />
@@ -100,7 +102,7 @@ function NodeCard({
           )}
         </div>
 
-        {/* Content preview (always visible) */}
+        {/* Content preview */}
         {!editing && (
           <div className="px-3 pb-2 space-y-1">
             {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
@@ -109,16 +111,6 @@ function NodeCard({
             {node.type === 'question' && (
               <>
                 {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
-                {node.config?.options?.length > 0 && (
-                  <div className="space-y-1 mt-1">
-                    {node.config.options.map((opt: any, i: number) => (
-                      <div key={i} className="flex items-start gap-1.5">
-                        <span className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500 shrink-0">► {opt.label}</span>
-                        {opt.instruction && <span className="text-[9px] text-zinc-600 italic">→ {opt.instruction}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
                 {node.config?.collectFields?.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1 mt-1">
                     <span className="text-[9px] text-zinc-600 mr-0.5">Collect:</span>
@@ -126,6 +118,16 @@ function NodeCard({
                       <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
                     ))}
                   </div>
+                )}
+              </>
+            )}
+            {node.type === 'response' && (
+              <>
+                {node.config?.response && (
+                  <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
+                )}
+                {node.config?.instruction && (
+                  <p className="text-[10px] text-zinc-500 italic mt-0.5">{node.config.instruction}</p>
                 )}
               </>
             )}
@@ -156,7 +158,7 @@ function NodeCard({
           </div>
         )}
 
-        {/* Config editor (when editing) */}
+        {/* Config editor */}
         {editing && (
           <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
             {(node.type === 'start' || node.type === 'transfer') && (
@@ -165,49 +167,17 @@ function NodeCard({
                   onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
                   rows={3} placeholder={node.type === 'start' ? 'Greeting...' : 'Transfer message...'}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <p className="text-[9px] text-zinc-600">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> for assistant name and <span className="text-zinc-400 font-mono">{'{firm}'}</span> for firm name. Example: &quot;Thank you for calling {'{firm}'}. My name is {'{name}'}.&quot;</p>
+                <p className="text-[9px] text-zinc-600">Tip: Use <span className="text-zinc-400 font-mono">{'{name}'}</span> for assistant name and <span className="text-zinc-400 font-mono">{'{firm}'}</span> for firm name.</p>
               </>
             )}
             {node.type === 'question' && (
               <>
-                <textarea value={node.config?.question || ''} placeholder="What to ask..."
+                <textarea value={node.config?.question || ''} placeholder="What to ask the caller..."
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
                   rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <div className="space-y-2 mt-1">
-                  <label className="text-[10px] text-zinc-500">Options:</label>
-                  {(node.config?.options || []).map((opt: any, i: number) => (
-                    <div key={i} className="bg-zinc-800/50 rounded-lg p-2 space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <input type="text" value={opt.label || ''} placeholder="Option label..."
-                          onChange={(e) => {
-                            const opts = [...(node.config?.options || [])];
-                            opts[i] = { ...opts[i], label: e.target.value };
-                            onUpdateNode(node.id, { config: { ...node.config, options: opts } });
-                          }}
-                          className="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-white focus:outline-none" />
-                        <button onClick={() => {
-                          const opts = (node.config?.options || []).filter((_: any, j: number) => j !== i);
-                          onUpdateNode(node.id, { config: { ...node.config, options: opts } });
-                        }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                      </div>
-                      <input type="text" value={opt.instruction || ''} placeholder="Instruction - e.g. Proceed to Q2, or: Briefly explain then proceed..."
-                        onChange={(e) => {
-                          const opts = [...(node.config?.options || [])];
-                          opts[i] = { ...opts[i], instruction: e.target.value };
-                          onUpdateNode(node.id, { config: { ...node.config, options: opts } });
-                        }}
-                        className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-zinc-400 focus:outline-none focus:text-white" />
-                    </div>
-                  ))}
-                  <button onClick={() => {
-                    const opts = [...(node.config?.options || []), { label: '', value: `opt_${Date.now()}`, instruction: '' }];
-                    onUpdateNode(node.id, { config: { ...node.config, options: opts } });
-                  }} className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
-                    <Plus className="w-3 h-3" /> Add option
-                  </button>
-                </div>
+                <p className="text-[9px] text-zinc-600">Add <span className="text-zinc-400">Response</span> child nodes for each possible answer.</p>
                 <div className="space-y-2 pt-2 border-t border-zinc-700/50">
-                  <label className="text-[10px] text-zinc-500">Collect info (optional) - any value you want, e.g. &quot;Hair color&quot;, &quot;Best phone number&quot;:</label>
+                  <label className="text-[10px] text-zinc-500">Collect info (optional):</label>
                   {(node.config?.collectFields || []).map((field: any, i: number) => (
                     <div key={i} className="flex items-center gap-2">
                       <input type="text" value={field.label || ''} placeholder="e.g. Full name, Hair color, Best phone number..."
@@ -232,6 +202,17 @@ function NodeCard({
                 </div>
               </>
             )}
+            {node.type === 'response' && (
+              <div className="space-y-2">
+                <input type="text" value={node.config?.response || ''} placeholder="Caller's response text, e.g. Yes, let's begin"
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, response: e.target.value } })}
+                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
+                <textarea value={node.config?.instruction || ''} placeholder="AI instruction (optional) - e.g. Briefly explain then proceed..."
+                  rows={2}
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, instruction: e.target.value } })}
+                  className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-400 focus:outline-none focus:text-white resize-none" />
+              </div>
+            )}
             {node.type === 'decision' && (
               <textarea value={node.config?.description || ''} placeholder="Routing logic..."
                 onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, description: e.target.value } })}
@@ -250,7 +231,7 @@ function NodeCard({
                 <label className="text-[10px] text-zinc-500">Fields to collect:</label>
                 {(node.config?.fields || []).map((field: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
-                    <input type="text" value={field.label || ''} placeholder="Field label - e.g. Best phone number to reach you"
+                    <input type="text" value={field.label || ''} placeholder="Field label"
                       onChange={(e) => {
                         const fields = [...(node.config?.fields || [])];
                         fields[i] = { ...fields[i], label: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') };
@@ -284,31 +265,33 @@ function NodeCard({
       {expanded && childEdges.map((edge) => {
         const childNode = allNodes.find((n) => n.id === edge.targetNodeId);
         if (!childNode) return null;
+
+        const childIsPrimary = primaryParents.get(childNode.id) === node.id;
+
         return (
-          <div key={`${edge.sourceNodeId}-${edge.targetNodeId}-${edge.label}`}>
-            {edge.label && (
-              <div className="ml-6 pl-4 flex items-center gap-2 mb-1.5 group/edge">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-px bg-amber-500/40" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500/40" />
+          <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`}>
+            {childIsPrimary ? (
+              <NodeCard
+                node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
+                parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+                onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+              />
+            ) : (
+              <div className="ml-6 pl-4 mb-2 group/jump">
+                <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900/50 border border-zinc-800 border-dashed rounded-lg">
+                  <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
+                  <span className="text-[10px] text-zinc-500">Continues to:</span>
+                  <span className="text-[10px] text-zinc-300 font-medium truncate">{childNode.label}</span>
+                  <button onClick={async () => {
+                    const ok = await confirm({ title: 'Remove Link', message: `Remove the link to "${childNode.label}"?`, confirmLabel: 'Remove', destructive: true });
+                    if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
+                  }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/jump:opacity-100 transition-opacity ml-auto shrink-0">
+                    <Trash2 className="w-2.5 h-2.5" />
+                  </button>
                 </div>
-                <span className="text-[10px] font-medium text-amber-500/70 bg-amber-500/5 px-2 py-0.5 rounded-full border border-amber-500/10">
-                  {edge.label}
-                </span>
-                <button onClick={async () => {
-                  const ok = await confirm({ title: 'Remove Path', message: `Remove the "${edge.label}" path? The connected step will become disconnected.`, confirmLabel: 'Remove', destructive: true });
-                  if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
-                }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/edge:opacity-100 transition-opacity">
-                  <Trash2 className="w-2.5 h-2.5" />
-                </button>
               </div>
             )}
-            <NodeCard
-              node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-              parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-              onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-              onAddChild={onAddChild} onDeleteEdge={onDeleteEdge}
-            />
           </div>
         );
       })}
@@ -316,7 +299,11 @@ function NodeCard({
       {/* Add child */}
       {expanded && (
         <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
-          <AddNodeMenu parentId={node.id} parentLabel={node.label} onAdd={onAddChild} />
+          <AddNodeMenu
+            parentId={node.id} parentLabel={node.label}
+            allNodes={allNodes} currentNodeId={node.id}
+            onAdd={onAddChild} onLinkExisting={onLinkExisting}
+          />
         </div>
       )}
     </div>
@@ -325,33 +312,76 @@ function NodeCard({
 
 // ─── Add node menu ────────────────────────────────────────────────────────
 
-function AddNodeMenu({ parentId, parentLabel, onAdd }: {
+function AddNodeMenu({ parentId, parentLabel, allNodes, currentNodeId, onAdd, onLinkExisting }: {
   parentId: string;
   parentLabel: string;
-  onAdd: (parentId: string, type: string, edgeLabel?: string) => void;
+  allNodes: FNode[];
+  currentNodeId: string;
+  onAdd: (parentId: string, type: string) => void;
+  onLinkExisting: (parentId: string, targetId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [edgeLabel, setEdgeLabel] = useState('');
+  const [linkSearch, setLinkSearch] = useState('');
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
 
-  // Truncate parent label for display
   const shortParent = parentLabel.length > 25 ? parentLabel.slice(0, 25) + '...' : parentLabel;
+
+  const linkableNodes = allNodes.filter((n) => n.id !== currentNodeId && n.type !== 'start');
+  const filteredNodes = linkSearch
+    ? linkableNodes.filter((n) => n.label.toLowerCase().includes(linkSearch.toLowerCase()))
+    : linkableNodes;
 
   return (
     <div className="relative inline-block">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1 px-2 py-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
+      <button onClick={() => { setOpen(!open); setShowLinkPicker(false); setLinkSearch(''); }}
+        className="flex items-center gap-1 px-2 py-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
         <Plus className="w-3 h-3" /> Add step under <span className="text-zinc-500 ml-0.5">{shortParent}</span>
       </button>
       {open && (
-        <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-52">
-          <input type="text" value={edgeLabel} onChange={(e) => setEdgeLabel(e.target.value)} placeholder="Branch label (optional)"
-            className="w-full px-2 py-1 mb-2 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
-          {Object.entries(NODE_LABELS).filter(([type]) => type !== 'start' && type !== 'collect_info').map(([type, label]) => (
-            <button key={type} onClick={() => { onAdd(parentId, type, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
-            </button>
-          ))}
-          <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1">Cancel</button>
+        <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-56">
+          {!showLinkPicker ? (
+            <>
+              {Object.entries(NODE_LABELS)
+                .filter(([type]) => type !== 'start' && type !== 'collect_info')
+                .map(([type, label]) => (
+                  <button key={type} onClick={() => { onAdd(parentId, type); setOpen(false); }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
+                  </button>
+                ))}
+              <div className="border-t border-zinc-800 mt-1 pt-1">
+                <button onClick={() => setShowLinkPicker(true)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
+                  <Link2 className="w-3 h-3" /> Link to existing step
+                </button>
+              </div>
+              <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1">Cancel</button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 mb-2">
+                <button onClick={() => setShowLinkPicker(false)} className="text-zinc-500 hover:text-white text-[10px]">← Back</button>
+                <span className="text-[10px] text-zinc-500">Link to existing step</span>
+              </div>
+              <input type="text" value={linkSearch} onChange={(e) => setLinkSearch(e.target.value)}
+                placeholder="Search steps..." autoFocus
+                className="w-full px-2 py-1 mb-1 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
+              <div className="max-h-48 overflow-y-auto space-y-0.5">
+                {filteredNodes.length === 0 && (
+                  <p className="text-[10px] text-zinc-600 px-2 py-1">No steps found</p>
+                )}
+                {filteredNodes.map((n) => (
+                  <button key={n.id} onClick={() => { onLinkExisting(parentId, n.id); setOpen(false); setLinkSearch(''); }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-zinc-800 rounded transition-colors">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: NODE_COLORS[n.type] || '#666' }} />
+                    <span className="text-[10px] text-zinc-300 truncate">{n.label}</span>
+                    <span className="text-[9px] text-zinc-600 shrink-0 ml-auto">{NODE_LABELS[n.type] ?? n.type}</span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setOpen(false)} className="w-full mt-1 text-[10px] text-zinc-600 hover:text-white py-1 border-t border-zinc-800 pt-1">Cancel</button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -387,11 +417,9 @@ export default function FlowEditorPage() {
     }
   }, [flow]);
 
-  // Find root node (no incoming edges)
   const incomingIds = new Set(edges.map((e) => e.targetNodeId));
   const rootNode = nodes.find((n) => !incomingIds.has(n.id)) || nodes[0];
 
-  // Pre-compute primary parents (stable across re-renders, only changes when edges/nodes change)
   const primaryParents = useMemo(() => {
     if (!rootNode) return new Map<string, string>();
     return computePrimaryParents(rootNode.id, edges);
@@ -410,19 +438,23 @@ export default function FlowEditorPage() {
     setEdges((prev) => prev.filter((e) => e.sourceNodeId !== id && e.targetNodeId !== id));
   };
 
-  const addChild = (parentId: string, type: string, edgeLabel?: string) => {
-    // Default configs per type so new nodes are useful immediately
+  const addChild = (parentId: string, type: string) => {
     const defaultConfigs: Record<string, any> = {
-      question: { question: '', options: [{ label: 'Yes', value: 'yes', instruction: '' }, { label: 'No', value: 'no', instruction: '' }], collectFields: [] },
+      question: { question: '', collectFields: [] },
+      response: { response: '', instruction: '' },
       decision: { description: '' },
       collect_info: { fields: [{ name: 'field_1', label: '', type: 'text', required: true }] },
       action: { actionType: 'set_flag', flagName: '', flagValue: '' },
       transfer: { message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need. Please hold - I'm connecting you now." },
       end: { closingMessage: 'Thank you for calling! Have a wonderful day. Goodbye!' },
     };
-    const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type], config: defaultConfigs[type] || {}, sortOrder: nodes.length };
+    const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type] ?? type, config: defaultConfigs[type] || {}, sortOrder: nodes.length };
     setNodes((prev) => [...prev, newNode]);
-    setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: newNode.id, label: edgeLabel || null, condition: null, sortOrder: prev.length }]);
+    setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: newNode.id, label: null, condition: null, sortOrder: prev.length }]);
+  };
+
+  const linkExisting = (parentId: string, targetId: string) => {
+    setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: targetId, label: null, condition: null, sortOrder: prev.length }]);
   };
 
   const deleteEdge = (sourceId: string, targetId: string) => {
@@ -487,22 +519,27 @@ export default function FlowEditorPage() {
             {
               type: 'question',
               title: 'Question',
-              desc: 'Ask the caller something. Add answer options with routing instructions, and optionally collect specific values (name, phone, hair color - anything).',
+              desc: 'Aria asks the caller something. Add Response child nodes for each possible answer. Optionally collect specific values inline.',
+            },
+            {
+              type: 'response',
+              title: 'Response',
+              desc: "Represents a specific answer the caller gives. Add one per option under a Question. From each Response you can continue to the next step, or link to any existing step.",
             },
             {
               type: 'decision',
               title: 'Decision',
-              desc: 'An internal routing fork. Describes the branching logic (e.g. "Is there a custody order?") without asking the caller directly.',
+              desc: 'An internal routing fork. Describes the branching logic without asking the caller directly.',
             },
             {
               type: 'action',
               title: 'Action',
-              desc: 'Sets an internal flag or calls a tool behind the scenes. The caller never hears this step. Use it to tag the call with a petition type, urgency level, or any other metadata that gets passed to the attorney at transfer.',
+              desc: 'Sets an internal flag or calls a tool behind the scenes. The caller never hears this. Use it to tag petition type, urgency, or other metadata passed to the attorney at transfer.',
             },
             {
               type: 'transfer',
               title: 'Transfer',
-              desc: 'Hands the call off to an attorney. The AI summarises everything collected and connects the caller. Every branch should end here (or at End Call).',
+              desc: 'Hands the call off to an attorney. The AI summarises everything collected and connects the caller.',
             },
             {
               type: 'end',
@@ -520,8 +557,11 @@ export default function FlowEditorPage() {
           ))}
 
           <div className="pt-4 border-t border-zinc-800 space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Edges</p>
-            <p className="text-[10px] text-zinc-500 leading-relaxed">The amber labels between nodes are branch paths. They tell the AI which route to take based on a caller&apos;s answer.</p>
+            <div className="flex items-center gap-1.5 mb-1">
+              <Link2 className="w-3 h-3 text-zinc-500" />
+              <span className="text-[11px] font-semibold text-zinc-300">Link to existing</span>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-relaxed pl-3.5">Use "Link to existing step" in the Add menu to connect any node to an already-existing step without duplicating it. Shows as a dashed "Continues to" indicator.</p>
           </div>
         </aside>
 
@@ -531,8 +571,8 @@ export default function FlowEditorPage() {
             <NodeCard
               node={rootNode} edges={edges} allNodes={nodes} depth={0}
               parentId={null} primaryParents={primaryParents} confirm={confirm}
-              onUpdateNode={updateNode} onDeleteNode={deleteNode} onAddChild={addChild}
-              onDeleteEdge={deleteEdge}
+              onUpdateNode={updateNode} onDeleteNode={deleteNode}
+              onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
             />
           )}
         </main>
