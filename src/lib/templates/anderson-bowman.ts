@@ -62,8 +62,10 @@ export function createAndersonBowmanTemplate() {
   addEdge(startId, q1);
 
   // Q2. May I have your first and last name?
-  const q2 = addNode('collect_info', 'Q2. Caller Name', {
-    fields: [
+  const q2 = addNode('question', 'Q2. Caller Name', {
+    question: 'Could I start with your first and last name?',
+    options: [],
+    collectFields: [
       { name: 'caller_name', label: 'First and last name', type: 'text', required: true },
     ],
   });
@@ -164,8 +166,10 @@ export function createAndersonBowmanTemplate() {
   addEdge(a1, a2);
 
   // A3. Number and Ages of Children
-  const a3 = addNode('collect_info', 'A3. Number and Ages of Children', {
-    fields: [
+  const a3 = addNode('question', 'A3. Number and Ages of Children', {
+    question: 'How many children are involved, and how old are they?',
+    options: [],
+    collectFields: [
       { name: 'num_children', label: 'How many children are involved', type: 'text', required: true },
       { name: 'children_ages', label: 'Ages of each child', type: 'text', required: true },
     ],

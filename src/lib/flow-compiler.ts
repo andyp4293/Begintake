@@ -134,6 +134,9 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
         const config = node.config || {};
         const fields = config.fields || [];
         sections.push(`=== SECTION ${sectionId}: ${node.label.toUpperCase()} ===`);
+        if (config.question) {
+          sections.push(`Ask: "${config.question}"`);
+        }
         sections.push(`Collect the following information from the caller:`);
         for (const field of fields) {
           const required = field.required ? ' (required)' : ' (optional)';
@@ -178,7 +181,7 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
           if (edges.length > 1) {
             for (const edge of edges) {
               const targetSection = sectionIds.get(edge.targetNodeId);
-              sections.push(`- "${edge.label || 'Continue'}" → go to SECTION ${targetSection}`);
+              sections.push(`- If they say "${edge.label || 'Continue'}": go to SECTION ${targetSection}`);
             }
           } else {
             sections.push(`Then proceed to SECTION ${sectionIds.get(edges[0].targetNodeId)}.`);
@@ -191,6 +194,22 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
         if (config.note) {
           sections.push(`Note: ${config.note}`);
         }
+
+        // Inline collect fields (merged from collect_info)
+        const collectFields = config.collectFields || [];
+        if (collectFields.length > 0) {
+          sections.push(`Also collect the following information:`);
+          for (const field of collectFields) {
+            const req = field.required !== false ? ' (required)' : ' (optional)';
+            if (field.type === 'choice' && field.options) {
+              sections.push(`- ${field.label || field.name}${req}: options are ${field.options.join(', ')}`);
+            } else {
+              sections.push(`- ${field.label || field.name}${req}`);
+            }
+          }
+          sections.push(`Store all collected data — you will need it at transfer.`);
+        }
+
         sections.push('');
         break;
       }
@@ -247,9 +266,9 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
         sections.push('This is the FINAL step. You MUST complete it to end the call properly.');
         sections.push('');
         sections.push('STEP 1: Say "One moment while I put together your information."');
-        sections.push('STEP 2: Call the generateSummary tool with ALL data you collected:');
-        sections.push('  - callerName: the name from Q2');
-        sections.push('  - callerPhone: the phone from Q3');
+        sections.push('STEP 2: Call the generateTransferSummary tool with ALL data you collected:');
+        sections.push('  - Caller name: the name from Q2');
+        sections.push('  - Caller phone: the phone from Q3');
         sections.push('  - callerEmail: if collected');
         sections.push('  - issue: a detailed summary of their legal matter, branch, and all answers');
         sections.push('  - notes: all sub-questions, answers, petition type, urgency flags, party role');

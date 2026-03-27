@@ -119,6 +119,14 @@ function NodeCard({
                     ))}
                   </div>
                 )}
+                {node.config?.collectFields?.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                    <span className="text-[9px] text-zinc-600 mr-0.5">Collect:</span>
+                    {node.config.collectFields.map((f: any, i: number) => (
+                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
+                    ))}
+                  </div>
+                )}
               </>
             )}
             {node.type === 'decision' && node.config?.description && (
@@ -130,12 +138,17 @@ function NodeCard({
             {node.type === 'action' && node.config?.note && (
               <p className="text-[10px] text-amber-500/70">{node.config.note}</p>
             )}
-            {node.type === 'collect_info' && node.config?.fields?.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {node.config.fields.map((f: any, i: number) => (
-                  <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
-                ))}
-              </div>
+            {node.type === 'collect_info' && (
+              <>
+                {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
+                {node.config?.fields?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {node.config.fields.map((f: any, i: number) => (
+                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             {node.type === 'end' && node.config?.closingMessage && (
               <p className="text-[11px] text-zinc-400 italic">"{node.config.closingMessage}"</p>
@@ -193,6 +206,30 @@ function NodeCard({
                     <Plus className="w-3 h-3" /> Add option
                   </button>
                 </div>
+                <div className="space-y-2 pt-2 border-t border-zinc-700/50">
+                  <label className="text-[10px] text-zinc-500">Collect info (optional) — any value you want, e.g. &quot;Hair color&quot;, &quot;Best phone number&quot;:</label>
+                  {(node.config?.collectFields || []).map((field: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input type="text" value={field.label || ''} placeholder="e.g. Full name, Hair color, Best phone number..."
+                        onChange={(e) => {
+                          const cf = [...(node.config?.collectFields || [])];
+                          cf[i] = { ...cf[i], label: e.target.value, name: e.target.value.toLowerCase().replace(/\s+/g, '_') };
+                          onUpdateNode(node.id, { config: { ...node.config, collectFields: cf } });
+                        }}
+                        className="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-white focus:outline-none" />
+                      <button onClick={() => {
+                        const cf = (node.config?.collectFields || []).filter((_: any, j: number) => j !== i);
+                        onUpdateNode(node.id, { config: { ...node.config, collectFields: cf } });
+                      }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+                    </div>
+                  ))}
+                  <button onClick={() => {
+                    const cf = [...(node.config?.collectFields || []), { name: `field_${Date.now()}`, label: '', type: 'text', required: true }];
+                    onUpdateNode(node.id, { config: { ...node.config, collectFields: cf } });
+                  }} className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">
+                    <Plus className="w-3 h-3" /> Add field to collect
+                  </button>
+                </div>
               </>
             )}
             {node.type === 'decision' && (
@@ -207,6 +244,9 @@ function NodeCard({
             )}
             {node.type === 'collect_info' && (
               <div className="space-y-2">
+                <textarea value={node.config?.question || ''} placeholder="Question to ask (optional)..."
+                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
+                  rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
                 <label className="text-[10px] text-zinc-500">Fields to collect:</label>
                 {(node.config?.fields || []).map((field: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
@@ -305,7 +345,7 @@ function AddNodeMenu({ parentId, parentLabel, onAdd }: {
         <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-52">
           <input type="text" value={edgeLabel} onChange={(e) => setEdgeLabel(e.target.value)} placeholder="Branch label (optional)"
             className="w-full px-2 py-1 mb-2 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
-          {Object.entries(NODE_LABELS).filter(([type]) => type !== 'start').map(([type, label]) => (
+          {Object.entries(NODE_LABELS).filter(([type]) => type !== 'start' && type !== 'collect_info').map(([type, label]) => (
             <button key={type} onClick={() => { onAdd(parentId, type, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
               className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
@@ -373,7 +413,7 @@ export default function FlowEditorPage() {
   const addChild = (parentId: string, type: string, edgeLabel?: string) => {
     // Default configs per type so new nodes are useful immediately
     const defaultConfigs: Record<string, any> = {
-      question: { question: '', options: [{ label: 'Yes', value: 'yes', instruction: '' }, { label: 'No', value: 'no', instruction: '' }] },
+      question: { question: '', options: [{ label: 'Yes', value: 'yes', instruction: '' }, { label: 'No', value: 'no', instruction: '' }], collectFields: [] },
       decision: { description: '' },
       collect_info: { fields: [{ name: 'field_1', label: '', type: 'text', required: true }] },
       action: { actionType: 'set_flag', flagName: '', flagValue: '' },
