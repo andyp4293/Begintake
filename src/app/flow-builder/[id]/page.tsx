@@ -90,7 +90,9 @@ function NodeCard({
             <span className="text-[9px] text-zinc-600">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
           )}
           <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-500 hover:text-white px-1">{editing ? 'Done' : 'Edit'}</button>
-          {node.type !== 'start' && <button onClick={() => onDeleteNode(node.id)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}
+          {node.type !== 'start' && (
+            <button onClick={() => { if (confirm(`Delete "${node.label}"? This cannot be undone.`)) onDeleteNode(node.id); }} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+          )}
         </div>
 
         {/* Content preview (always visible) */}
@@ -266,7 +268,7 @@ function AddNodeMenu({ parentId, onAdd }: {
         <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-52">
           <input type="text" value={edgeLabel} onChange={(e) => setEdgeLabel(e.target.value)} placeholder="Branch label (optional)"
             className="w-full px-2 py-1 mb-2 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:outline-none" />
-          {Object.entries(NODE_LABELS).map(([type, label]) => (
+          {Object.entries(NODE_LABELS).filter(([type]) => type !== 'start').map(([type, label]) => (
             <button key={type} onClick={() => { onAdd(parentId, type, edgeLabel || undefined); setOpen(false); setEdgeLabel(''); }}
               className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 rounded transition-colors">
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: NODE_COLORS[type] }} /> {label}
