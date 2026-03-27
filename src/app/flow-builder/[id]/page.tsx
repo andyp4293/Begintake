@@ -346,7 +346,7 @@ function NodeCard({
                         (n as HTMLElement).removeAttribute('data-highlighted');
                       });
                       // Apply persistent highlight
-                      el.style.outline = '2px solid #eab308';
+                      el.style.outline = '2px solid #22c55e';
                       el.style.borderRadius = '8px';
                       el.setAttribute('data-highlighted', 'true');
                       // Dismiss on next click anywhere
