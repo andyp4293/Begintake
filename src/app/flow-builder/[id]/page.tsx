@@ -110,6 +110,9 @@ function NodeCard({
             )}
             {node.type === 'question' && (
               <>
+                {!node.config?.question && !node.config?.note && (
+                  <p className="text-[10px] text-red-400/80">Requires a verbatim question or AI guidance.</p>
+                )}
                 {node.config?.question && <p className="text-[11px] text-zinc-400 italic">"{node.config.question}"</p>}
                 {node.config?.note && <p className="text-[10px] text-amber-500/70 leading-relaxed">{node.config.note}</p>}
                 {node.config?.collectFields?.length > 0 && (
@@ -180,12 +183,15 @@ function NodeCard({
             )}
             {node.type === 'question' && (
               <>
-                <textarea value={node.config?.question || ''} placeholder="Verbatim question (optional) - e.g. &quot;Are you calling for yourself?&quot;"
+                {!node.config?.question && !node.config?.note && (
+                  <p className="text-[10px] text-red-400/80 mb-1">At least one field is required.</p>
+                )}
+                <textarea value={node.config?.question || ''} placeholder='Verbatim question - e.g. "Are you calling for yourself?"'
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, question: e.target.value } })}
-                  rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                <textarea value={node.config?.note || ''} placeholder="AI guidance (optional) - e.g. &quot;Ask about their situation empathetically. Do not read a list. Listen and follow up.&quot;"
+                  rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-xs text-white focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
+                <textarea value={node.config?.note || ''} placeholder='AI guidance - e.g. "Ask about their situation empathetically. Listen and follow up naturally."'
                   onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, note: e.target.value } })}
-                  rows={2} className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-amber-500/80 placeholder:text-zinc-600 focus:outline-none resize-none" />
+                  rows={2} className={`w-full px-2 py-1 bg-zinc-800 rounded text-[11px] text-amber-500/80 placeholder:text-zinc-600 focus:outline-none resize-none border ${!node.config?.question && !node.config?.note ? 'border-red-500/40' : 'border-zinc-700'}`} />
                 <p className="text-[9px] text-zinc-600">Use the <span className="text-zinc-400">verbatim question</span> for a scripted line, or <span className="text-amber-500/60">AI guidance</span> to describe how to ask. Either or both.</p>
                 <p className="text-[9px] text-zinc-600 mt-0.5">Add <span className="text-zinc-400">Response</span> child nodes for each possible answer.</p>
                 <div className="space-y-2 pt-2 border-t border-zinc-700/50">
@@ -340,7 +346,7 @@ function NodeCard({
                         (n as HTMLElement).removeAttribute('data-highlighted');
                       });
                       // Apply persistent highlight
-                      el.style.outline = '2px solid #3b82f6';
+                      el.style.outline = '2px solid #eab308';
                       el.style.borderRadius = '8px';
                       el.setAttribute('data-highlighted', 'true');
                       // Dismiss on next click anywhere
