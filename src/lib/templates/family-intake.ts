@@ -33,15 +33,22 @@ export function createFamilyIntakeTemplate() {
     return addNode('response', label, { response: label, instruction: instruction || '' });
   }
 
-  // Transfer node declared early so it can be referenced by any branch
-  const transferId = addNode('transfer', 'Transfer to Attorney', {
-    transferTarget: 'attorney',
-    message: "Thank you so much for sharing all of that with me. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.",
-    includeNotes: true,
-    transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
-  });
+  // Helper: create a dedicated transfer node for each branch endpoint
+  const TRANSFER_MSG = "Thank you so much for sharing all of that with me. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.";
+  const TRANSFER_DATA = ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'];
 
-  // Separate paralegal transfer for existing clients (bypasses full intake)
+  function mkTransfer(label: string, urgent = false) {
+    return addNode('transfer', label, {
+      transferTarget: 'attorney',
+      message: urgent
+        ? "I've flagged your case as urgent and sent everything over to our team immediately. They'll reach out to you as soon as possible."
+        : TRANSFER_MSG,
+      includeNotes: true,
+      transferData: TRANSFER_DATA,
+    });
+  }
+
+  // Paralegal transfer for existing clients (bypasses full intake)
   const transferParalegalId = addNode('transfer', 'Transfer to Paralegal', {
     transferTarget: 'paralegal',
     message: "Welcome back! Please hold one moment while I connect you with our team.",
@@ -362,52 +369,52 @@ export function createFamilyIntakeTemplate() {
   // BRANCH ENDPOINTS → all route directly to Transfer
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // A4 urgency: both paths go to transfer (urgent is flagged, routine checks availability)
+  // A4 urgency
   const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away."');
   const a4_routine = response('No - routine matter');
-  addEdge(a4, a4_urgent);  addEdge(a4_urgent, transferId);
-  addEdge(a4, a4_routine); addEdge(a4_routine, transferId);
+  addEdge(a4, a4_urgent);  addEdge(a4_urgent,  mkTransfer('A - Custody: Urgent Transfer', true));
+  addEdge(a4, a4_routine); addEdge(a4_routine, mkTransfer('A - Custody: Transfer to Attorney'));
 
-  // Emergency (Branch C) - direct transfer
-  addEdge(cEmergency, transferId);
+  // Emergency (Branch C)
+  addEdge(cEmergency, mkTransfer('C - Emergency Transfer', true));
 
   // C2 responses
   const c2_spouse   = response('Spouse or former spouse');
   const c2_coparent = response('Co-parent or parent of my child');
   const c2_family   = response('Parent or sibling (family member)');
   const c2_partner  = response('Intimate partner / boyfriend / girlfriend');
-  addEdge(c2, c2_spouse);   addEdge(c2_spouse, transferId);
-  addEdge(c2, c2_coparent); addEdge(c2_coparent, transferId);
-  addEdge(c2, c2_family);   addEdge(c2_family, transferId);
-  addEdge(c2, c2_partner);  addEdge(c2_partner, transferId);
+  addEdge(c2, c2_spouse);   addEdge(c2_spouse,   mkTransfer('C - Family Offense: Transfer (Spouse)'));
+  addEdge(c2, c2_coparent); addEdge(c2_coparent, mkTransfer('C - Family Offense: Transfer (Co-parent)'));
+  addEdge(c2, c2_family);   addEdge(c2_family,   mkTransfer('C - Family Offense: Transfer (Family)'));
+  addEdge(c2, c2_partner);  addEdge(c2_partner,  mkTransfer('C - Family Offense: Transfer (Partner)'));
 
   // B3 responses
   const b3_petitioner  = response('Receiving support (Petitioner)');
   const b3_respondent  = response('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
-  addEdge(b3, b3_petitioner);  addEdge(b3_petitioner, transferId);
-  addEdge(b3, b3_respondent);  addEdge(b3_respondent, transferId);
+  addEdge(b3, b3_petitioner); addEdge(b3_petitioner, mkTransfer('B - Support: Transfer (Petitioner)'));
+  addEdge(b3, b3_respondent); addEdge(b3_respondent, mkTransfer('B - Support: Transfer (Respondent)'));
 
   // D1 responses
-  addEdge(d1_investigation, transferId);
-  addEdge(d1_court, transferId);
+  addEdge(d1_investigation, mkTransfer('D - ACS: Transfer (Investigation)'));
+  addEdge(d1_court,         mkTransfer('D - ACS: Transfer (Court Date)'));
 
   // D2 responses
-  addEdge(d2_placement, transferId);
-  addEdge(d2_adopt, transferId);
-  addEdge(d2_dispute, transferId);
+  addEdge(d2_placement, mkTransfer('D - Foster: Transfer (Placement)'));
+  addEdge(d2_adopt,     mkTransfer('D - Foster: Transfer (Adoption)'));
+  addEdge(d2_dispute,   mkTransfer('D - Foster: Transfer (Dispute)'));
 
   // Branch D "concerned about child elsewhere"
-  addEdge(branchD_child, transferId);
+  addEdge(branchD_child, mkTransfer('D - Child Welfare: Transfer'));
 
   // Branch E responses
-  addEdge(branchE_mother, transferId);
-  addEdge(branchE_father, transferId);
-  addEdge(branchE_dispute, transferId);
+  addEdge(branchE_mother,  mkTransfer('E - Paternity: Transfer (Mother)'));
+  addEdge(branchE_father,  mkTransfer('E - Paternity: Transfer (Father)'));
+  addEdge(branchE_dispute, mkTransfer('E - Paternity: Transfer (Dispute)'));
 
   // Branch F, G, H
-  addEdge(branchF_any, transferId);
-  addEdge(branchG_any, transferId);
-  addEdge(branchH_any, transferId);
+  addEdge(branchF_any, mkTransfer('F - Adoption/Guardianship: Transfer'));
+  addEdge(branchG_any, mkTransfer('G - Juvenile: Transfer'));
+  addEdge(branchH_any, mkTransfer('H - Other: Transfer'));
 
   return {
     name: 'Family Court Intake',
