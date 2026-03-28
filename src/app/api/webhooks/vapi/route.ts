@@ -363,7 +363,7 @@ async function handleScheduleConsultation(args: Record<string, unknown>) {
   let googleEventId: string | null = null;
   try {
     googleEventId = await createCalendarEvent({
-      calendarId: lawyer.googleCalendarId || 'primary',
+      calendarId: lawyer.googleCalendarId || lawyer.email,
       summary: `Consultation: ${clientName}`,
       description: `Phone consultation with ${clientName} (${clientPhone})`,
       startTime,
