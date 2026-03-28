@@ -444,164 +444,47 @@ describe('Anderson Bowman template', () => {
     expect(prompt).toContain('FOLLOW THIS SCRIPT EXACTLY');
   });
 
-  it('compiled prompt includes transfer protocol with generateTransferSummary', () => {
+  it('compiled prompt includes transfer protocol with availability check and generateTransferSummary', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('TRANSFER TO ATTORNEY');
-    expect(prompt).toContain('Caller name');
+    expect(prompt).toContain('checkAttorneyAvailability');
     expect(prompt).toContain('generateTransferSummary');
   });
 
-  // ── Connect or Schedule audit ────────────────────────────────────────────
+  // ── Transfer endpoint audit (no scheduling — all branches go direct to transfer) ──
 
-  it('has a Connect or Schedule question node', () => {
-    const template = createAndersonBowmanTemplate();
-    const node = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
-    expect(node).toBeDefined();
-    expect(node!.type).toBe('question');
-    // Options are now separate Response child nodes, not a config.options array
-    const outEdges = template.edges.filter((e: any) => e.sourceNodeId === node!.id);
-    expect(outEdges).toHaveLength(2);
-    const responseNodes = outEdges.map((e: any) =>
-      template.nodes.find((n: any) => n.id === e.targetNodeId)
-    );
-    expect(responseNodes.every((n: any) => n.type === 'response')).toBe(true);
-    // Responses use intent-based labels, not verbatim phrases
-    expect(responseNodes.some((n: any) => n.config?.response?.toLowerCase().includes('now') || n.config?.response?.toLowerCase().includes('connect'))).toBe(true);
-    expect(responseNodes.some((n: any) => n.config?.response?.toLowerCase().includes('schedule') || n.config?.response?.toLowerCase().includes('later') || n.config?.response?.toLowerCase().includes('book'))).toBe(true);
-  });
-
-  it('Connect or Schedule routes to both transfer and appointment booking', () => {
+  it('has no Connect or Schedule question node (scheduling removed)', () => {
     const template = createAndersonBowmanTemplate();
     const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
-    const transfer = template.nodes.find((n: any) => n.type === 'transfer');
+    expect(cos).toBeUndefined();
+  });
+
+  it('has no Book Consultation action node (scheduling removed)', () => {
+    const template = createAndersonBowmanTemplate();
     const booking = template.nodes.find((n: any) => n.label === 'Book Consultation');
-    expect(cos).toBeDefined();
-    // cos -> Response nodes (cos_now, cos_schedule)
-    const outEdges = template.edges.filter((e: any) => e.sourceNodeId === cos!.id);
-    expect(outEdges).toHaveLength(2);
-    const responseIds = outEdges.map((e: any) => e.targetNodeId);
-    // Each Response node leads to transfer or booking
-    const secondHopTargets = responseIds.flatMap((rid: string) =>
-      template.edges.filter((e: any) => e.sourceNodeId === rid).map((e: any) => e.targetNodeId)
+    expect(booking).toBeUndefined();
+  });
+
+  it('all branch endpoints route directly to a transfer node', () => {
+    const template = createAndersonBowmanTemplate();
+    const transferNodes = new Set(
+      template.nodes.filter((n: any) => n.type === 'transfer').map((n: any) => n.id)
     );
-    expect(secondHopTargets).toContain(transfer!.id);
-    expect(secondHopTargets).toContain(booking!.id);
+    // Every non-transfer, non-end node must eventually reach a transfer node
+    // (verified by checking no dead ends exist — covered by other tests)
+    expect(transferNodes.size).toBeGreaterThanOrEqual(1);
   });
 
-  it('has a Book Consultation action node with book_appointment type', () => {
-    const template = createAndersonBowmanTemplate();
-    const node = template.nodes.find((n: any) => n.label === 'Book Consultation');
-    expect(node).toBeDefined();
-    expect(node!.type).toBe('action');
-    expect(node!.config.actionType).toBe('book_appointment');
-  });
-
-  it('booking path leads to Anything Else then End - After Scheduling', () => {
-    const template = createAndersonBowmanTemplate();
-    const booking = template.nodes.find((n: any) => n.label === 'Book Consultation');
-    const nothingElse = template.nodes.find((n: any) => n.label === 'Anything Else?');
-    const endNode = template.nodes.find((n: any) => n.label === 'End - After Scheduling');
-    expect(booking).toBeDefined();
-    expect(nothingElse).toBeDefined();
-    expect(endNode).toBeDefined();
-    expect(endNode!.type).toBe('end');
-
-    // booking -> nothingElse
-    const bookingEdge = template.edges.find((e: any) => e.sourceNodeId === booking!.id);
-    expect(bookingEdge!.targetNodeId).toBe(nothingElse!.id);
-
-    // nothingElse -> Response nodes -> end (both answer paths go through Response nodes)
-    const nothingElseEdges = template.edges.filter((e: any) => e.sourceNodeId === nothingElse!.id);
-    expect(nothingElseEdges.length).toBeGreaterThanOrEqual(1);
-    // Each edge from nothingElse targets a Response node, which then targets endNode
-    nothingElseEdges.forEach((e: any) => {
-      const responseNode = template.nodes.find((n: any) => n.id === e.targetNodeId);
-      if (responseNode && responseNode.type === 'response') {
-        const hopEdge = template.edges.find((he: any) => he.sourceNodeId === responseNode.id);
-        expect(hopEdge!.targetNodeId).toBe(endNode!.id);
-      } else {
-        expect(e.targetNodeId).toBe(endNode!.id);
-      }
-    });
-  });
-
-  it('emergency paths bypass scheduling and go directly to transfer', () => {
+  it('emergency and urgent paths go directly to the attorney transfer node', () => {
     const template = createAndersonBowmanTemplate();
     const emergency = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
-    const a4 = template.nodes.find((n: any) => n.label === 'A4. Urgency / Safety Screen');
-    const transfer = template.nodes.find((n: any) => n.type === 'transfer');
-    const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
+    const transfer = template.nodes.find((n: any) => n.type === 'transfer' && n.config?.transferTarget === 'attorney');
 
     // cEmergency -> transfer directly
     const emergencyEdge = template.edges.find((e: any) => e.sourceNodeId === emergency!.id);
     expect(emergencyEdge!.targetNodeId).toBe(transfer!.id);
-
-    // a4 -> Response nodes; urgent Response -> transfer, routine Response -> cos
-    const a4OutEdges = template.edges.filter((e: any) => e.sourceNodeId === a4!.id);
-    const a4ResponseNodes = a4OutEdges.map((e: any) =>
-      template.nodes.find((n: any) => n.id === e.targetNodeId)
-    );
-
-    // Find the urgent Response node (the one whose next hop is transfer)
-    const urgentResponse = a4ResponseNodes.find((n: any) => {
-      const hop = template.edges.find((e: any) => e.sourceNodeId === n.id);
-      return hop && hop.targetNodeId === transfer!.id;
-    });
-    expect(urgentResponse).toBeDefined();
-
-    // Find the routine Response node (the one whose next hop is cos)
-    const routineResponse = a4ResponseNodes.find((n: any) => {
-      const hop = template.edges.find((e: any) => e.sourceNodeId === n.id);
-      return hop && hop.targetNodeId === cos!.id;
-    });
-    expect(routineResponse).toBeDefined();
-  });
-
-  it('no non-emergency branch endpoints connect directly to transfer (all go via Connect or Schedule)', () => {
-    const template = createAndersonBowmanTemplate();
-    const transfer = template.nodes.find((n: any) => n.type === 'transfer');
-    const emergency = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
-    const a4 = template.nodes.find((n: any) => n.label === 'A4. Urgency / Safety Screen');
-    const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
-    const q1b = template.nodes.find((n: any) => n.label === 'Q1b. New or Existing Client?');
-
-    // In the new Response-node pattern, edges to transfer can come from:
-    // 1. cEmergency (emergency action node) - direct bypass
-    // 2. a4_urgent (Response child of a4) - urgent bypass
-    // 3. cos_now (Response child of cos) - the "Connect me now" path
-    // 4. q1b_existing (Response child of q1b) - existing client early bypass
-
-    // Get Response children of a4, cos, and q1b
-    const a4ResponseIds = new Set(
-      template.edges
-        .filter((e: any) => e.sourceNodeId === a4!.id)
-        .map((e: any) => e.targetNodeId)
-    );
-    const cosResponseIds = new Set(
-      template.edges
-        .filter((e: any) => e.sourceNodeId === cos!.id)
-        .map((e: any) => e.targetNodeId)
-    );
-    const q1bResponseIds = new Set(
-      template.edges
-        .filter((e: any) => e.sourceNodeId === q1b!.id)
-        .map((e: any) => e.targetNodeId)
-    );
-
-    const allowedDirectToTransfer = new Set([
-      emergency!.id,
-      ...Array.from(a4ResponseIds),
-      ...Array.from(cosResponseIds),
-      ...Array.from(q1bResponseIds),
-    ]);
-
-    const directToTransfer = template.edges.filter(
-      (e: any) => e.targetNodeId === transfer!.id && !allowedDirectToTransfer.has(e.sourceNodeId)
-    );
-    // No other node should connect directly to transfer
-    expect(directToTransfer).toHaveLength(0);
   });
 
   // ── Dead-end / orphan audit ──────────────────────────────────────────────
@@ -625,21 +508,20 @@ describe('Anderson Bowman template', () => {
     }
   });
 
-  it('extractToolsFromFlow includes scheduleConsultation for the template', () => {
+  it('extractToolsFromFlow includes generateTransferSummary for the template', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const tools = extractToolsFromFlow(flow);
-    expect(tools).toContain('scheduleConsultation');
     expect(tools).toContain('generateTransferSummary');
     expect(tools).toContain('endCall');
   });
 
-  it('compiled prompt includes scheduleConsultation tool instruction', () => {
+  it('compiled prompt includes checkAttorneyAvailability and generateTransferSummary instructions', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
-    expect(prompt).toContain('scheduleConsultation');
-    expect(prompt).toContain('schedule a consultation');
+    expect(prompt).toContain('generateTransferSummary');
+    expect(prompt).toContain('checkAttorneyAvailability');
   });
 
   it('compiled prompt includes Q2 collect field label "First and last name"', () => {

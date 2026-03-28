@@ -38,7 +38,7 @@ export function createGeneralIntakeTemplate() {
 
   const transferId = addNode('transfer', 'Transfer to Attorney', {
     transferTarget: 'attorney',
-    message: "Thank you for sharing all of that. I now have everything our attorney will need. Please hold one moment - I'm connecting you now.",
+    message: "Thank you for sharing all of that. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.",
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'practice_area', 'matter_type', 'urgency_flag', 'all_collected_fields'],
   });
@@ -48,33 +48,6 @@ export function createGeneralIntakeTemplate() {
     transferTarget: 'paralegal',
     message: "Welcome back! Please hold one moment while I connect you with our team.",
   });
-
-  const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
-    note: 'Ask whether they want to speak with an attorney now or book a time for later. Be natural - something like "Would you like me to connect you with an attorney right now, or would a scheduled consultation work better for you?" Acknowledge their preference warmly before proceeding.',
-  });
-  const cos_now = resp('Wants to speak with someone now');
-  const cos_schedule = resp('Prefers to book a time for later');
-  addEdge(connectOrSchedule, cos_now); addEdge(cos_now, transferId);
-  addEdge(connectOrSchedule, cos_schedule);
-
-  const appointmentNode = addNode('action', 'Book Consultation', {
-    actionType: 'book_appointment',
-    note: 'Call scheduleConsultation tool with caller name, phone, and a brief description of their legal issue. Confirm date and time with caller.',
-  });
-  addEdge(cos_schedule, appointmentNode);
-
-  const nothingElse = addNode('question', 'Anything Else?', {
-    question: 'Is there anything else I can help you with today?',
-  });
-  addEdge(appointmentNode, nothingElse);
-
-  const endScheduled = addNode('end', 'End - After Scheduling', {
-    closingMessage: 'We look forward to speaking with you at your consultation. Have a wonderful day. Goodbye!',
-  });
-  const ae_no = resp('No, that is all', 'Thank them and end the call.');
-  const ae_yes = resp('Yes, I have another question', 'Address briefly then end the call.');
-  addEdge(nothingElse, ae_no); addEdge(ae_no, endScheduled);
-  addEdge(nothingElse, ae_yes); addEdge(ae_yes, endScheduled);
 
   // ═══════════════════════════════════════════════════════════════
   // OPENING & CALLER IDENTIFICATION
@@ -200,7 +173,7 @@ export function createGeneralIntakeTemplate() {
   const famA4_urgent  = resp('Yes - immediate safety concern', 'FLAG URGENT. Say: "Your safety is the priority - let me connect you with an attorney right away." Proceed immediately to transfer.');
   const famA4_routine = resp('No - routine matter');
   addEdge(famA4, famA4_urgent);  addEdge(famA4_urgent,  transferId);
-  addEdge(famA4, famA4_routine); addEdge(famA4_routine, connectOrSchedule);
+  addEdge(famA4, famA4_routine); addEdge(famA4_routine, transferId);
 
   // --- Support ---
   const famBSupportRouting = addNode('question', 'FB - Support Filing Status', {
@@ -239,8 +212,8 @@ export function createGeneralIntakeTemplate() {
   addEdge(famB2, famB2_mid); addEdge(famB2_mid, famB3);
   addEdge(famB2, famB2_gt1); addEdge(famB2_gt1, famB3);
   const famB3_pet = resp('Receiving support (Petitioner)'); const famB3_res = resp('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
-  addEdge(famB3, famB3_pet); addEdge(famB3_pet, connectOrSchedule);
-  addEdge(famB3, famB3_res); addEdge(famB3_res, connectOrSchedule);
+  addEdge(famB3, famB3_pet); addEdge(famB3_pet, transferId);
+  addEdge(famB3, famB3_res); addEdge(famB3_res, transferId);
 
   // --- Family Offense ---
   const famCSafety = addNode('question', 'FC - Safety Check', {
@@ -271,10 +244,10 @@ export function createGeneralIntakeTemplate() {
   addEdge(famC1, famC1_sex);  addEdge(famC1_sex,  famC2);
   const famC2_sp = resp('Spouse or former spouse'); const famC2_co = resp('Co-parent or parent of my child');
   const famC2_fam = resp('Parent or sibling (family member)'); const famC2_par = resp('Intimate partner / boyfriend / girlfriend');
-  addEdge(famC2, famC2_sp);  addEdge(famC2_sp,  connectOrSchedule);
-  addEdge(famC2, famC2_co);  addEdge(famC2_co,  connectOrSchedule);
-  addEdge(famC2, famC2_fam); addEdge(famC2_fam, connectOrSchedule);
-  addEdge(famC2, famC2_par); addEdge(famC2_par, connectOrSchedule);
+  addEdge(famC2, famC2_sp);  addEdge(famC2_sp,  transferId);
+  addEdge(famC2, famC2_co);  addEdge(famC2_co,  transferId);
+  addEdge(famC2, famC2_fam); addEdge(famC2_fam, transferId);
+  addEdge(famC2, famC2_par); addEdge(famC2_par, transferId);
 
   // --- Child Welfare / ACS ---
   const famDRouting = addNode('question', 'FD - ACS / Child Welfare', {
@@ -293,17 +266,17 @@ export function createGeneralIntakeTemplate() {
   const famDR_child = resp('Concerned about a child elsewhere');
   const famDR_fos   = resp('Foster parent legal matter');
   addEdge(famDRouting, famDR_acs);   addEdge(famDR_acs,   famD1);
-  addEdge(famDRouting, famDR_child); addEdge(famDR_child, connectOrSchedule);
+  addEdge(famDRouting, famDR_child); addEdge(famDR_child, transferId);
   addEdge(famDRouting, famDR_fos);   addEdge(famDR_fos,   famD2);
 
   const famD1_inv = resp('Investigation stage - no court date yet'); const famD1_court = resp('Petition filed - court date scheduled', 'FLAG URGENT.');
-  addEdge(famD1, famD1_inv); addEdge(famD1_inv, connectOrSchedule);
-  addEdge(famD1, famD1_court); addEdge(famD1_court, connectOrSchedule);
+  addEdge(famD1, famD1_inv); addEdge(famD1_inv, transferId);
+  addEdge(famD1, famD1_court); addEdge(famD1_court, transferId);
 
   const famD2_pl = resp('Extension of placement / permanency hearing'); const famD2_ad = resp('Foster-to-adopt'); const famD2_disp = resp('Dispute with agency');
-  addEdge(famD2, famD2_pl); addEdge(famD2_pl, connectOrSchedule);
-  addEdge(famD2, famD2_ad); addEdge(famD2_ad, connectOrSchedule);
-  addEdge(famD2, famD2_disp); addEdge(famD2_disp, connectOrSchedule);
+  addEdge(famD2, famD2_pl); addEdge(famD2_pl, transferId);
+  addEdge(famD2, famD2_ad); addEdge(famD2_ad, transferId);
+  addEdge(famD2, famD2_disp); addEdge(famD2_disp, transferId);
 
   // --- Paternity ---
   const famERouting = addNode('question', 'FE - Paternity', {
@@ -312,9 +285,9 @@ export function createGeneralIntakeTemplate() {
   const famE_q5 = resp('Paternity - establishing who the father is');
   addEdge(famTriage, famE_q5); addEdge(famE_q5, famERouting);
   const famER_mom = resp('Mother seeking to establish'); const famER_dad = resp('Father seeking parental rights', 'May need to establish paternity before custody.'); const famER_disp = resp('Disputing paternity', 'DNA challenge / Respondent representation.');
-  addEdge(famERouting, famER_mom); addEdge(famER_mom, connectOrSchedule);
-  addEdge(famERouting, famER_dad); addEdge(famER_dad, connectOrSchedule);
-  addEdge(famERouting, famER_disp); addEdge(famER_disp, connectOrSchedule);
+  addEdge(famERouting, famER_mom); addEdge(famER_mom, transferId);
+  addEdge(famERouting, famER_dad); addEdge(famER_dad, transferId);
+  addEdge(famERouting, famER_disp); addEdge(famER_disp, transferId);
 
   // --- Adoption & Guardianship ---
   const famFRouting = addNode('question', 'FF - Adoption / Guardianship', {
@@ -323,7 +296,7 @@ export function createGeneralIntakeTemplate() {
   const famF_q5 = resp('Adoption or guardianship');
   addEdge(famTriage, famF_q5); addEdge(famF_q5, famFRouting);
   const famFR_any = resp('Any type');
-  addEdge(famFRouting, famFR_any); addEdge(famFR_any, connectOrSchedule);
+  addEdge(famFRouting, famFR_any); addEdge(famFR_any, transferId);
 
   // --- Juvenile ---
   const famGRouting = addNode('question', 'FG - Juvenile Matter', {
@@ -332,7 +305,7 @@ export function createGeneralIntakeTemplate() {
   const famG_q5 = resp('A juvenile matter');
   addEdge(famTriage, famG_q5); addEdge(famG_q5, famGRouting);
   const famGR_any = resp('Any type');
-  addEdge(famGRouting, famGR_any); addEdge(famGR_any, connectOrSchedule);
+  addEdge(famGRouting, famGR_any); addEdge(famGR_any, transferId);
 
   // --- Divorce ---
   const famDivRouting = addNode('question', 'FH - Divorce / Separation', {
@@ -352,14 +325,14 @@ export function createGeneralIntakeTemplate() {
   addEdge(famDivRouting, famDivR_sep);   addEdge(famDivR_sep,   famDiv1);
 
   const famDiv1_prop = resp('Property division and assets'); const famDiv1_sup = resp('Spousal support / alimony'); const famDiv1_child = resp('Child custody and support'); const famDiv1_all = resp('All of the above');
-  addEdge(famDiv1, famDiv1_prop); addEdge(famDiv1_prop, connectOrSchedule);
-  addEdge(famDiv1, famDiv1_sup);  addEdge(famDiv1_sup,  connectOrSchedule);
-  addEdge(famDiv1, famDiv1_child);addEdge(famDiv1_child,connectOrSchedule);
-  addEdge(famDiv1, famDiv1_all);  addEdge(famDiv1_all,  connectOrSchedule);
+  addEdge(famDiv1, famDiv1_prop); addEdge(famDiv1_prop, transferId);
+  addEdge(famDiv1, famDiv1_sup);  addEdge(famDiv1_sup,  transferId);
+  addEdge(famDiv1, famDiv1_child);addEdge(famDiv1_child,transferId);
+  addEdge(famDiv1, famDiv1_all);  addEdge(famDiv1_all,  transferId);
 
   // --- Other Family ---
   const famOther_q5 = resp('Other family law matter');
-  addEdge(famTriage, famOther_q5); addEdge(famOther_q5, connectOrSchedule);
+  addEdge(famTriage, famOther_q5); addEdge(famOther_q5, transferId);
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 2 — CRIMINAL DEFENSE
@@ -441,9 +414,9 @@ export function createGeneralIntakeTemplate() {
   addEdge(crimB2, crimB2_no);   addEdge(crimB2_no,   crimB3);
 
   const crimB3_none = resp('No prior record'); const crimB3_misd = resp('Prior misdemeanors'); const crimB3_fel = resp('Prior felonies');
-  addEdge(crimB3, crimB3_none); addEdge(crimB3_none, connectOrSchedule);
-  addEdge(crimB3, crimB3_misd); addEdge(crimB3_misd, connectOrSchedule);
-  addEdge(crimB3, crimB3_fel);  addEdge(crimB3_fel,  connectOrSchedule);
+  addEdge(crimB3, crimB3_none); addEdge(crimB3_none, transferId);
+  addEdge(crimB3, crimB3_misd); addEdge(crimB3_misd, transferId);
+  addEdge(crimB3, crimB3_fel);  addEdge(crimB3_fel,  transferId);
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 3 — IMMIGRATION
@@ -521,7 +494,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(immC2, immC2_no);   addEdge(immC2_no,   immC3);
 
   const immC3_first = resp('First-time application'); const immC3_denied = resp('Prior application denied'); const immC3_pend = resp('Application currently pending'); const immC3_prev = resp('Previously in removal proceedings');
-  [immC3_first, immC3_denied, immC3_pend, immC3_prev].forEach(r => { addEdge(immC3, r); addEdge(r, connectOrSchedule); });
+  [immC3_first, immC3_denied, immC3_pend, immC3_prev].forEach(r => { addEdge(immC3, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 4 — PERSONAL INJURY
@@ -589,7 +562,7 @@ export function createGeneralIntakeTemplate() {
   [piD2_active, piD2_done, piD2_none, piD2_death].forEach(r => { addEdge(piD2, r); addEdge(r, piD3); });
 
   const piD3_none    = resp('No claim filed yet'); const piD3_inprog = resp('Insurance claim in progress'); const piD3_denied = resp('Insurance claim was denied'); const piD3_atty = resp('I had an attorney but am seeking new representation');
-  [piD3_none, piD3_inprog, piD3_denied, piD3_atty].forEach(r => { addEdge(piD3, r); addEdge(r, connectOrSchedule); });
+  [piD3_none, piD3_inprog, piD3_denied, piD3_atty].forEach(r => { addEdge(piD3, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 5 — CORPORATE / BUSINESS
@@ -650,7 +623,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(corpE2, corpE2_dead);   addEdge(corpE2_dead,   corpE3);
   addEdge(corpE2, corpE2_no);     addEdge(corpE2_no,     corpE3);
   const corpE3_pla = resp('I am initiating a claim (plaintiff)'); const corpE3_def = resp('I am responding to a claim (defendant)'); const corpE3_adv = resp('I need advice or document review');
-  [corpE3_pla, corpE3_def, corpE3_adv].forEach(r => { addEdge(corpE3, r); addEdge(r, connectOrSchedule); });
+  [corpE3_pla, corpE3_def, corpE3_adv].forEach(r => { addEdge(corpE3, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 6 — REAL ESTATE
@@ -710,8 +683,8 @@ export function createGeneralIntakeTemplate() {
   const reF2_soon = resp('Yes - within 1 to 2 months');
   const reF2_no   = resp('No immediate deadline');
   addEdge(reF2, reF2_imm);  addEdge(reF2_imm,  reUrgent); addEdge(reUrgent, transferId);
-  addEdge(reF2, reF2_soon); addEdge(reF2_soon, connectOrSchedule);
-  addEdge(reF2, reF2_no);   addEdge(reF2_no,   connectOrSchedule);
+  addEdge(reF2, reF2_soon); addEdge(reF2_soon, transferId);
+  addEdge(reF2, reF2_no);   addEdge(reF2_no,   transferId);
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 7 — EMPLOYMENT
@@ -782,8 +755,8 @@ export function createGeneralIntakeTemplate() {
   const empG3_soon = resp('Yes - deadline within a few months');
   const empG3_no   = resp('No known deadline');
   addEdge(empG3, empG3_imm); addEdge(empG3_imm, empUrgent); addEdge(empUrgent, transferId);
-  addEdge(empG3, empG3_soon); addEdge(empG3_soon, connectOrSchedule);
-  addEdge(empG3, empG3_no);   addEdge(empG3_no,   connectOrSchedule);
+  addEdge(empG3, empG3_soon); addEdge(empG3_soon, transferId);
+  addEdge(empG3, empG3_no);   addEdge(empG3_no,   transferId);
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 8 — BANKRUPTCY
@@ -839,7 +812,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(bankH2, bankH2_no);   addEdge(bankH2_no,   bankH3);
 
   const bankH3_never = resp('No prior bankruptcy'); const bankH3_prev = resp('Filed before - more than 8 years ago'); const bankH3_rec = resp('Filed within the last 8 years', 'Note: prior recent filing may affect eligibility for certain chapters.');
-  [bankH3_never, bankH3_prev, bankH3_rec].forEach(r => { addEdge(bankH3, r); addEdge(r, connectOrSchedule); });
+  [bankH3_never, bankH3_prev, bankH3_rec].forEach(r => { addEdge(bankH3, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 9 — TAX LAW
@@ -905,7 +878,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(taxI2, taxI2_no);     addEdge(taxI2_no,     taxI3);
 
   const taxI3_none = resp('No prior contact or representation'); const taxI3_cpa = resp('Working with a CPA but need an attorney'); const taxI3_prev = resp('Had prior representation - seeking new attorney');
-  [taxI3_none, taxI3_cpa, taxI3_prev].forEach(r => { addEdge(taxI3, r); addEdge(r, connectOrSchedule); });
+  [taxI3_none, taxI3_cpa, taxI3_prev].forEach(r => { addEdge(taxI3, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 10 — ESTATE PLANNING
@@ -963,7 +936,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(estJ1, estJ1_plan);   addEdge(estJ1_plan,   estJ2);
 
   const estJ2_sm = resp('Modest estate (under $500K)'); const estJ2_med = resp('Mid-size estate ($500K - $2M)'); const estJ2_lg = resp('Large estate (over $2M)'); const estJ2_unk = resp('Unsure of estate value');
-  [estJ2_sm, estJ2_med, estJ2_lg, estJ2_unk].forEach(r => { addEdge(estJ2, r); addEdge(r, connectOrSchedule); });
+  [estJ2_sm, estJ2_med, estJ2_lg, estJ2_unk].forEach(r => { addEdge(estJ2, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 11 — INTELLECTUAL PROPERTY
@@ -1017,8 +990,8 @@ export function createGeneralIntakeTemplate() {
   const ipK2_inf  = resp('Yes - active infringement but no legal action yet');
   const ipK2_no   = resp('No infringement - registration or proactive protection');
   addEdge(ipK2, ipK2_sue); addEdge(ipK2_sue, ipUrgent); addEdge(ipUrgent, transferId);
-  addEdge(ipK2, ipK2_inf); addEdge(ipK2_inf, connectOrSchedule);
-  addEdge(ipK2, ipK2_no);  addEdge(ipK2_no,  connectOrSchedule);
+  addEdge(ipK2, ipK2_inf); addEdge(ipK2_inf, transferId);
+  addEdge(ipK2, ipK2_no);  addEdge(ipK2_no,  transferId);
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 12 — CIVIL RIGHTS
@@ -1081,7 +1054,7 @@ export function createGeneralIntakeTemplate() {
   const crL2_yes  = resp('Yes - physical injuries, medical treatment, or significant financial loss');
   const crL2_part = resp('Emotional distress, loss of liberty, or reputational harm');
   const crL2_no   = resp('No significant physical or financial harm - seeking injunctive relief');
-  [crL2_yes, crL2_part, crL2_no].forEach(r => { addEdge(crL2, r); addEdge(r, connectOrSchedule); });
+  [crL2_yes, crL2_part, crL2_no].forEach(r => { addEdge(crL2, r); addEdge(r, transferId); });
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 13 — ENVIRONMENTAL
@@ -1141,8 +1114,8 @@ export function createGeneralIntakeTemplate() {
   const envM2_soon   = resp('Yes - agency action expected or pending but not yet formal');
   const envM2_no     = resp('No active enforcement - planning, permitting, or damages claim');
   addEdge(envM2, envM2_active); addEdge(envM2_active, envUrgent); addEdge(envUrgent, transferId);
-  addEdge(envM2, envM2_soon);   addEdge(envM2_soon,   connectOrSchedule);
-  addEdge(envM2, envM2_no);     addEdge(envM2_no,     connectOrSchedule);
+  addEdge(envM2, envM2_soon);   addEdge(envM2_soon,   transferId);
+  addEdge(envM2, envM2_no);     addEdge(envM2_no,     transferId);
 
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 14 — SOMETHING ELSE (catch-all)
@@ -1153,7 +1126,7 @@ export function createGeneralIntakeTemplate() {
     note: 'Catch-all: attorney consultation needed to determine correct practice area',
   });
   const q5_other = q5r('Other', "Caller's situation does not clearly match a specific area", 'Route here only if the caller\'s situation genuinely does not fit any of the above categories after careful listening. Say: "That\'s helpful - let me make sure I connect you with someone who can assess exactly what type of help you need."');
-  addEdge(q5, q5_other); addEdge(q5_other, otherFlag); addEdge(otherFlag, connectOrSchedule);
+  addEdge(q5, q5_other); addEdge(q5_other, otherFlag); addEdge(otherFlag, transferId);
 
   return {
     name: 'General Legal Intake - All Practice Areas',

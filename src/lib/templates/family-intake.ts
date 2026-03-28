@@ -36,7 +36,7 @@ export function createFamilyIntakeTemplate() {
   // Transfer node declared early so it can be referenced by any branch
   const transferId = addNode('transfer', 'Transfer to Attorney', {
     transferTarget: 'attorney',
-    message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need to help you effectively. Please hold for just a moment - I'm connecting you now with a member of our legal team.",
+    message: "Thank you so much for sharing all of that with me. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.",
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'],
   });
@@ -359,91 +359,55 @@ export function createFamilyIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CONNECT OR SCHEDULE - offered before every non-emergency transfer
+  // BRANCH ENDPOINTS → all route directly to Transfer
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const connectOrSchedule = addNode('question', 'Connect or Schedule?', {
-    note: 'Ask whether they want to speak with an attorney now or book a time for later. Be natural - something like "Would you like me to connect you with an attorney right now, or would a scheduled consultation work better for you?" Acknowledge their preference warmly before proceeding.',
-  });
-
-  const cos_now      = response('Wants to speak with someone now');
-  const cos_schedule = response('Prefers to book a time for later');
-  addEdge(connectOrSchedule, cos_now);      addEdge(cos_now, transferId);
-  addEdge(connectOrSchedule, cos_schedule);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // APPOINTMENT BOOKING PATH
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const appointmentNode = addNode('action', 'Book Consultation', {
-    actionType: 'book_appointment',
-    note: 'Call the scheduleConsultation tool with caller name, phone number, and a brief description of their legal issue. Read back the confirmed date and time to the caller.',
-  });
-  addEdge(cos_schedule, appointmentNode);
-
-  const nothingElseNode = addNode('question', 'Anything Else?', {
-    question: 'Is there anything else I can help you with today?',
-  });
-  addEdge(appointmentNode, nothingElseNode);
-
-  const endAfterSchedule = addNode('end', 'End - After Scheduling', {
-    closingMessage: 'Wonderful. We look forward to speaking with you at your consultation. Have a great day. Goodbye!',
-  });
-  const ae_no  = response('No, that is all', 'Thank them warmly and end the call.');
-  const ae_yes = response('Yes, I have another question', 'Address their question briefly, then end the call.');
-  addEdge(nothingElseNode, ae_no);  addEdge(ae_no, endAfterSchedule);
-  addEdge(nothingElseNode, ae_yes); addEdge(ae_yes, endAfterSchedule);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH ENDPOINTS -> Connect or Schedule (or direct transfer for emergencies)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // A4 urgency: urgent goes direct to transfer, routine goes to connect-or-schedule
+  // A4 urgency: both paths go to transfer (urgent is flagged, routine checks availability)
   const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away."');
   const a4_routine = response('No - routine matter');
-  addEdge(a4, a4_urgent);  addEdge(a4_urgent, transferId);       // emergency bypass
-  addEdge(a4, a4_routine); addEdge(a4_routine, connectOrSchedule);
+  addEdge(a4, a4_urgent);  addEdge(a4_urgent, transferId);
+  addEdge(a4, a4_routine); addEdge(a4_routine, transferId);
 
-  // Emergency (Branch C) - direct transfer, no scheduling
+  // Emergency (Branch C) - direct transfer
   addEdge(cEmergency, transferId);
 
-  // C2 responses all lead to connect-or-schedule
+  // C2 responses
   const c2_spouse   = response('Spouse or former spouse');
   const c2_coparent = response('Co-parent or parent of my child');
   const c2_family   = response('Parent or sibling (family member)');
   const c2_partner  = response('Intimate partner / boyfriend / girlfriend');
-  addEdge(c2, c2_spouse);   addEdge(c2_spouse, connectOrSchedule);
-  addEdge(c2, c2_coparent); addEdge(c2_coparent, connectOrSchedule);
-  addEdge(c2, c2_family);   addEdge(c2_family, connectOrSchedule);
-  addEdge(c2, c2_partner);  addEdge(c2_partner, connectOrSchedule);
+  addEdge(c2, c2_spouse);   addEdge(c2_spouse, transferId);
+  addEdge(c2, c2_coparent); addEdge(c2_coparent, transferId);
+  addEdge(c2, c2_family);   addEdge(c2_family, transferId);
+  addEdge(c2, c2_partner);  addEdge(c2_partner, transferId);
 
   // B3 responses
   const b3_petitioner  = response('Receiving support (Petitioner)');
   const b3_respondent  = response('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
-  addEdge(b3, b3_petitioner);  addEdge(b3_petitioner, connectOrSchedule);
-  addEdge(b3, b3_respondent);  addEdge(b3_respondent, connectOrSchedule);
+  addEdge(b3, b3_petitioner);  addEdge(b3_petitioner, transferId);
+  addEdge(b3, b3_respondent);  addEdge(b3_respondent, transferId);
 
   // D1 responses
-  addEdge(d1_investigation, connectOrSchedule);
-  addEdge(d1_court, connectOrSchedule);
+  addEdge(d1_investigation, transferId);
+  addEdge(d1_court, transferId);
 
   // D2 responses
-  addEdge(d2_placement, connectOrSchedule);
-  addEdge(d2_adopt, connectOrSchedule);
-  addEdge(d2_dispute, connectOrSchedule);
+  addEdge(d2_placement, transferId);
+  addEdge(d2_adopt, transferId);
+  addEdge(d2_dispute, transferId);
 
   // Branch D "concerned about child elsewhere"
-  addEdge(branchD_child, connectOrSchedule);
+  addEdge(branchD_child, transferId);
 
   // Branch E responses
-  addEdge(branchE_mother, connectOrSchedule);
-  addEdge(branchE_father, connectOrSchedule);
-  addEdge(branchE_dispute, connectOrSchedule);
+  addEdge(branchE_mother, transferId);
+  addEdge(branchE_father, transferId);
+  addEdge(branchE_dispute, transferId);
 
   // Branch F, G, H
-  addEdge(branchF_any, connectOrSchedule);
-  addEdge(branchG_any, connectOrSchedule);
-  addEdge(branchH_any, connectOrSchedule);
+  addEdge(branchF_any, transferId);
+  addEdge(branchG_any, transferId);
+  addEdge(branchH_any, transferId);
 
   return {
     name: 'Family Court Intake',

@@ -477,8 +477,24 @@ function NodeCard({
         );
       })}
 
+      {/* End-of-flow indicator for terminal nodes */}
+      {(node.type === 'end' || node.type === 'transfer') && (
+        <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-3 mt-1`}>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-gradient-to-r from-zinc-700 to-transparent" />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-700/60 bg-zinc-900/80">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+              <span className="text-[9px] font-medium tracking-wide text-zinc-500 uppercase">
+                {node.type === 'transfer' ? 'End of flow — transfers call' : 'End of flow'}
+              </span>
+            </div>
+            <div className="flex-1 h-px bg-gradient-to-l from-zinc-700 to-transparent" />
+          </div>
+        </div>
+      )}
+
       {/* Add child */}
-      {displayExpanded && (
+      {displayExpanded && node.type !== 'end' && node.type !== 'transfer' && (
         <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
           <AddNodeMenu
             parentId={node.id} parentLabel={node.label} parentType={node.type}
