@@ -14,10 +14,18 @@ export async function GET() {
     select: { transferPhoneNumber: true, assistantName: true, firmName: true },
   });
 
+  // Parse the service account email from the env var if present
+  let calendarServiceEmail: string | null = null;
+  try {
+    const key = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    if (key) calendarServiceEmail = JSON.parse(key).client_email || null;
+  } catch { /* ignore parse errors */ }
+
   return NextResponse.json({
     transferPhoneNumber: user?.transferPhoneNumber || '',
     assistantName: user?.assistantName || '',
     firmName: user?.firmName || '',
+    calendarServiceEmail,
   });
 }
 

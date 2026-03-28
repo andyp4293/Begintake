@@ -1,6 +1,6 @@
 'use client';
 
-import { User, Briefcase, Plus, Pencil, Trash2, X, Check } from 'lucide-react';
+import { User, Briefcase, Plus, Pencil, Trash2, X, Check, Copy, CalendarDays } from 'lucide-react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -218,6 +218,7 @@ function LawyerFormModal({
 export function LawyerList() {
   const [showForm, setShowForm] = useState(false);
   const [editingLawyer, setEditingLawyer] = useState<Lawyer | null>(null);
+  const [copied, setCopied] = useState(false);
   const queryClient = useQueryClient();
   const confirmDialog = useConfirm();
 
@@ -229,6 +230,24 @@ export function LawyerList() {
       return res.json();
     },
   });
+
+  const { data: settings } = useQuery<{ calendarServiceEmail: string | null }>({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings');
+      if (!res.ok) throw new Error('Failed to fetch');
+      return res.json();
+    },
+  });
+
+  const calendarEmail = settings?.calendarServiceEmail;
+
+  const copyEmail = () => {
+    if (!calendarEmail) return;
+    navigator.clipboard.writeText(calendarEmail);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -272,6 +291,36 @@ export function LawyerList() {
             Add
           </button>
         </div>
+
+        {calendarEmail && (
+          <div className="mb-4 p-3 bg-zinc-800/60 border border-zinc-700/60 rounded-xl">
+            <div className="flex items-center gap-2 mb-1.5">
+              <CalendarDays className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <p className="text-[11px] font-medium text-zinc-300">Google Calendar sharing</p>
+            </div>
+            <p className="text-[10px] text-zinc-500 mb-2">Each attorney must share their Google Calendar with this address to enable live availability checking.</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-[10px] text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 truncate select-all">
+                {calendarEmail}
+              </code>
+              <button
+                onClick={copyEmail}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 rounded-lg text-[10px] text-zinc-300 hover:text-white transition-colors shrink-0"
+              >
+                <Copy className="w-3 h-3" />
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <a
+                href="https://calendar.google.com/calendar/r/settings"
+                target="_blank"
+                rel="noreferrer"
+                className="px-2.5 py-1.5 bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 rounded-lg text-[10px] text-zinc-300 hover:text-white transition-colors shrink-0"
+              >
+                Open Calendar →
+              </a>
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="space-y-3">
