@@ -8,7 +8,10 @@ async function getCalendarClient() {
     const credentials = JSON.parse(serviceAccountKey);
     const auth = new google.auth.GoogleAuth({
       credentials,
-      scopes: ['https://www.googleapis.com/auth/calendar.events'],
+      scopes: [
+        'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/calendar.readonly',
+      ],
     });
     return google.calendar({ version: 'v3', auth });
   }
