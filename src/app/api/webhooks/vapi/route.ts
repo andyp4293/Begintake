@@ -653,6 +653,7 @@ async function handleGenerateSummary(args: Record<string, unknown>) {
     success: true,
     callSessionId: callSession.id,
     lawyerName: lawyer?.name || 'No lawyer assigned',
+    lawyerId: lawyer?.id || null,
     legalArea,
     message: `Summary has been sent to ${lawyer?.name || 'the team'}. They will review your situation and reach out to you.`,
   };

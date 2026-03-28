@@ -316,9 +316,9 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
           sections.push('IF NO ATTORNEY IS AVAILABLE (transfer fails or no one answers):');
           sections.push('Do NOT end the call abruptly. Instead:');
           sections.push('  1. Say warmly: "I\'m so sorry - our attorneys are currently with other clients and aren\'t available to take your call right now."');
-          sections.push('  2. Reassure using the number already on file: "Everything you\'ve shared has been saved and an attorney will personally call you back at [the phone number from Q3] as soon as possible."');
+          sections.push('  2. Reassure: "Everything you\'ve shared has been saved and an attorney will personally call you back at [the caller\'s phone number] as soon as possible."');
           sections.push('  3. Offer scheduling: "Would you also like to book a scheduled consultation so you have a guaranteed time slot?"');
-          sections.push('     - If yes: call the bookAppointment tool, confirm the date and time, then say "You\'re all set. We\'ll see you then."');
+          sections.push('     - If yes: ask what day and time works for them, then call scheduleConsultation using the lawyerId returned by generateTransferSummary, confirm the date/time, then say "You\'re all set. We\'ll see you then."');
           sections.push('     - If no: say "Understood. You\'re all set - expect a call from our team soon."');
           sections.push('  4. Close warmly and call endCall.');
         }
