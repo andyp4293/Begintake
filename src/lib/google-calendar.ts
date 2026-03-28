@@ -1,8 +1,33 @@
 import { google } from 'googleapis';
 import { prisma } from '@/lib/prisma';
 
-async function getCalendarClient() {
-  // Option 1: Service account (if configured)
+/**
+ * Build a Google Calendar client scoped to a specific firm's admin user.
+ *
+ * Priority:
+ *   1. The firm admin's stored OAuth refresh token (standard SaaS — each firm
+ *      signs in with Google once; attorneys share their calendars with that admin)
+ *   2. Service account key (enterprise / Google Workspace with domain-wide delegation)
+ *
+ * @param userId  The User.id of the firm admin whose credentials to use.
+ */
+async function getCalendarClient(userId: string) {
+  // Option 1: firm admin's OAuth token (standard SaaS approach)
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { googleRefreshToken: true },
+  });
+
+  if (user?.googleRefreshToken) {
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+    oauth2Client.setCredentials({ refresh_token: user.googleRefreshToken });
+    return google.calendar({ version: 'v3', auth: oauth2Client });
+  }
+
+  // Option 2: service account (enterprise / Google Workspace with domain-wide delegation)
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (serviceAccountKey) {
     const credentials = JSON.parse(serviceAccountKey);
@@ -16,26 +41,10 @@ async function getCalendarClient() {
     return google.calendar({ version: 'v3', auth });
   }
 
-  // Option 2: Use stored refresh token from Google OAuth login
-  const user = await prisma.user.findFirst({
-    where: { googleRefreshToken: { not: null } },
-    select: { googleRefreshToken: true },
-  });
-
-  if (!user?.googleRefreshToken) {
-    throw new Error('No Google Calendar credentials available. Sign in with Google to enable calendar.');
-  }
-
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET
+  throw new Error(
+    'No Google Calendar credentials available for this account. ' +
+    'Sign in with Google to enable calendar features.'
   );
-
-  oauth2Client.setCredentials({
-    refresh_token: user.googleRefreshToken,
-  });
-
-  return google.calendar({ version: 'v3', auth: oauth2Client });
 }
 
 interface CreateEventParams {
@@ -47,26 +56,21 @@ interface CreateEventParams {
   attendeeEmail?: string;
 }
 
-export async function createCalendarEvent(params: CreateEventParams): Promise<string | null> {
+export async function createCalendarEvent(
+  params: CreateEventParams,
+  userId: string
+): Promise<string | null> {
   try {
-    const calendar = await getCalendarClient();
+    const calendar = await getCalendarClient(userId);
 
     const event = await calendar.events.insert({
-      calendarId: params.calendarId || 'primary',
+      calendarId: params.calendarId,
       requestBody: {
         summary: params.summary,
         description: params.description,
-        start: {
-          dateTime: params.startTime.toISOString(),
-          timeZone: 'America/New_York',
-        },
-        end: {
-          dateTime: params.endTime.toISOString(),
-          timeZone: 'America/New_York',
-        },
-        ...(params.attendeeEmail
-          ? { attendees: [{ email: params.attendeeEmail }] }
-          : {}),
+        start: { dateTime: params.startTime.toISOString(), timeZone: 'America/New_York' },
+        end:   { dateTime: params.endTime.toISOString(),   timeZone: 'America/New_York' },
+        ...(params.attendeeEmail ? { attendees: [{ email: params.attendeeEmail }] } : {}),
       },
     });
 
@@ -82,6 +86,8 @@ interface GetSlotsParams {
   calendarId: string;
   date: string; // YYYY-MM-DD
   duration: number; // minutes
+  availabilityStart?: number;
+  availabilityEnd?: number;
 }
 
 interface TimeSlot {
@@ -89,9 +95,12 @@ interface TimeSlot {
   end: Date;
 }
 
-export async function getAvailableSlots(params: GetSlotsParams & { availabilityStart?: number; availabilityEnd?: number }): Promise<TimeSlot[]> {
+export async function getAvailableSlots(
+  params: GetSlotsParams,
+  userId: string
+): Promise<TimeSlot[]> {
   try {
-    const calendar = await getCalendarClient();
+    const calendar = await getCalendarClient(userId);
 
     const startHour = params.availabilityStart ?? 9;
     const endHour   = params.availabilityEnd   ?? 17;
@@ -100,18 +109,16 @@ export async function getAvailableSlots(params: GetSlotsParams & { availabilityS
     const dayStart = new Date(`${params.date}T${pad(startHour)}:00:00-05:00`);
     const dayEnd   = new Date(`${params.date}T${pad(endHour)}:00:00-05:00`);
 
-    const calId = params.calendarId || 'primary';
     const busyResponse = await calendar.freebusy.query({
       requestBody: {
         timeMin: dayStart.toISOString(),
         timeMax: dayEnd.toISOString(),
         timeZone: tz,
-        items: [{ id: calId }],
+        items: [{ id: params.calendarId }],
       },
     });
 
-    const busySlots = busyResponse.data.calendars?.[calId]?.busy || [];
-
+    const busySlots = busyResponse.data.calendars?.[params.calendarId]?.busy || [];
     const slots: TimeSlot[] = [];
     let current = new Date(dayStart);
 
@@ -121,14 +128,11 @@ export async function getAvailableSlots(params: GetSlotsParams & { availabilityS
 
       const isBusy = busySlots.some((busy) => {
         const busyStart = new Date(busy.start!);
-        const busyEnd = new Date(busy.end!);
+        const busyEnd   = new Date(busy.end!);
         return current < busyEnd && slotEnd > busyStart;
       });
 
-      if (!isBusy) {
-        slots.push({ start: new Date(current), end: new Date(slotEnd) });
-      }
-
+      if (!isBusy) slots.push({ start: new Date(current), end: new Date(slotEnd) });
       current = new Date(current.getTime() + 30 * 60 * 1000);
     }
 
@@ -143,35 +147,35 @@ export async function getAvailableSlots(params: GetSlotsParams & { availabilityS
 
 export interface AttorneyAvailabilityResult {
   available: boolean;
-  reason?: string;          // why unavailable
-  nextFreeAt?: string;      // ISO string suggestion if busy
+  reason?: string;
+  nextFreeAt?: string;
   withinBusinessHours: boolean;
   calendarChecked: boolean;
 }
 
-export async function checkAttorneyBusy(params: {
-  /** Attorney's email address or googleCalendarId */
-  calendarId: string;
-  /** Start of window to check (defaults to now) */
-  timeMin?: Date;
-  /** End of window to check (defaults to timeMin + 30 min) */
-  timeMax?: Date;
-  /** Attorney's configured business-hours start (0-23) */
-  availabilityStart?: number;
-  /** Attorney's configured business-hours end (0-23) */
-  availabilityEnd?: number;
-}): Promise<AttorneyAvailabilityResult> {
-  const now = params.timeMin ?? new Date();
+export async function checkAttorneyBusy(
+  params: {
+    calendarId: string;
+    timeMin?: Date;
+    timeMax?: Date;
+    availabilityStart?: number;
+    availabilityEnd?: number;
+  },
+  userId: string
+): Promise<AttorneyAvailabilityResult> {
+  const now       = params.timeMin ?? new Date();
   const windowEnd = params.timeMax ?? new Date(now.getTime() + 30 * 60 * 1000);
   const startHour = params.availabilityStart ?? 9;
   const endHour   = params.availabilityEnd   ?? 17;
 
-  // Convert to Eastern time hour for business hours check
-  const easternHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getHours();
+  const easternHour = new Date(
+    now.toLocaleString('en-US', { timeZone: 'America/New_York' })
+  ).getHours();
   const withinBusinessHours = easternHour >= startHour && easternHour < endHour;
 
   if (!withinBusinessHours) {
-    const ampm = (h: number) => h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+    const ampm = (h: number) =>
+      h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
     return {
       available: false,
       withinBusinessHours: false,
@@ -180,9 +184,8 @@ export async function checkAttorneyBusy(params: {
     };
   }
 
-  // Query Google Calendar freebusy
   try {
-    const calendar = await getCalendarClient();
+    const calendar = await getCalendarClient(userId);
     const busyResponse = await calendar.freebusy.query({
       requestBody: {
         timeMin: now.toISOString(),
@@ -192,14 +195,9 @@ export async function checkAttorneyBusy(params: {
       },
     });
 
-    const busy = busyResponse.data.calendars?.[params.calendarId]?.busy ?? [];
-    const isBusy = busy.length > 0;
-
-    // Find earliest free time after current busy block
-    let nextFreeAt: string | undefined;
-    if (isBusy && busy[0]?.end) {
-      nextFreeAt = busy[0].end;
-    }
+    const busy    = busyResponse.data.calendars?.[params.calendarId]?.busy ?? [];
+    const isBusy  = busy.length > 0;
+    const nextFreeAt = isBusy && busy[0]?.end ? busy[0].end : undefined;
 
     return {
       available: !isBusy,
@@ -209,7 +207,6 @@ export async function checkAttorneyBusy(params: {
       nextFreeAt,
     };
   } catch (err: any) {
-    // Calendar not accessible — fall back to hours-only check
     console.warn('[calendar] freebusy check failed, falling back to hours only:', err?.message);
     return {
       available: true,

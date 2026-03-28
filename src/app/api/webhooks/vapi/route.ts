@@ -234,6 +234,24 @@ function getToolDefinitions() {
   ];
 }
 
+// ─── Resolve which firm (User) owns this VAPI call ───────────────────────────
+// Looks up the user by the VAPI phone number ID that received the call.
+// Falls back to the first user if the phone number ID isn't matched
+// (handles single-tenant deployments and legacy calls).
+
+async function resolveUserId(vapiPhoneNumberId?: string): Promise<string | null> {
+  if (vapiPhoneNumberId) {
+    const user = await prisma.user.findFirst({
+      where: { vapiPhoneNumberId },
+      select: { id: true },
+    });
+    if (user) return user.id;
+  }
+  // Fallback: single-tenant or unmatched number
+  const fallback = await prisma.user.findFirst({ select: { id: true } });
+  return fallback?.id ?? null;
+}
+
 // ─── Helper: update most recent call session ─────────────────────────────────
 
 async function updateLatestCallSession(callerPhone: string | null, data: Record<string, any>) {
@@ -321,7 +339,7 @@ function parseTimeString(timeStr: string): { hour: number; minute: number } | nu
   return { hour, minute };
 }
 
-async function handleScheduleConsultation(args: Record<string, unknown>) {
+async function handleScheduleConsultation(args: Record<string, unknown>, userId: string) {
   const clientName = typeof args.clientName === 'string' ? args.clientName : 'Unknown';
   const clientPhone = typeof args.clientPhone === 'string' ? normalizePhoneNumber(args.clientPhone) : '';
   const clientEmail = typeof args.clientEmail === 'string' ? args.clientEmail : undefined;
@@ -369,7 +387,7 @@ async function handleScheduleConsultation(args: Record<string, unknown>) {
       startTime,
       endTime,
       attendeeEmail: clientEmail,
-    });
+    }, userId);
   } catch (error) {
     console.error('Google Calendar error:', error);
   }
@@ -464,7 +482,7 @@ async function handleTransferCall(args: Record<string, unknown>) {
   };
 }
 
-async function handleBookAppointment(args: Record<string, unknown>) {
+async function handleBookAppointment(args: Record<string, unknown>, userId: string) {
   const callerName  = typeof args.callerName  === 'string' ? args.callerName  : 'Unknown';
   const rawPhone    = typeof args.callerPhone  === 'string' ? args.callerPhone  : '';
   const callerPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
@@ -488,10 +506,10 @@ async function handleBookAppointment(args: Record<string, unknown>) {
     lawyerId:      lawyer.id,
     preferredDate,
     preferredTime,
-  });
+  }, userId);
 }
 
-async function handleCheckAttorneyAvailability(args: Record<string, unknown>) {
+async function handleCheckAttorneyAvailability(args: Record<string, unknown>, userId: string) {
   const legalAreaHint = typeof args.legalArea === 'string' ? args.legalArea : '';
   const proposedTimeStr = typeof args.proposedTime === 'string' ? args.proposedTime : null;
   const checkTime = proposedTimeStr ? new Date(proposedTimeStr) : new Date();
@@ -519,7 +537,7 @@ async function handleCheckAttorneyAvailability(args: Record<string, unknown>) {
     timeMax: new Date(checkTime.getTime() + 30 * 60 * 1000),
     availabilityStart: lawyer.availabilityStart,
     availabilityEnd: lawyer.availabilityEnd,
-  });
+  }, userId);
 
   return {
     available: availability.available,
@@ -716,27 +734,18 @@ export async function POST(req: NextRequest) {
       const t0 = Date.now();
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
       const serverUrl = `${appUrl}/api/webhooks/vapi`;
-      // Get transfer number from DB (user-configured) or env fallback
-      let transferPhone: string | null = process.env.TRANSFER_PHONE_NUMBER || null;
-      try {
-        const users = await prisma.$queryRaw<Array<{ transferPhoneNumber: string }>>`
-          SELECT "transferPhoneNumber" FROM "User" WHERE "transferPhoneNumber" IS NOT NULL LIMIT 1
-        `;
-        if (users.length > 0) transferPhone = users[0].transferPhoneNumber;
-      } catch { /* field may not exist yet */ }
+      // Identify which firm this call belongs to via VAPI phone number ID
+      const reqPhoneNumberId = body?.message?.call?.phoneNumberId || body?.message?.call?.phoneNumber?.id;
+      const firmUserId = await resolveUserId(reqPhoneNumberId);
 
-      // Get assistant name and firm name from DB
-      let assistantName = '';
-      let firmName = '';
-      try {
-        const settingsRows = await prisma.$queryRaw<Array<{ assistantName: string; firmName: string }>>`
-          SELECT "assistantName", "firmName" FROM "User" WHERE "assistantName" IS NOT NULL OR "firmName" IS NOT NULL LIMIT 1
-        `;
-        if (settingsRows.length > 0) {
-          assistantName = settingsRows[0].assistantName || '';
-          firmName = settingsRows[0].firmName || '';
-        }
-      } catch { /* fields may not exist yet */ }
+      const firmUser = firmUserId ? await prisma.user.findUnique({
+        where: { id: firmUserId },
+        select: { transferPhoneNumber: true, assistantName: true, firmName: true },
+      }) : null;
+
+      const transferPhone  = firmUser?.transferPhoneNumber  || process.env.TRANSFER_PHONE_NUMBER || null;
+      const assistantName  = firmUser?.assistantName  || '';
+      const firmName       = firmUser?.firmName       || '';
 
       let systemPrompt: string;
       let flowFirstMessage: string | undefined;
@@ -811,6 +820,8 @@ export async function POST(req: NextRequest) {
     if (messageType === 'tool-calls') {
       const toolCalls = body?.message?.toolCallList || body?.message?.toolCalls || [];
       const callCustomerPhone = body?.message?.call?.customer?.number || '';
+      const vapiPhoneNumberId = body?.message?.call?.phoneNumberId || body?.message?.call?.phoneNumber?.id || undefined;
+      const userId = await resolveUserId(vapiPhoneNumberId) ?? '';
       const results = [];
 
       for (const toolCall of toolCalls) {
@@ -835,10 +846,10 @@ export async function POST(req: NextRequest) {
             result = await handleTransferCall(args);
             break;
           case 'scheduleConsultation':
-            result = await handleBookAppointment(args);
+            result = await handleBookAppointment(args, userId);
             break;
           case 'checkAttorneyAvailability':
-            result = await handleCheckAttorneyAvailability(args);
+            result = await handleCheckAttorneyAvailability(args, userId);
             break;
           case 'generateTransferSummary':
             result = await handleGenerateTransferSummary(args);

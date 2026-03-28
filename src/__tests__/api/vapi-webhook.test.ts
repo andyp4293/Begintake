@@ -25,7 +25,8 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
     },
     user: {
-      findFirst: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue({ id: 'user-1' }),
+      findUnique: vi.fn().mockResolvedValue({ id: 'user-1', googleRefreshToken: null }),
     },
   },
 }));
@@ -33,6 +34,7 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/google-calendar', () => ({
   createCalendarEvent: vi.fn().mockResolvedValue('gcal-event-123'),
   getAvailableSlots: vi.fn().mockResolvedValue([]),
+  checkAttorneyBusy: vi.fn().mockResolvedValue({ available: true, withinBusinessHours: true, calendarChecked: false }),
 }));
 
 vi.mock('@/lib/email', () => ({
@@ -57,8 +59,8 @@ function makeRequest(body: any, secret?: string) {
 }
 
 const mockLawyers = [
-  { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com', phone: '+15551001001', specialties: ['family', 'divorce', 'custody'], available: true, googleCalendarId: null },
-  { id: 'law-2', name: 'Marcus Johnson', email: 'marcus@test.com', phone: '+15551001002', specialties: ['criminal', 'dui', 'defense'], available: true, googleCalendarId: null },
+  { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com', phone: '+15551001001', specialties: ['family', 'divorce', 'custody'], available: true, googleCalendarId: null, availabilityStart: 9, availabilityEnd: 17 },
+  { id: 'law-2', name: 'Marcus Johnson', email: 'marcus@test.com', phone: '+15551001002', specialties: ['criminal', 'dui', 'defense'], available: true, googleCalendarId: null, availabilityStart: 9, availabilityEnd: 17 },
 ];
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
