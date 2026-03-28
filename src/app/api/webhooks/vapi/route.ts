@@ -174,6 +174,25 @@ function getToolDefinitions() {
     {
       type: 'function',
       function: {
+        name: 'bookAppointment',
+        description: 'Book a consultation appointment. Automatically selects the best matched attorney based on the legal issue. Use this from flow action nodes — it handles lawyer selection internally so no lawyerId is needed.',
+        parameters: {
+          type: 'object',
+          properties: {
+            callerName:    { type: 'string', description: 'Caller full name' },
+            callerPhone:   { type: 'string', description: 'Caller phone number' },
+            callerEmail:   { type: 'string', description: 'Caller email address (optional)' },
+            legalIssue:    { type: 'string', description: 'Brief description of the legal issue, used to match the right attorney' },
+            preferredDate: { type: 'string', description: 'Preferred date in YYYY-MM-DD format' },
+            preferredTime: { type: 'string', description: 'Preferred time e.g. "2 PM" or "14:00"' },
+          },
+          required: ['callerName', 'callerPhone', 'preferredDate', 'preferredTime'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'checkAttorneyAvailability',
         description: 'Check whether the best matched attorney is available right now — combines their business hours and live Google Calendar status. Call this before transferring to an attorney to avoid sending callers to someone who is busy.',
         parameters: {
@@ -462,6 +481,33 @@ async function handleTransferCall(args: Record<string, unknown>) {
         : `Transferring the call. Reason: ${reason}`,
     },
   };
+}
+
+async function handleBookAppointment(args: Record<string, unknown>) {
+  const callerName  = typeof args.callerName  === 'string' ? args.callerName  : 'Unknown';
+  const rawPhone    = typeof args.callerPhone  === 'string' ? args.callerPhone  : '';
+  const callerPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
+  const callerEmail = typeof args.callerEmail  === 'string' ? args.callerEmail  : undefined;
+  const legalIssue  = typeof args.legalIssue   === 'string' ? args.legalIssue   : '';
+  const preferredDate = typeof args.preferredDate === 'string' ? args.preferredDate : '';
+  const preferredTime = typeof args.preferredTime === 'string' ? args.preferredTime : '';
+
+  // Find the best lawyer automatically — no lawyerId required from the AI
+  const legalArea = identifyLegalArea(legalIssue || 'other');
+  const lawyer = await findBestLawyer(legalArea);
+  if (!lawyer) {
+    return { success: false, message: 'No attorneys are available to book right now. Your information has been saved and someone will call you back.' };
+  }
+
+  // Delegate to the existing scheduleConsultation handler
+  return handleScheduleConsultation({
+    clientName:    callerName,
+    clientPhone:   callerPhone,
+    clientEmail:   callerEmail,
+    lawyerId:      lawyer.id,
+    preferredDate,
+    preferredTime,
+  });
 }
 
 async function handleCheckAttorneyAvailability(args: Record<string, unknown>) {
@@ -809,6 +855,9 @@ export async function POST(req: NextRequest) {
             break;
           case 'transferCall':
             result = await handleTransferCall(args);
+            break;
+          case 'bookAppointment':
+            result = await handleBookAppointment(args);
             break;
           case 'checkAttorneyAvailability':
             result = await handleCheckAttorneyAvailability(args);
