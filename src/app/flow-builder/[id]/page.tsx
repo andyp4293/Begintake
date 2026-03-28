@@ -117,7 +117,7 @@ function NodeCard({
   if (!isPrimary) return null;
 
   return (
-    <div className={depth > 0 ? 'ml-6 border-l border-zinc-800 pl-4' : ''}>
+    <div className={depth > 0 ? 'ml-3 border-l-2 border-zinc-700/50 pl-3' : ''}>
       {/* Node card */}
       <div id={`flow-node-${node.id}`} className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 w-fit min-w-[10rem]" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
         <div className="flex items-center gap-2 px-3 py-2">
