@@ -310,6 +310,11 @@ export function compileFlowToPrompt(flow: FlowData, assistantName?: string, firm
           sections.push('IF ATTORNEY IS AVAILABLE:');
           sections.push('  Say: "Great news - I\'ve sent all of your information over and our attorney is available. Let me connect you now."');
           sections.push('  The call transfer will happen automatically.');
+          sections.push('  IF THE TRANSFER FAILS OR NO ONE ANSWERS:');
+          sections.push('    Say warmly: "I\'m sorry - our attorney wasn\'t able to take the call right now, but your information has already been sent to them."');
+          sections.push(`    Then say: "${transferMsg}"`);
+          sections.push('    Ask: "Is there anything else I can help you with today?"');
+          sections.push('    If they say no, call endCall immediately.');
           sections.push('');
           sections.push('IF ATTORNEY IS NOT AVAILABLE (busy or outside business hours):');
           sections.push('  Say:');

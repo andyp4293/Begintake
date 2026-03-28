@@ -453,6 +453,34 @@ describe('Anderson Bowman template', () => {
     expect(prompt).toContain('generateTransferSummary');
   });
 
+  it('compiled prompt includes no-answer fallback when transfer fails', () => {
+    const template = createAndersonBowmanTemplate();
+    const flow = { id: 'test', ...template };
+    const prompt = compileFlowToPrompt(flow);
+    // Must have explicit instruction for when transfer attempt fails / no one answers
+    expect(prompt).toContain('TRANSFER FAILS OR NO ONE ANSWERS');
+    expect(prompt).toContain('wasn\'t able to take the call');
+    expect(prompt).toContain('information has already been sent');
+  });
+
+  it('compiled prompt handles both available and unavailable attorney paths', () => {
+    const template = createAndersonBowmanTemplate();
+    const flow = { id: 'test', ...template };
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('IF ATTORNEY IS AVAILABLE');
+    expect(prompt).toContain('IF ATTORNEY IS NOT AVAILABLE');
+  });
+
+  it('compiled prompt always instructs endCall after no-answer fallback', () => {
+    const template = createAndersonBowmanTemplate();
+    const flow = { id: 'test', ...template };
+    const prompt = compileFlowToPrompt(flow);
+    // endCall must be mentioned in the transfer section for the unavailable path
+    const transferIdx = prompt.indexOf('TRANSFER TO ATTORNEY');
+    const endCallIdx = prompt.indexOf('endCall', transferIdx);
+    expect(endCallIdx).toBeGreaterThan(transferIdx);
+  });
+
   // ── Transfer endpoint audit (no scheduling — all branches go direct to transfer) ──
 
   it('has no Connect or Schedule question node (scheduling removed)', () => {
