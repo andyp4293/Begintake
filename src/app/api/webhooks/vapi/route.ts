@@ -156,26 +156,7 @@ function getToolDefinitions() {
       type: 'function',
       function: {
         name: 'scheduleConsultation',
-        description: 'Schedule a consultation appointment on Google Calendar',
-        parameters: {
-          type: 'object',
-          properties: {
-            clientName: { type: 'string', description: 'Client name' },
-            clientPhone: { type: 'string', description: 'Client phone number' },
-            clientEmail: { type: 'string', description: 'Client email (optional)' },
-            lawyerId: { type: 'string', description: 'Lawyer ID to schedule with' },
-            preferredDate: { type: 'string', description: 'Preferred date (YYYY-MM-DD)' },
-            preferredTime: { type: 'string', description: 'Preferred time (e.g. "2 PM", "14:00")' },
-          },
-          required: ['clientName', 'clientPhone', 'lawyerId', 'preferredDate', 'preferredTime'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'bookAppointment',
-        description: 'Book a consultation appointment. Automatically selects the best matched attorney based on the legal issue. Use this from flow action nodes — it handles lawyer selection internally so no lawyerId is needed.',
+        description: 'Schedule a consultation appointment. Automatically selects the best matched attorney based on the legal issue — no lawyerId needed.',
         parameters: {
           type: 'object',
           properties: {
@@ -850,13 +831,10 @@ export async function POST(req: NextRequest) {
           case 'identifyLawyer':
             result = await handleIdentifyLawyer(args);
             break;
-          case 'scheduleConsultation':
-            result = await handleScheduleConsultation(args);
-            break;
           case 'transferCall':
             result = await handleTransferCall(args);
             break;
-          case 'bookAppointment':
+          case 'scheduleConsultation':
             result = await handleBookAppointment(args);
             break;
           case 'checkAttorneyAvailability':

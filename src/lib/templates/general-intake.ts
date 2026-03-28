@@ -59,7 +59,7 @@ export function createGeneralIntakeTemplate() {
 
   const appointmentNode = addNode('action', 'Book Consultation', {
     actionType: 'book_appointment',
-    note: 'Call bookAppointment tool with caller name, phone, practice area, and matter type. Confirm date and time with caller.',
+    note: 'Call scheduleConsultation tool with caller name, phone, and a brief description of their legal issue. Confirm date and time with caller.',
   });
   addEdge(cos_schedule, appointmentNode);
 

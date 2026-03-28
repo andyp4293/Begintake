@@ -377,7 +377,7 @@ export function createFamilyIntakeTemplate() {
 
   const appointmentNode = addNode('action', 'Book Consultation', {
     actionType: 'book_appointment',
-    note: 'Call the bookAppointment tool with caller name, phone number, matter category, and petition type. Read back the confirmed date and time to the caller.',
+    note: 'Call the scheduleConsultation tool with caller name, phone number, and a brief description of their legal issue. Read back the confirmed date and time to the caller.',
   });
   addEdge(cos_schedule, appointmentNode);
 

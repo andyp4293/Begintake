@@ -625,20 +625,20 @@ describe('Anderson Bowman template', () => {
     }
   });
 
-  it('extractToolsFromFlow includes bookAppointment for the template', () => {
+  it('extractToolsFromFlow includes scheduleConsultation for the template', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const tools = extractToolsFromFlow(flow);
-    expect(tools).toContain('bookAppointment');
+    expect(tools).toContain('scheduleConsultation');
     expect(tools).toContain('generateTransferSummary');
     expect(tools).toContain('endCall');
   });
 
-  it('compiled prompt includes bookAppointment tool instruction', () => {
+  it('compiled prompt includes scheduleConsultation tool instruction', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
-    expect(prompt).toContain('bookAppointment');
+    expect(prompt).toContain('scheduleConsultation');
     expect(prompt).toContain('schedule a consultation');
   });
 
