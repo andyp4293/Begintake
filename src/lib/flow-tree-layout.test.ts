@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   CARD_WIDTH_PX,
   CHILD_GAP_PX,
+  LEVEL_GAP_PX,
   computePrimaryParents,
+  computeVisibleNodeCentersByDepth,
   computeVisibleTreeLayouts,
   getConnectorSpan,
   getPrimaryChildPlacements,
@@ -70,5 +72,30 @@ describe('flow tree layout', () => {
 
     expect(expandedLayouts.get('branch-root')!.width).toBeGreaterThan(collapsedLayouts.get('branch-root')!.width);
     expect(expandedLayouts.get('root')!.width).toBeGreaterThan(collapsedLayouts.get('root')!.width);
+  });
+
+  it('keeps visible nodes on the same depth from overlapping even across different branches', () => {
+    const edges = [
+      makeEdge('root', 'left', 0),
+      makeEdge('root', 'right', 1),
+      makeEdge('left', 'left-a', 0),
+      makeEdge('left', 'left-b', 1),
+      makeEdge('right', 'right-a', 0),
+      makeEdge('right', 'right-b', 1),
+      makeEdge('left-a', 'left-a-1', 0),
+      makeEdge('left-b', 'left-b-1', 0),
+      makeEdge('right-a', 'right-a-1', 0),
+      makeEdge('right-b', 'right-b-1', 0),
+    ];
+
+    const primaryParents = computePrimaryParents('root', edges);
+    const expanded = new Set(['root', 'left', 'right', 'left-a', 'left-b', 'right-a', 'right-b']);
+    const layouts = computeVisibleTreeLayouts('root', edges, primaryParents, expanded, new Set());
+    const centersByDepth = computeVisibleNodeCentersByDepth('root', edges, primaryParents, layouts, expanded, new Set());
+
+    for (const centers of centersByDepth.values()) {
+      const diffs = centers.slice(1).map((center, index) => center - centers[index]);
+      expect(diffs.every((diff) => diff >= CARD_WIDTH_PX + LEVEL_GAP_PX)).toBe(true);
+    }
   });
 });

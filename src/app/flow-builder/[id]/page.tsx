@@ -49,6 +49,7 @@ const CONNECTOR_COLOR = 'rgba(255, 255, 255, 0.88)';
 const BOARD_PADDING_X_PX = 240;
 const BOARD_PADDING_TOP_PX = 112;
 const BOARD_PADDING_BOTTOM_PX = 180;
+const ROOT_HEADER_HEIGHT_PX = 92;
 
 // ─── Node card component ──────────────────────────────────────────────────
 
@@ -114,7 +115,7 @@ function NodeCard({
   const connectorSpan = getConnectorSpan(primaryChildLayouts, layout.center);
 
   return (
-    <div className="flex flex-col" style={{ width: `${layout.width}px` }}>
+    <div className="flex shrink-0 flex-col" style={{ width: `${layout.width}px` }}>
       <div className="flex flex-col items-start" style={{ marginLeft: `${cardOffset}px`, width: `${CARD_WIDTH_PX}px` }}>
         {/* Node card */}
         <div
@@ -522,7 +523,7 @@ function NodeCard({
               return (
                 <div
                   key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
-                  className="relative flex min-w-0 flex-col items-start pt-10"
+                  className="relative flex shrink-0 flex-none min-w-0 flex-col items-start pt-10"
                   style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px` }}
                 >
                   <div className="pointer-events-none absolute top-0 w-px" style={{ left: `${childCenter - childLeft}px`, height: `${branchStemHeight}px`, transform: 'translateX(-0.5px)', backgroundColor: CONNECTOR_COLOR }} />
@@ -1023,14 +1024,24 @@ export default function FlowEditorPage() {
               style={{ left: `${contentOffsetX}px`, top: `${contentOffsetY}px`, width: `${rootLayout.width}px` }}
             >
               {rootNode && (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="flex flex-col items-center gap-2 text-center">
-                    <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
-                      Visual Map
-                    </span>
-                    <p className="max-w-2xl text-sm text-zinc-400">
-                      Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
-                    </p>
+                <div className="relative" style={{ width: `${rootLayout.width}px`, paddingTop: `${ROOT_HEADER_HEIGHT_PX}px` }}>
+                  <div
+                    className="absolute top-0 text-center"
+                    style={{
+                      left: `${rootLayout.center}px`,
+                      width: `${Math.min(640, rootLayout.width)}px`,
+                      maxWidth: 'calc(100vw - 8rem)',
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <div className="flex flex-col items-center gap-2 text-center">
+                      <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+                        Visual Map
+                      </span>
+                      <p className="text-sm text-zinc-400">
+                        Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
+                      </p>
+                    </div>
                   </div>
                   <NodeCard
                     node={rootNode} edges={edges} allNodes={nodes} depth={0}
