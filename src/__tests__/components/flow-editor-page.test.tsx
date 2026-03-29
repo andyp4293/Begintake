@@ -142,7 +142,7 @@ describe('FlowEditorPage', () => {
     expect(mockRedirect).not.toHaveBeenCalled();
   });
 
-  it('starts child branch stems at the shared horizontal connector for multi-branch questions', async () => {
+  it('keeps child branch stems flush with the shared horizontal connector for multi-branch questions', async () => {
     mockUseQuery.mockReturnValue({
       data: mockBranchingFlow,
       isLoading: false,
@@ -153,7 +153,7 @@ describe('FlowEditorPage', () => {
     const yesStem = await screen.findByTestId('primary-branch-stem-question-node-response-yes');
     const whatStem = await screen.findByTestId('primary-branch-stem-question-node-response-what');
 
-    expect((yesStem as HTMLElement).style.top).toBe('8px');
-    expect((whatStem as HTMLElement).style.top).toBe('8px');
+    expect((yesStem as HTMLElement).style.top).toBe('0px');
+    expect((whatStem as HTMLElement).style.top).toBe('0px');
   });
 });

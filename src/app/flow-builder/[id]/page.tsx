@@ -525,7 +525,6 @@ function NodeCard({
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
               const branchStemHeight = branchLabel ? 66 : 40;
-              const childStemTop = primaryChildItems.length > 1 ? 8 : 0;
 
               return (
                 <div
@@ -537,9 +536,9 @@ function NodeCard({
                     data-testid={`primary-branch-stem-${node.id}-${childNode.id}`}
                     className="pointer-events-none absolute w-px"
                     style={{
-                      top: `${childStemTop}px`,
+                      top: '0px',
                       left: `${childCenter - childLeft}px`,
-                      height: `${branchStemHeight - childStemTop}px`,
+                      height: `${branchStemHeight}px`,
                       transform: 'translateX(-0.5px)',
                       backgroundColor: CONNECTOR_COLOR,
                     }}
