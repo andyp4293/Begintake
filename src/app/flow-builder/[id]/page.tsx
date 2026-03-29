@@ -161,7 +161,7 @@ function NodeCard({
       {/* Node card */}
       <div
         id={`flow-node-${node.id}`}
-        className="w-full min-w-[18rem] max-w-[22rem] rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)] backdrop-blur-sm"
+        className="w-[18rem] max-w-[18rem] rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)]"
         style={{ borderLeftColor: color, borderLeftWidth: 3 }}
       >
         <div className="flex items-center gap-2 px-3 py-2">
@@ -455,7 +455,7 @@ function NodeCard({
 
       {/* Add child */}
       {displayExpanded && node.type !== 'end' && node.type !== 'transfer' && (
-        <div className="mt-3 w-full max-w-[22rem] px-2">
+        <div className="mt-3 w-full max-w-[18rem] px-2">
           <AddNodeMenu
             parentId={node.id} parentLabel={node.label} parentType={node.type}
             allNodes={allNodes} currentNodeId={node.id}
@@ -466,8 +466,8 @@ function NodeCard({
 
       {/* Linked children */}
       {displayExpanded && linkedChildItems.length > 0 && (
-        <div className="mt-8 flex w-full max-w-[22rem] flex-col items-center gap-3 px-2">
-          <div className="h-5 w-px rounded-full bg-gradient-to-b from-white via-white/85 to-transparent shadow-[0_0_14px_rgba(255,255,255,0.35)]" />
+        <div className="mt-8 flex w-full max-w-[18rem] flex-col items-center gap-3 px-2">
+          <div className="h-5 w-px bg-zinc-200" />
           <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
           <div className="flex w-full flex-col items-stretch gap-2">
             {linkedChildItems.map(({ edge, childNode }) => (
@@ -524,18 +524,18 @@ function NodeCard({
 
       {/* Primary children */}
       {displayExpanded && primaryChildItems.length > 0 && (
-        <div className="mt-14 flex w-full flex-col items-center">
-          <div className="h-12 w-[3px] rounded-full bg-gradient-to-b from-white via-white/92 to-white/10 shadow-[0_0_22px_rgba(255,255,255,0.55)]" />
+        <div className="mt-12 flex w-full flex-col items-center">
+          <div className="h-10 w-px bg-zinc-200" />
           <div className="relative mx-auto w-fit max-w-full pt-7">
             {primaryChildItems.length > 1 && (
               <>
-                <div className="pointer-events-none absolute inset-x-6 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent shadow-[0_0_24px_rgba(255,255,255,0.55)]" />
-                <div className="pointer-events-none absolute left-1/2 top-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-[5px] rounded-full border border-white/90 bg-white shadow-[0_0_22px_rgba(255,255,255,0.95)]" />
+                <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-zinc-200" />
+                <div className="pointer-events-none absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-[3px] bg-zinc-200" />
               </>
             )}
             <div
-              className="grid items-start gap-x-12 gap-y-12 px-8 sm:gap-x-16 xl:gap-x-20"
-              style={{ gridTemplateColumns: `repeat(${Math.max(totalChildSpan, 1)}, minmax(22rem, 1fr))` }}
+              className="grid items-start gap-x-8 gap-y-10 px-6 sm:gap-x-10"
+              style={{ gridTemplateColumns: `repeat(${Math.max(totalChildSpan, 1)}, 18rem)` }}
             >
               {primaryChildItems.map(({ edge, childNode }) => {
                 const childSpan = subtreeSpans.get(childNode.id) ?? 1;
@@ -546,14 +546,14 @@ function NodeCard({
                 return (
                   <div
                     key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
-                    className="relative flex min-w-[22rem] flex-col items-center px-3 pt-10"
+                    className="relative flex w-full min-w-0 flex-col items-center px-2 pt-8"
                     style={{ gridColumn: `span ${childSpan}` }}
                   >
-                    <div className="pointer-events-none absolute left-1/2 top-0 h-10 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-white via-white/88 to-white/5 shadow-[0_0_18px_rgba(255,255,255,0.52)]" />
-                    <div className="pointer-events-none absolute left-1/2 top-9 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-[0_0_18px_rgba(255,255,255,0.9)]" />
+                    <div className="pointer-events-none absolute left-1/2 top-0 h-8 w-px -translate-x-1/2 bg-zinc-200" />
+                    <div className="pointer-events-none absolute left-1/2 top-7 h-2 w-2 -translate-x-1/2 bg-zinc-200" />
                     {branchLabel && (
-                      <div className="mb-5 inline-flex max-w-[18rem] items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-medium text-white shadow-[0_10px_28px_-20px_rgba(255,255,255,0.85)]">
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" />
+                      <div className="mb-4 inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-200" />
                         <span className="truncate">{branchLabel}</span>
                       </div>
                     )}
@@ -883,12 +883,8 @@ export default function FlowEditorPage() {
         </aside>
 
         {/* ── Main flow document ── */}
-        <div className="relative flex-1 min-w-0 overflow-auto bg-[#060b16]">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_26%),radial-gradient(circle_at_20%_18%,_rgba(96,165,250,0.24),_transparent_28%),linear-gradient(180deg,_rgba(30,41,59,0.98)_0%,_rgba(9,14,28,0.98)_38%,_rgba(2,6,23,1)_100%)]" />
-          <div className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:5rem_5rem]" />
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-black/20 to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-black/20 to-transparent" />
-          <div className="relative min-h-full px-8 py-10">
+        <div className="flex-1 min-w-0 overflow-auto bg-black">
+          <div className="min-h-full px-8 py-10">
             <div className="mb-8 flex flex-col items-center gap-2 text-center">
               <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
                 Visual Map
