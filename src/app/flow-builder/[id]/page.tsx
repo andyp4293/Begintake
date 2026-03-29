@@ -138,10 +138,6 @@ function NodeCard({
     return () => ro.disconnect();
   }, [node.config, contentExpanded]);
 
-  // Compute the same size the input uses so we can cap content to that width on first render.
-  // ch units here use text-xs (12px) to match the input's font — same as the size= attribute.
-  const inputSize = Math.max(8, Math.min(62, node.label.length + 2));
-
   const color = NODE_COLORS[node.type] || '#666';
 
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
@@ -165,7 +161,7 @@ function NodeCard({
       {/* Node card */}
       <div
         id={`flow-node-${node.id}`}
-        className="w-fit min-w-[13rem] rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)] backdrop-blur-sm"
+        className="w-full min-w-[18rem] max-w-[22rem] rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)] backdrop-blur-sm"
         style={{ borderLeftColor: color, borderLeftWidth: 3 }}
       >
         <div className="flex items-center gap-2 px-3 py-2">
@@ -175,10 +171,13 @@ function NodeCard({
           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0" style={{ color, backgroundColor: `${color}15` }}>
             {NODE_LABELS[node.type] ?? node.type}
           </span>
-          <input type="text" value={node.label} onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
+          <input
+            type="text"
+            value={node.label}
+            onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
             maxLength={60}
-            size={Math.max(8, Math.min(62, node.label.length + 2))}
-            className="bg-transparent text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600 px-1 min-w-0 shrink-0" />
+            className="min-w-0 flex-1 bg-transparent px-1 text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600"
+          />
           {childEdges.length > 0 && !displayExpanded && (
             <span className="text-[9px] text-zinc-400 flex-shrink-0">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
           )}
@@ -193,7 +192,7 @@ function NodeCard({
 
         {/* Content preview */}
         {!editing && (
-          <div className="px-3 pb-2 space-y-1 overflow-hidden text-xs" style={{ maxWidth: `calc(${inputSize}ch + 11rem)` }}>
+          <div className="px-3 pb-2 space-y-1 overflow-hidden text-xs">
             <div ref={contentRef} className={contentExpanded ? '' : 'line-clamp-2'}>
               {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
                 <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
@@ -456,7 +455,7 @@ function NodeCard({
 
       {/* Add child */}
       {displayExpanded && node.type !== 'end' && node.type !== 'transfer' && (
-        <div className="mt-2">
+        <div className="mt-3 w-full max-w-[22rem] px-2">
           <AddNodeMenu
             parentId={node.id} parentLabel={node.label} parentType={node.type}
             allNodes={allNodes} currentNodeId={node.id}
@@ -467,14 +466,14 @@ function NodeCard({
 
       {/* Linked children */}
       {displayExpanded && linkedChildItems.length > 0 && (
-        <div className="mt-5 flex flex-col items-center gap-3 px-4">
+        <div className="mt-8 flex w-full max-w-[22rem] flex-col items-center gap-3 px-2">
           <div className="h-5 w-px rounded-full bg-gradient-to-b from-white via-white/85 to-transparent shadow-[0_0_14px_rgba(255,255,255,0.35)]" />
           <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex w-full flex-col items-stretch gap-2">
             {linkedChildItems.map(({ edge, childNode }) => (
-              <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="group/jump flex items-center gap-2 rounded-full border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-1.5">
+              <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="group/jump flex w-full items-center gap-2 rounded-2xl border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-2">
                 <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
-                <span className="text-[10px] text-zinc-300">Continues to:</span>
+                <span className="text-[10px] text-zinc-300 shrink-0">Continues to:</span>
                 <button
                   onClick={() => {
                     // Expand all nodes on the path so the target is visible, then scroll
@@ -507,7 +506,7 @@ function NodeCard({
                       }, 50);
                     }, 150);
                   }}
-                  className="text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate underline-offset-2 hover:underline transition-colors"
+                  className="min-w-0 truncate text-left text-[10px] font-medium text-blue-400 underline-offset-2 transition-colors hover:text-blue-300 hover:underline"
                 >
                   {childNode.label}
                 </button>
@@ -525,9 +524,9 @@ function NodeCard({
 
       {/* Primary children */}
       {displayExpanded && primaryChildItems.length > 0 && (
-        <div className="mt-10 flex w-full flex-col items-center">
-          <div className="h-10 w-[3px] rounded-full bg-gradient-to-b from-white via-white/92 to-white/10 shadow-[0_0_22px_rgba(255,255,255,0.55)]" />
-          <div className="relative mx-auto w-fit max-w-full pt-5">
+        <div className="mt-14 flex w-full flex-col items-center">
+          <div className="h-12 w-[3px] rounded-full bg-gradient-to-b from-white via-white/92 to-white/10 shadow-[0_0_22px_rgba(255,255,255,0.55)]" />
+          <div className="relative mx-auto w-fit max-w-full pt-7">
             {primaryChildItems.length > 1 && (
               <>
                 <div className="pointer-events-none absolute inset-x-6 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent shadow-[0_0_24px_rgba(255,255,255,0.55)]" />
@@ -535,8 +534,8 @@ function NodeCard({
               </>
             )}
             <div
-              className="grid items-start gap-x-8 gap-y-8 px-6 sm:gap-x-12 xl:gap-x-16"
-              style={{ gridTemplateColumns: `repeat(${Math.max(totalChildSpan, 1)}, minmax(16rem, 1fr))` }}
+              className="grid items-start gap-x-12 gap-y-12 px-8 sm:gap-x-16 xl:gap-x-20"
+              style={{ gridTemplateColumns: `repeat(${Math.max(totalChildSpan, 1)}, minmax(22rem, 1fr))` }}
             >
               {primaryChildItems.map(({ edge, childNode }) => {
                 const childSpan = subtreeSpans.get(childNode.id) ?? 1;
@@ -547,13 +546,13 @@ function NodeCard({
                 return (
                   <div
                     key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
-                    className="relative flex min-w-[16rem] flex-col items-center px-2 pt-8"
+                    className="relative flex min-w-[22rem] flex-col items-center px-3 pt-10"
                     style={{ gridColumn: `span ${childSpan}` }}
                   >
-                    <div className="pointer-events-none absolute left-1/2 top-0 h-8 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-white via-white/88 to-white/5 shadow-[0_0_18px_rgba(255,255,255,0.52)]" />
-                    <div className="pointer-events-none absolute left-1/2 top-7 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-[0_0_18px_rgba(255,255,255,0.9)]" />
+                    <div className="pointer-events-none absolute left-1/2 top-0 h-10 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-white via-white/88 to-white/5 shadow-[0_0_18px_rgba(255,255,255,0.52)]" />
+                    <div className="pointer-events-none absolute left-1/2 top-9 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-[0_0_18px_rgba(255,255,255,0.9)]" />
                     {branchLabel && (
-                      <div className="mb-4 inline-flex max-w-[15rem] items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-medium text-white shadow-[0_10px_28px_-20px_rgba(255,255,255,0.85)]">
+                      <div className="mb-5 inline-flex max-w-[18rem] items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-medium text-white shadow-[0_10px_28px_-20px_rgba(255,255,255,0.85)]">
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" />
                         <span className="truncate">{branchLabel}</span>
                       </div>
@@ -617,13 +616,13 @@ function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeI
     : linkableNodes;
 
   return (
-    <div className="relative inline-block">
+    <div className="relative block w-full">
       <button onClick={() => { setOpen(!open); setShowLinkPicker(false); setLinkSearch(''); }}
-        className="flex items-center gap-1 px-2 py-1 text-[10px] text-zinc-400 hover:text-white transition-colors">
-        <Plus className="w-3 h-3" /> Add step under <span className="text-zinc-300 ml-0.5">{shortParent}</span>
+        className="flex w-full items-center justify-center gap-1 px-2 py-1 text-center text-[10px] text-zinc-400 transition-colors hover:text-white">
+        <Plus className="w-3 h-3 shrink-0" /> <span className="truncate">Add step under <span className="text-zinc-300 ml-0.5">{shortParent}</span></span>
       </button>
       {open && (
-        <div className="absolute z-10 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-xl w-56">
+        <div className="absolute left-1/2 z-10 mt-1 w-56 -translate-x-1/2 rounded-lg border border-zinc-700 bg-zinc-900 p-2 shadow-xl">
           {!showLinkPicker ? (
             <>
               {isQuestion && (
