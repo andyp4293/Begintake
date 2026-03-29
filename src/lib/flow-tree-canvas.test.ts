@@ -65,7 +65,7 @@ describe('flow tree canvas', () => {
   });
 
   it('clamps zoom levels to the supported range', () => {
-    expect(clampZoom(0.2)).toBe(0.65);
+    expect(clampZoom(0.05)).toBe(0.2);
     expect(clampZoom(1)).toBe(1);
     expect(clampZoom(4)).toBe(1.5);
   });
@@ -85,5 +85,18 @@ describe('flow tree canvas', () => {
     expect(nextCamera.y).toBe(-426);
     expect(800 - nextCamera.x).toBeCloseTo((800 - (-520)) * 1.2);
     expect(450 - nextCamera.y).toBeCloseTo((450 - (-280)) * 1.2);
+  });
+
+  it('centers the board when zooming out makes it smaller than the viewport', () => {
+    const clamped = clampCameraToBoard(
+      { x: -600, y: -500 },
+      1600,
+      900,
+      900,
+      600,
+    );
+
+    expect(clamped.x).toBe(350);
+    expect(clamped.y).toBe(150);
   });
 });

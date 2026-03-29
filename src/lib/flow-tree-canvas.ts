@@ -26,7 +26,7 @@ export interface Camera {
   y: number;
 }
 
-export function clampZoom(zoom: number, min = 0.65, max = 1.5) {
+export function clampZoom(zoom: number, min = 0.2, max = 1.5) {
   return clamp(zoom, min, max);
 }
 
@@ -63,10 +63,12 @@ export function clampCameraToBoard(
 ): Camera {
   const minX = Math.min(0, viewportWidth - boardWidth);
   const minY = Math.min(0, viewportHeight - boardHeight);
+  const centeredX = (viewportWidth - boardWidth) / 2;
+  const centeredY = (viewportHeight - boardHeight) / 2;
 
   return {
-    x: clamp(camera.x, minX, 0),
-    y: clamp(camera.y, minY, 0),
+    x: boardWidth <= viewportWidth ? centeredX : clamp(camera.x, minX, 0),
+    y: boardHeight <= viewportHeight ? centeredY : clamp(camera.y, minY, 0),
   };
 }
 

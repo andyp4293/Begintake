@@ -54,7 +54,7 @@ const BOARD_PADDING_TOP_PX = 112;
 const BOARD_PADDING_BOTTOM_PX = 180;
 const ROOT_HEADER_HEIGHT_PX = 92;
 const DEFAULT_ZOOM = 1;
-const MIN_ZOOM = 0.65;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 1.5;
 const ZOOM_STEP = 0.1;
 
@@ -919,13 +919,7 @@ export default function FlowEditorPage() {
     endCanvasPan(e.currentTarget);
   }, [endCanvasPan]);
 
-  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (!viewportSize.width || !viewportSize.height) return;
-    e.preventDefault();
-    setCamera((prev) => clampCamera(prev.x - e.deltaX, prev.y - e.deltaY));
-  }, [clampCamera, viewportSize.height, viewportSize.width]);
-
-  const setZoomLevel = useCallback((nextZoomValue: number) => {
+  const setZoomLevel = useCallback((nextZoomValue: number, anchor?: { x: number; y: number }) => {
     if (!viewportSize.width || !viewportSize.height) return;
 
     setZoom((currentZoom) => {
@@ -940,11 +934,30 @@ export default function FlowEditorPage() {
         viewportHeight: viewportSize.height,
         boardWidth,
         boardHeight,
+        anchorX: anchor?.x,
+        anchorY: anchor?.y,
       }));
 
       return nextZoom;
     });
   }, [boardHeight, boardWidth, viewportSize.height, viewportSize.width]);
+
+  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (!viewportSize.width || !viewportSize.height) return;
+    e.preventDefault();
+
+    if (e.ctrlKey) {
+      const viewportRect = canvasRef.current?.getBoundingClientRect();
+      const anchor = viewportRect
+        ? { x: e.clientX - viewportRect.left, y: e.clientY - viewportRect.top }
+        : { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+      const pinchFactor = Math.exp(-e.deltaY * 0.0035);
+      setZoomLevel(zoom * pinchFactor, anchor);
+      return;
+    }
+
+    setCamera((prev) => clampCamera(prev.x - e.deltaX, prev.y - e.deltaY));
+  }, [clampCamera, setZoomLevel, viewportSize.height, viewportSize.width, zoom]);
 
   const zoomIn = useCallback(() => {
     setZoomLevel(zoom + ZOOM_STEP);
@@ -1101,6 +1114,7 @@ export default function FlowEditorPage() {
         {/* ── Main flow document ── */}
         <div
           ref={canvasRef}
+          data-testid="flow-canvas-viewport"
           className={`relative flex-1 min-w-0 overflow-hidden bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isPanningCanvas ? 'cursor-grabbing' : 'cursor-grab'}`}
           onPointerDown={handleCanvasPointerDown}
           onPointerMove={handleCanvasPointerMove}

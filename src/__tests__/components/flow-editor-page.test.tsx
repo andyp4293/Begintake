@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const mockUseSession = vi.fn();
 const mockUseQuery = vi.fn();
@@ -198,6 +198,27 @@ describe('FlowEditorPage', () => {
       });
     } finally {
       rectSpy.mockRestore();
+    }
+  });
+
+  it('zooms in from the trackpad pinch wheel path and updates the overlay control', async () => {
+    const clientWidthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+    const clientHeightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800);
+
+    try {
+      render(<FlowEditorPage />);
+
+      const viewport = await screen.findByTestId('flow-canvas-viewport');
+      const resetZoomButton = screen.getByRole('button', { name: 'Reset zoom' });
+
+      fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -40, clientX: 400, clientY: 300 });
+
+      await waitFor(() => {
+        expect(resetZoomButton.textContent).toBe('115%');
+      });
+    } finally {
+      clientWidthSpy.mockRestore();
+      clientHeightSpy.mockRestore();
     }
   });
 });
