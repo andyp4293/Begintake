@@ -33,20 +33,34 @@ interface TreeLayout {
   center: number;
   left: number;
   right: number;
+  slotWidth: number;
+  slotLeft: number;
+  slotRight: number;
   childCenters: Map<string, number>;
 }
 
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
 const CARD_WIDTH_PX = 272;
-const CHILD_GAP_PX = 36;
+const CHILD_GAP_PX = 24;
 const FALLBACK_LAYOUT: TreeLayout = {
   width: CARD_WIDTH_PX,
   center: CARD_WIDTH_PX / 2,
   left: CARD_WIDTH_PX / 2,
   right: CARD_WIDTH_PX / 2,
+  slotWidth: CARD_WIDTH_PX,
+  slotLeft: CARD_WIDTH_PX / 2,
+  slotRight: CARD_WIDTH_PX / 2,
   childCenters: new Map(),
 };
+
+function getNodeSlotWidth(width: number, branchCount: number): number {
+  if (branchCount <= 1) return CARD_WIDTH_PX;
+  if (branchCount === 2) return Math.min(width, CARD_WIDTH_PX * 1.35);
+  if (branchCount === 3) return Math.min(width, CARD_WIDTH_PX * 1.75);
+  if (branchCount === 4) return Math.min(width, CARD_WIDTH_PX * 2.2);
+  return width;
+}
 
 // Walk primaryParents backwards from targetId to root, collecting IDs along the way.
 // These are the nodes that need to be expanded to make the target visible.
@@ -110,6 +124,9 @@ function computeVisibleTreeLayouts(
         center: CARD_WIDTH_PX / 2,
         left: CARD_WIDTH_PX / 2,
         right: CARD_WIDTH_PX / 2,
+        slotWidth: CARD_WIDTH_PX,
+        slotLeft: CARD_WIDTH_PX / 2,
+        slotRight: CARD_WIDTH_PX / 2,
         childCenters: new Map<string, number>(),
       };
       layouts.set(nodeId, leafLayout);
@@ -124,7 +141,7 @@ function computeVisibleTreeLayouts(
         cursor = 0;
       } else {
         const previous = childLayouts[index - 1]!.layout;
-        cursor += previous.right + layout.left + CHILD_GAP_PX;
+        cursor += previous.slotRight + layout.slotLeft + CHILD_GAP_PX;
       }
 
       return { childId, layout, center: cursor };
@@ -133,17 +150,21 @@ function computeVisibleTreeLayouts(
     const firstCenter = rawChildCenters[0]?.center ?? 0;
     const lastCenter = rawChildCenters[rawChildCenters.length - 1]?.center ?? 0;
     const naturalCenter = rawChildCenters.length === 1 ? 0 : (firstCenter + lastCenter) / 2;
-    const minLeftEdge = Math.min(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter - layout.left));
-    const maxRightEdge = Math.max(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter + layout.right));
+    const minLeftEdge = Math.min(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter - layout.slotLeft));
+    const maxRightEdge = Math.max(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter + layout.slotRight));
     const left = Math.max(CARD_WIDTH_PX / 2, naturalCenter - minLeftEdge);
     const right = Math.max(CARD_WIDTH_PX / 2, maxRightEdge - naturalCenter);
     const center = left;
     const width = left + right;
+    const slotWidth = getNodeSlotWidth(width, primaryChildren.length);
     const nodeLayout = {
       width,
       center,
       left,
       right,
+      slotWidth,
+      slotLeft: slotWidth / 2,
+      slotRight: slotWidth / 2,
       childCenters: new Map(rawChildCenters.map(({ childId, center: childCenter }) => [childId, childCenter - naturalCenter + left])),
     };
 
@@ -214,7 +235,7 @@ function NodeCard({
   const firstChildCenter = firstPrimaryChildId ? (layout.childCenters.get(firstPrimaryChildId) ?? layout.center) : layout.center;
   const lastChildCenter = lastPrimaryChildId ? (layout.childCenters.get(lastPrimaryChildId) ?? layout.center) : layout.center;
   const firstChildLayout = firstPrimaryChildId ? (treeLayouts.get(firstPrimaryChildId) ?? FALLBACK_LAYOUT) : FALLBACK_LAYOUT;
-  const childRowOffset = firstPrimaryChildId ? Math.max(firstChildCenter - firstChildLayout.center, 0) : 0;
+  const childRowOffset = firstPrimaryChildId ? Math.max(firstChildCenter - firstChildLayout.slotLeft, 0) : 0;
 
   return (
     <div className="flex flex-col" style={{ width: `${layout.width}px` }}>
@@ -617,15 +638,17 @@ function NodeCard({
               const branchLabel = edge.label
                 || edge.condition
                 || (node.type === 'question' ? childNode.config?.response : null);
-              const branchOffset = Math.max(childLayout.center - (CARD_WIDTH_PX / 2), 0);
+              const slotCenter = childLayout.slotWidth / 2;
+              const branchOffset = Math.max(slotCenter - (CARD_WIDTH_PX / 2), 0);
+              const childShift = slotCenter - childLayout.center;
 
               return (
                 <div
                   key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
                   className="relative flex min-w-0 flex-col items-start pt-10"
-                  style={{ width: `${childLayout.width}px` }}
+                  style={{ width: `${childLayout.slotWidth}px` }}
                 >
-                  <div className="pointer-events-none absolute top-0 h-10 w-px bg-zinc-200" style={{ left: `${childLayout.center}px`, transform: 'translateX(-0.5px)' }} />
+                  <div className="pointer-events-none absolute top-0 h-10 w-px bg-zinc-200" style={{ left: `${slotCenter}px`, transform: 'translateX(-0.5px)' }} />
                   {branchLabel && (
                     <div className="mb-4 flex items-center justify-center" style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px` }}>
                       <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
@@ -634,14 +657,16 @@ function NodeCard({
                       </div>
                     </div>
                   )}
-                  <NodeCard
-                    node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-                    parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                    treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
-                    onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-                    onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
-                  />
+                  <div style={{ marginLeft: `${childShift}px` }}>
+                    <NodeCard
+                      node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
+                      parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                      treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
+                      onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+                      onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -750,6 +775,8 @@ export default function FlowEditorPage() {
   const params = useParams();
   const confirm = useConfirm();
   const flowId = params.id as string;
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const hasCenteredInitialViewRef = useRef(false);
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
@@ -807,6 +834,27 @@ export default function FlowEditorPage() {
     if (!rootNode) return new Map<string, TreeLayout>();
     return computeVisibleTreeLayouts(rootNode.id, edges, primaryParents, expandedNodeIds, expandedOverrides);
   }, [rootNode?.id, edges, primaryParents, expandedNodeIds, expandedOverrides]);
+
+  useEffect(() => {
+    hasCenteredInitialViewRef.current = false;
+  }, [flowId]);
+
+  useEffect(() => {
+    if (!rootNode || !canvasRef.current || hasCenteredInitialViewRef.current) return;
+
+    const centerRoot = () => {
+      const rootEl = document.getElementById(`flow-node-${rootNode.id}`);
+      if (!rootEl) return;
+      rootEl.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+      hasCenteredInitialViewRef.current = true;
+    };
+
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(centerRoot);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [rootNode?.id, nodes.length, treeLayouts]);
 
   if (status === 'loading' || isLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" /></div>;
   if (!session) redirect('/login');
@@ -945,26 +993,28 @@ export default function FlowEditorPage() {
         </aside>
 
         {/* ── Main flow document ── */}
-        <div className="flex-1 min-w-0 overflow-auto bg-black">
+        <div ref={canvasRef} className="flex-1 min-w-0 overflow-auto bg-black">
           <div className="min-h-full px-8 py-10">
-            <div className="mb-8 flex flex-col items-center gap-2 text-center">
-              <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
-                Visual Map
-              </span>
-              <p className="max-w-2xl text-sm text-zinc-400">
-                Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
-              </p>
-            </div>
             <div className="inline-flex min-w-full justify-center">
               {rootNode && (
-                <NodeCard
-                  node={rootNode} edges={edges} allNodes={nodes} depth={0}
-                  parentId={null} primaryParents={primaryParents} confirm={confirm}
-                  expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                  treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode}
-                  onUpdateNode={updateNode} onDeleteNode={deleteNode}
-                  onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
-                />
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+                      Visual Map
+                    </span>
+                    <p className="max-w-2xl text-sm text-zinc-400">
+                      Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
+                    </p>
+                  </div>
+                  <NodeCard
+                    node={rootNode} edges={edges} allNodes={nodes} depth={0}
+                    parentId={null} primaryParents={primaryParents} confirm={confirm}
+                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                    treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode}
+                    onUpdateNode={updateNode} onDeleteNode={deleteNode}
+                    onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
+                  />
+                </div>
               )}
             </div>
           </div>
