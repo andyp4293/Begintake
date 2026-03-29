@@ -37,6 +37,8 @@ interface TreeLayout {
   slotLeft: number;
   slotRight: number;
   childCenters: Map<string, number>;
+  leftContour: number[];
+  rightContour: number[];
 }
 
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
@@ -53,6 +55,8 @@ const FALLBACK_LAYOUT: TreeLayout = {
   slotLeft: CARD_WIDTH_PX / 2,
   slotRight: CARD_WIDTH_PX / 2,
   childCenters: new Map(),
+  leftContour: [-(CARD_WIDTH_PX / 2)],
+  rightContour: [CARD_WIDTH_PX / 2],
 };
 
 // Walk primaryParents backwards from targetId to root, collecting IDs along the way.
@@ -121,6 +125,8 @@ function computeVisibleTreeLayouts(
         slotLeft: CARD_WIDTH_PX / 2,
         slotRight: CARD_WIDTH_PX / 2,
         childCenters: new Map<string, number>(),
+        leftContour: [-(CARD_WIDTH_PX / 2)],
+        rightContour: [CARD_WIDTH_PX / 2],
       };
       layouts.set(nodeId, leafLayout);
       return leafLayout;
@@ -128,25 +134,61 @@ function computeVisibleTreeLayouts(
 
     const childLayouts = primaryChildren.map((childId) => ({ childId, layout: walk(childId) }));
 
-    let cursor = 0;
-    const rawChildCenters = childLayouts.map(({ childId, layout }, index) => {
-      if (index === 0) {
-        cursor = 0;
-      } else {
-        const previous = childLayouts[index - 1]!.layout;
-        cursor += previous.slotRight + layout.slotLeft + CHILD_GAP_PX;
+    const placedChildren: Array<{ childId: string; layout: TreeLayout; center: number }> = [];
+    const aggregateRightContour: number[] = [];
+
+    childLayouts.forEach(({ childId, layout }, index) => {
+      let center = 0;
+
+      if (index > 0) {
+        center = layout.leftContour.reduce((requiredShift, leftAtDepth, depth) => {
+          const occupiedRight = aggregateRightContour[depth];
+          if (occupiedRight === undefined) return requiredShift;
+          return Math.max(requiredShift, occupiedRight + CHILD_GAP_PX - leftAtDepth);
+        }, 0);
       }
 
-      return { childId, layout, center: cursor };
+      placedChildren.push({ childId, layout, center });
+
+      layout.rightContour.forEach((rightAtDepth, depth) => {
+        const absoluteRight = center + rightAtDepth;
+        aggregateRightContour[depth] = aggregateRightContour[depth] === undefined
+          ? absoluteRight
+          : Math.max(aggregateRightContour[depth]!, absoluteRight);
+      });
     });
 
-    const firstCenter = rawChildCenters[0]?.center ?? 0;
-    const lastCenter = rawChildCenters[rawChildCenters.length - 1]?.center ?? 0;
-    const naturalCenter = rawChildCenters.length === 1 ? 0 : (firstCenter + lastCenter) / 2;
-    const minLeftEdge = Math.min(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter - layout.left));
-    const maxRightEdge = Math.max(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter + layout.right));
-    const left = Math.max(CARD_WIDTH_PX / 2, naturalCenter - minLeftEdge);
-    const right = Math.max(CARD_WIDTH_PX / 2, maxRightEdge - naturalCenter);
+    const firstCenter = placedChildren[0]?.center ?? 0;
+    const lastCenter = placedChildren[placedChildren.length - 1]?.center ?? 0;
+    const naturalCenter = placedChildren.length === 1 ? 0 : (firstCenter + lastCenter) / 2;
+
+    const childLeftContour: number[] = [];
+    const childRightContour: number[] = [];
+
+    placedChildren.forEach(({ center, layout }) => {
+      layout.leftContour.forEach((leftAtDepth, depth) => {
+        const absoluteLeft = center - naturalCenter + leftAtDepth;
+        const parentDepth = depth + 1;
+        childLeftContour[parentDepth] = childLeftContour[parentDepth] === undefined
+          ? absoluteLeft
+          : Math.min(childLeftContour[parentDepth]!, absoluteLeft);
+      });
+
+      layout.rightContour.forEach((rightAtDepth, depth) => {
+        const absoluteRight = center - naturalCenter + rightAtDepth;
+        const parentDepth = depth + 1;
+        childRightContour[parentDepth] = childRightContour[parentDepth] === undefined
+          ? absoluteRight
+          : Math.max(childRightContour[parentDepth]!, absoluteRight);
+      });
+    });
+
+    const leftContour = [-(CARD_WIDTH_PX / 2), ...childLeftContour.slice(1)];
+    const rightContour = [CARD_WIDTH_PX / 2, ...childRightContour.slice(1)];
+    const minLeftEdge = Math.min(...leftContour);
+    const maxRightEdge = Math.max(...rightContour);
+    const left = Math.max(CARD_WIDTH_PX / 2, -minLeftEdge);
+    const right = Math.max(CARD_WIDTH_PX / 2, maxRightEdge);
     const center = left;
     const width = left + right;
     const nodeLayout = {
@@ -157,7 +199,9 @@ function computeVisibleTreeLayouts(
       slotWidth: width,
       slotLeft: left,
       slotRight: right,
-      childCenters: new Map(rawChildCenters.map(({ childId, center: childCenter }) => [childId, childCenter - naturalCenter + left])),
+      childCenters: new Map(placedChildren.map(({ childId, center: childCenter }) => [childId, childCenter - naturalCenter + left])),
+      leftContour,
+      rightContour,
     };
 
     layouts.set(nodeId, nodeLayout);
@@ -222,12 +266,19 @@ function NodeCard({
   const displayExpanded = expandedOverrides.has(node.id) || expandedNodeIds.has(node.id);
   const layout = treeLayouts.get(node.id) ?? FALLBACK_LAYOUT;
   const cardOffset = Math.max(layout.center - (CARD_WIDTH_PX / 2), 0);
-  const firstPrimaryChildId = primaryChildItems[0]?.childNode.id;
-  const lastPrimaryChildId = primaryChildItems[primaryChildItems.length - 1]?.childNode.id;
-  const firstChildCenter = firstPrimaryChildId ? (layout.childCenters.get(firstPrimaryChildId) ?? layout.center) : layout.center;
-  const lastChildCenter = lastPrimaryChildId ? (layout.childCenters.get(lastPrimaryChildId) ?? layout.center) : layout.center;
-  const firstChildLayout = firstPrimaryChildId ? (treeLayouts.get(firstPrimaryChildId) ?? FALLBACK_LAYOUT) : FALLBACK_LAYOUT;
-  const childRowOffset = firstPrimaryChildId ? Math.max(firstChildCenter - firstChildLayout.slotLeft, 0) : 0;
+  const primaryChildLayouts = primaryChildItems.map(({ edge, childNode }) => {
+    const childLayout = treeLayouts.get(childNode.id) ?? FALLBACK_LAYOUT;
+    const childCenter = layout.childCenters.get(childNode.id) ?? layout.center;
+    return {
+      edge,
+      childNode,
+      childLayout,
+      childCenter,
+      childLeft: Math.max(childCenter - childLayout.center, 0),
+    };
+  });
+  const firstChildCenter = primaryChildLayouts[0]?.childCenter ?? layout.center;
+  const lastChildCenter = primaryChildLayouts[primaryChildLayouts.length - 1]?.childCenter ?? layout.center;
 
   return (
     <div className="flex flex-col" style={{ width: `${layout.width}px` }}>
@@ -623,24 +674,24 @@ function NodeCard({
           )}
           <div
             className="relative flex items-start"
-            style={{ marginLeft: `${childRowOffset}px`, gap: `${CHILD_GAP_PX}px`, paddingTop: '8px' }}
+            style={{ paddingTop: '8px' }}
           >
-            {primaryChildItems.map(({ edge, childNode }) => {
-              const childLayout = treeLayouts.get(childNode.id) ?? FALLBACK_LAYOUT;
+            {primaryChildLayouts.map(({ edge, childNode, childLayout, childCenter, childLeft }, index) => {
               const branchLabel = edge.label
                 || edge.condition
                 || (node.type === 'question' ? childNode.config?.response : null);
-              const slotCenter = childLayout.slotWidth / 2;
-              const branchOffset = Math.max(slotCenter - (CARD_WIDTH_PX / 2), 0);
-              const childShift = slotCenter - childLayout.center;
+              const branchOffset = Math.max(childLayout.center - (CARD_WIDTH_PX / 2), 0);
+              const previousChild = primaryChildLayouts[index - 1];
+              const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
+              const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
 
               return (
                 <div
                   key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
                   className="relative flex min-w-0 flex-col items-start pt-10"
-                  style={{ width: `${childLayout.slotWidth}px` }}
+                  style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px` }}
                 >
-                  <div className="pointer-events-none absolute top-0 h-10 w-px bg-zinc-200" style={{ left: `${slotCenter}px`, transform: 'translateX(-0.5px)' }} />
+                  <div className="pointer-events-none absolute top-0 h-10 w-px bg-zinc-200" style={{ left: `${childCenter - childLeft}px`, transform: 'translateX(-0.5px)' }} />
                   {branchLabel && (
                     <div className="mb-4 flex items-center justify-center" style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px` }}>
                       <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
@@ -649,16 +700,14 @@ function NodeCard({
                       </div>
                     </div>
                   )}
-                  <div style={{ marginLeft: `${childShift}px` }}>
-                    <NodeCard
-                      node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-                      parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                      treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
-                      onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-                      onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
-                    />
-                  </div>
+                  <NodeCard
+                    node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
+                    parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                    treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
+                    onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+                    onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+                  />
                 </div>
               );
             })}
