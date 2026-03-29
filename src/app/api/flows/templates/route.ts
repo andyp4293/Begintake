@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/prisma';
+import { createDefaultIntakeTemplate } from '@/lib/templates/default-intake';
 import { createFamilyIntakeTemplate } from '@/lib/templates/family-intake';
 import { createGeneralIntakeTemplate } from '@/lib/templates/general-intake';
 
@@ -10,6 +11,11 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   return NextResponse.json([
+    {
+      id: 'default-intake',
+      name: 'Default Reception Intake',
+      description: 'Simple visual template for the default all-practice-areas receptionist flow. Covers all 13 practice areas at a broad level and routes callers to scheduling, attorney review, or a live team transfer.',
+    },
     {
       id: 'family-court-intake',
       name: 'Family Court Intake',
@@ -29,9 +35,11 @@ export async function POST(req: NextRequest) {
 
   const { templateId } = await req.json().catch(() => ({ templateId: 'family-court-intake' }));
 
-  const template = templateId === 'general-intake'
-    ? createGeneralIntakeTemplate()
-    : createFamilyIntakeTemplate();
+  const template = templateId === 'default-intake'
+    ? createDefaultIntakeTemplate()
+    : templateId === 'general-intake'
+      ? createGeneralIntakeTemplate()
+      : createFamilyIntakeTemplate();
 
   const flow = await prisma.intakeFlow.create({
     data: {

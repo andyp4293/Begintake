@@ -21,6 +21,14 @@ interface Flow {
 
 const TEMPLATES = [
   {
+    id: 'default-intake',
+    name: 'Default Reception Intake',
+    badge: 'General',
+    badgeColor: '#e5e7eb',
+    description: 'A simpler visual version of the default receptionist flow. It works across all 13 practice areas, collects the basics, screens for urgency, and routes callers toward scheduling, attorney review, or a live team transfer.',
+    areas: ['Family', 'Criminal Defense', 'Immigration', 'Personal Injury', 'Corporate', 'Real Estate', 'Employment', 'Bankruptcy', 'Tax', 'Estate Planning', 'Intellectual Property', 'Civil Rights', 'Environmental'],
+  },
+  {
     id: 'family-court-intake',
     name: 'Family Court Intake',
     badge: 'Family Law',
