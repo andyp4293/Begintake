@@ -45,7 +45,10 @@ function generateId() { return `node-${Date.now()}-${Math.random().toString(36).
 
 const CARD_WIDTH_PX = 272;
 const CHILD_GAP_PX = 28;
-const CANVAS_SIDE_GUTTER = 'max(52vw, 36rem)';
+const CONNECTOR_COLOR = 'rgba(255, 255, 255, 0.88)';
+const BOARD_PADDING_X_PX = 240;
+const BOARD_PADDING_TOP_PX = 112;
+const BOARD_PADDING_BOTTOM_PX = 180;
 const FALLBACK_LAYOUT: TreeLayout = {
   width: CARD_WIDTH_PX,
   center: CARD_WIDTH_PX / 2,
@@ -58,6 +61,10 @@ const FALLBACK_LAYOUT: TreeLayout = {
   leftContour: [-(CARD_WIDTH_PX / 2)],
   rightContour: [CARD_WIDTH_PX / 2],
 };
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
 
 // Walk primaryParents backwards from targetId to root, collecting IDs along the way.
 // These are the nodes that need to be expanded to make the target visible.
@@ -216,7 +223,7 @@ function computeVisibleTreeLayouts(
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents, confirm,
-  expandedNodeIds, expandedOverrides, treeLayouts, onToggleExpanded, onExpandPath,
+  expandedNodeIds, expandedOverrides, treeLayouts, onToggleExpanded, onExpandPath, onFocusNode,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
@@ -227,6 +234,7 @@ function NodeCard({
   treeLayouts: Map<string, TreeLayout>;
   onToggleExpanded: (nodeId: string) => void;
   onExpandPath: (targetId: string) => void;
+  onFocusNode: (targetId: string, behavior?: ScrollBehavior) => void;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string) => void;
@@ -606,7 +614,7 @@ function NodeCard({
                       setTimeout(() => {
                         const el = document.getElementById(`flow-node-${childNode.id}`);
                         if (!el) return;
-                        el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+                        onFocusNode(childNode.id, 'smooth');
                         // Clear any existing highlight
                         document.querySelectorAll('[data-highlighted]').forEach((n) => {
                           (n as HTMLElement).style.outline = '';
@@ -665,11 +673,11 @@ function NodeCard({
       {/* Primary children */}
       {displayExpanded && primaryChildItems.length > 0 && (
         <div className="mt-12 relative" style={{ width: `${layout.width}px` }}>
-          <div className="pointer-events-none absolute top-0 h-8 w-px bg-zinc-200" style={{ left: `${layout.center}px`, transform: 'translateX(-0.5px)' }} />
+          <div className="pointer-events-none absolute top-0 h-8 w-px" style={{ left: `${layout.center}px`, transform: 'translateX(-0.5px)', backgroundColor: CONNECTOR_COLOR }} />
           {primaryChildItems.length > 1 && (
             <div
-              className="pointer-events-none absolute top-8 h-px bg-zinc-200"
-              style={{ left: `${firstChildCenter}px`, width: `${Math.max(lastChildCenter - firstChildCenter, 1)}px` }}
+              className="pointer-events-none absolute top-8 h-px"
+              style={{ left: `${firstChildCenter}px`, width: `${Math.max(lastChildCenter - firstChildCenter, 1)}px`, backgroundColor: CONNECTOR_COLOR }}
             />
           )}
           <div
@@ -684,6 +692,7 @@ function NodeCard({
               const previousChild = primaryChildLayouts[index - 1];
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
+              const branchStemHeight = branchLabel ? 66 : 40;
 
               return (
                 <div
@@ -691,7 +700,7 @@ function NodeCard({
                   className="relative flex min-w-0 flex-col items-start pt-10"
                   style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px` }}
                 >
-                  <div className="pointer-events-none absolute top-0 h-10 w-px bg-zinc-200" style={{ left: `${childCenter - childLeft}px`, transform: 'translateX(-0.5px)' }} />
+                  <div className="pointer-events-none absolute top-0 w-px" style={{ left: `${childCenter - childLeft}px`, height: `${branchStemHeight}px`, transform: 'translateX(-0.5px)', backgroundColor: CONNECTOR_COLOR }} />
                   {branchLabel && (
                     <div className="mb-4 flex items-center justify-center" style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px` }}>
                       <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
@@ -704,7 +713,7 @@ function NodeCard({
                     node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
                     parentId={node.id} primaryParents={primaryParents} confirm={confirm}
                     expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                    treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
+                    treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath} onFocusNode={onFocusNode}
                     onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
                     onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
                   />
@@ -817,14 +826,18 @@ export default function FlowEditorPage() {
   const confirm = useConfirm();
   const flowId = params.id as string;
   const canvasRef = useRef<HTMLDivElement>(null);
+  const boardContentRef = useRef<HTMLDivElement>(null);
   const hasCenteredInitialViewRef = useRef(false);
-  const panStateRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const panStateRef = useRef<{ pointerId: number; startX: number; startY: number; startCameraX: number; startCameraY: number } | null>(null);
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(new Set());
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
+  const [camera, setCamera] = useState({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
 
   const { data: flow, isLoading } = useQuery({
     queryKey: ['flow', flowId],
@@ -878,26 +891,76 @@ export default function FlowEditorPage() {
     return computeVisibleTreeLayouts(rootNode.id, edges, primaryParents, expandedNodeIds, expandedOverrides);
   }, [rootNode?.id, edges, primaryParents, expandedNodeIds, expandedOverrides]);
 
+  const rootLayout = rootNode ? (treeLayouts.get(rootNode.id) ?? FALLBACK_LAYOUT) : FALLBACK_LAYOUT;
+  const boardContentWidth = Math.max(contentSize.width, rootLayout.width);
+  const boardWidth = Math.max(boardContentWidth + (BOARD_PADDING_X_PX * 2), viewportSize.width);
+  const boardHeight = Math.max(contentSize.height + BOARD_PADDING_TOP_PX + BOARD_PADDING_BOTTOM_PX, viewportSize.height);
+
+  const clampCamera = useCallback((x: number, y: number) => {
+    const minX = Math.min(0, viewportSize.width - boardWidth);
+    const minY = Math.min(0, viewportSize.height - boardHeight);
+
+    return {
+      x: clamp(x, minX, 0),
+      y: clamp(y, minY, 0),
+    };
+  }, [boardHeight, boardWidth, viewportSize.height, viewportSize.width]);
+
   useEffect(() => {
     hasCenteredInitialViewRef.current = false;
   }, [flowId]);
 
   useEffect(() => {
-    if (!rootNode || !canvasRef.current || hasCenteredInitialViewRef.current) return;
+    const viewportEl = canvasRef.current;
+    const contentEl = boardContentRef.current;
+    if (!viewportEl || !contentEl) return;
 
-    const centerRoot = () => {
-      const rootEl = document.getElementById(`flow-node-${rootNode.id}`);
-      if (!rootEl) return;
-      rootEl.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
-      hasCenteredInitialViewRef.current = true;
+    const updateMeasurements = () => {
+      setViewportSize({ width: viewportEl.clientWidth, height: viewportEl.clientHeight });
+      setContentSize({ width: contentEl.offsetWidth, height: contentEl.offsetHeight });
     };
 
+    updateMeasurements();
+
+    const ro = new ResizeObserver(updateMeasurements);
+    ro.observe(viewportEl);
+    ro.observe(contentEl);
+
+    return () => ro.disconnect();
+  }, [nodes.length, treeLayouts]);
+
+  const focusNodeInCanvas = useCallback((targetId: string, _behavior: ScrollBehavior = 'smooth') => {
+    const viewportEl = canvasRef.current;
+    const contentEl = boardContentRef.current;
+    const nodeEl = document.getElementById(`flow-node-${targetId}`);
+    if (!viewportEl || !contentEl || !nodeEl || !viewportSize.width || !viewportSize.height) return;
+
+    const contentRect = contentEl.getBoundingClientRect();
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const nodeCenterX = BOARD_PADDING_X_PX + (nodeRect.left - contentRect.left) + (nodeRect.width / 2);
+    const nodeCenterY = BOARD_PADDING_TOP_PX + (nodeRect.top - contentRect.top) + (nodeRect.height / 2);
+    setCamera(clampCamera(
+      (viewportSize.width / 2) - nodeCenterX,
+      (viewportSize.height / 2) - nodeCenterY,
+    ));
+  }, [clampCamera, viewportSize.height, viewportSize.width]);
+
+  useEffect(() => {
+    if (!rootNode || hasCenteredInitialViewRef.current || !viewportSize.width || !viewportSize.height || !contentSize.width) return;
+
     const raf = requestAnimationFrame(() => {
-      requestAnimationFrame(centerRoot);
+      requestAnimationFrame(() => {
+        focusNodeInCanvas(rootNode.id);
+        hasCenteredInitialViewRef.current = true;
+      });
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [rootNode?.id, nodes.length, treeLayouts]);
+  }, [contentSize.width, contentSize.height, focusNodeInCanvas, rootNode?.id, viewportSize.height, viewportSize.width]);
+
+  useEffect(() => {
+    setCamera((prev) => clampCamera(prev.x, prev.y));
+  }, [clampCamera]);
 
   const endCanvasPan = useCallback((el?: HTMLDivElement | null) => {
     if (el && panStateRef.current) {
@@ -919,29 +982,36 @@ export default function FlowEditorPage() {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      scrollLeft: e.currentTarget.scrollLeft,
-      scrollTop: e.currentTarget.scrollTop,
+      startCameraX: camera.x,
+      startCameraY: camera.y,
     };
     setIsPanningCanvas(true);
     document.body.style.userSelect = 'none';
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
-  }, []);
+  }, [camera.x, camera.y]);
 
   const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const pan = panStateRef.current;
     if (!pan || pan.pointerId !== e.pointerId) return;
 
-    e.currentTarget.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
-    e.currentTarget.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+    const deltaX = e.clientX - pan.startX;
+    const deltaY = e.clientY - pan.startY;
+    setCamera(clampCamera(pan.startCameraX + deltaX, pan.startCameraY + deltaY));
     e.preventDefault();
-  }, []);
+  }, [clampCamera]);
 
   const handleCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const pan = panStateRef.current;
     if (!pan || pan.pointerId !== e.pointerId) return;
     endCanvasPan(e.currentTarget);
   }, [endCanvasPan]);
+
+  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (!viewportSize.width || !viewportSize.height) return;
+    e.preventDefault();
+    setCamera((prev) => clampCamera(prev.x - e.deltaX, prev.y - e.deltaY));
+  }, [clampCamera, viewportSize.height, viewportSize.width]);
 
   useEffect(() => () => {
     document.body.style.userSelect = '';
@@ -1028,9 +1098,9 @@ export default function FlowEditorPage() {
         </div>
       </header>
 
-      <div className="flex">
+      <div className="flex h-[calc(100vh-53px)]">
         {/* ── Legend sidebar ── */}
-        <aside className="w-56 shrink-0 sticky top-[53px] h-[calc(100vh-53px)] overflow-y-auto border-r border-zinc-800 px-4 py-6 space-y-5">
+        <aside className="w-56 shrink-0 h-full overflow-y-auto border-r border-zinc-800 px-4 py-6 space-y-5">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-4">Node Types</p>
 
           {([
@@ -1086,17 +1156,27 @@ export default function FlowEditorPage() {
         {/* ── Main flow document ── */}
         <div
           ref={canvasRef}
-          className={`flex-1 min-w-0 overflow-auto bg-black ${isPanningCanvas ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`relative flex-1 min-w-0 overflow-hidden bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isPanningCanvas ? 'cursor-grabbing' : 'cursor-grab'}`}
           onPointerDown={handleCanvasPointerDown}
           onPointerMove={handleCanvasPointerMove}
           onPointerUp={handleCanvasPointerUp}
           onPointerCancel={handleCanvasPointerUp}
+          onWheel={handleCanvasWheel}
         >
           <div
-            className="min-h-full w-max min-w-full py-10"
-            style={{ paddingLeft: CANVAS_SIDE_GUTTER, paddingRight: CANVAS_SIDE_GUTTER }}
+            className="absolute left-0 top-0"
+            style={{
+              width: `${boardWidth}px`,
+              height: `${boardHeight}px`,
+              transform: `translate3d(${camera.x}px, ${camera.y}px, 0)`,
+              transition: isPanningCanvas ? 'none' : 'transform 240ms ease',
+            }}
           >
-            <div className="inline-flex min-w-full justify-center">
+            <div
+              ref={boardContentRef}
+              className="relative"
+              style={{ left: `${BOARD_PADDING_X_PX}px`, top: `${BOARD_PADDING_TOP_PX}px`, width: `${rootLayout.width}px` }}
+            >
               {rootNode && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="flex flex-col items-center gap-2 text-center">
@@ -1111,7 +1191,7 @@ export default function FlowEditorPage() {
                     node={rootNode} edges={edges} allNodes={nodes} depth={0}
                     parentId={null} primaryParents={primaryParents} confirm={confirm}
                     expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                    treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode}
+                    treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode} onFocusNode={focusNodeInCanvas}
                     onUpdateNode={updateNode} onDeleteNode={deleteNode}
                     onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
                   />
