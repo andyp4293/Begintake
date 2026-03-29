@@ -5,7 +5,7 @@ import { redirect, useParams } from 'next/navigation';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Link2,
+  Scale, Save, Zap, ArrowLeft, Plus, Minus, Trash2, ChevronDown, ChevronRight, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -24,7 +24,9 @@ import {
   type TreeLayout,
 } from '@/lib/flow-tree-layout';
 import {
+  clampZoom,
   clampCameraToBoard,
+  getCameraForZoom,
   getCameraForNodeFocus,
   getCanvasMetrics,
 } from '@/lib/flow-tree-canvas';
@@ -50,6 +52,10 @@ const BOARD_PADDING_X_PX = 240;
 const BOARD_PADDING_TOP_PX = 112;
 const BOARD_PADDING_BOTTOM_PX = 180;
 const ROOT_HEADER_HEIGHT_PX = 92;
+const DEFAULT_ZOOM = 1;
+const MIN_ZOOM = 0.65;
+const MAX_ZOOM = 1.5;
+const ZOOM_STEP = 0.1;
 
 // ─── Node card component ──────────────────────────────────────────────────
 
@@ -662,6 +668,7 @@ export default function FlowEditorPage() {
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
   const [camera, setCamera] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
 
@@ -734,19 +741,23 @@ export default function FlowEditorPage() {
     contentOffsetX,
     contentOffsetY,
   } = canvasMetrics;
+  const scaledBoardWidth = boardWidth * zoom;
+  const scaledBoardHeight = boardHeight * zoom;
 
   const clampCamera = useCallback((x: number, y: number) => {
     return clampCameraToBoard(
       { x, y },
       viewportSize.width,
       viewportSize.height,
-      boardWidth,
-      boardHeight,
+      scaledBoardWidth,
+      scaledBoardHeight,
     );
-  }, [boardHeight, boardWidth, viewportSize.height, viewportSize.width]);
+  }, [scaledBoardHeight, scaledBoardWidth, viewportSize.height, viewportSize.width]);
 
   useEffect(() => {
     hasCenteredInitialViewRef.current = false;
+    setZoom(DEFAULT_ZOOM);
+    setCamera({ x: 0, y: 0 });
   }, [flowId]);
 
   useEffect(() => {
@@ -779,17 +790,17 @@ export default function FlowEditorPage() {
 
     const contentRect = contentEl.getBoundingClientRect();
     const nodeRect = nodeEl.getBoundingClientRect();
-    const nodeCenterX = contentOffsetX + (nodeRect.left - contentRect.left) + (nodeRect.width / 2);
-    const nodeCenterY = contentOffsetY + (nodeRect.top - contentRect.top) + (nodeRect.height / 2);
+    const nodeCenterX = (contentOffsetX * zoom) + (nodeRect.left - contentRect.left) + (nodeRect.width / 2);
+    const nodeCenterY = (contentOffsetY * zoom) + (nodeRect.top - contentRect.top) + (nodeRect.height / 2);
     setCamera(getCameraForNodeFocus({
       viewportWidth: viewportSize.width,
       viewportHeight: viewportSize.height,
       nodeCenterX,
       nodeCenterY,
-      boardWidth,
-      boardHeight,
+      boardWidth: scaledBoardWidth,
+      boardHeight: scaledBoardHeight,
     }));
-  }, [boardHeight, boardWidth, contentOffsetX, contentOffsetY, viewportSize.height, viewportSize.width]);
+  }, [contentOffsetX, contentOffsetY, scaledBoardHeight, scaledBoardWidth, viewportSize.height, viewportSize.width, zoom]);
 
   useEffect(() => {
     if (!rootNode || hasCenteredInitialViewRef.current || !viewportSize.width || !viewportSize.height || !contentSize.width) return;
@@ -858,6 +869,39 @@ export default function FlowEditorPage() {
     e.preventDefault();
     setCamera((prev) => clampCamera(prev.x - e.deltaX, prev.y - e.deltaY));
   }, [clampCamera, viewportSize.height, viewportSize.width]);
+
+  const setZoomLevel = useCallback((nextZoomValue: number) => {
+    if (!viewportSize.width || !viewportSize.height) return;
+
+    setZoom((currentZoom) => {
+      const nextZoom = clampZoom(Number(nextZoomValue.toFixed(2)), MIN_ZOOM, MAX_ZOOM);
+      if (nextZoom === currentZoom) return currentZoom;
+
+      setCamera((currentCamera) => getCameraForZoom({
+        camera: currentCamera,
+        currentZoom,
+        nextZoom,
+        viewportWidth: viewportSize.width,
+        viewportHeight: viewportSize.height,
+        boardWidth,
+        boardHeight,
+      }));
+
+      return nextZoom;
+    });
+  }, [boardHeight, boardWidth, viewportSize.height, viewportSize.width]);
+
+  const zoomIn = useCallback(() => {
+    setZoomLevel(zoom + ZOOM_STEP);
+  }, [setZoomLevel, zoom]);
+
+  const zoomOut = useCallback(() => {
+    setZoomLevel(zoom - ZOOM_STEP);
+  }, [setZoomLevel, zoom]);
+
+  const resetZoom = useCallback(() => {
+    setZoomLevel(DEFAULT_ZOOM);
+  }, [setZoomLevel]);
 
   useEffect(() => () => {
     document.body.style.userSelect = '';
@@ -1012,48 +1056,89 @@ export default function FlowEditorPage() {
           <div
             className="absolute left-0 top-0"
             style={{
-              width: `${boardWidth}px`,
-              height: `${boardHeight}px`,
+              width: `${scaledBoardWidth}px`,
+              height: `${scaledBoardHeight}px`,
               transform: `translate3d(${camera.x}px, ${camera.y}px, 0)`,
               transition: isPanningCanvas ? 'none' : 'transform 240ms ease',
             }}
           >
             <div
-              ref={boardContentRef}
-              className="relative"
-              style={{ left: `${contentOffsetX}px`, top: `${contentOffsetY}px`, width: `${rootLayout.width}px` }}
+              className="relative origin-top-left"
+              style={{
+                width: `${boardWidth}px`,
+                height: `${boardHeight}px`,
+                transform: `scale(${zoom})`,
+              }}
             >
-              {rootNode && (
-                <div className="relative" style={{ width: `${rootLayout.width}px`, paddingTop: `${ROOT_HEADER_HEIGHT_PX}px` }}>
-                  <div
-                    className="absolute top-0 text-center"
-                    style={{
-                      left: `${rootLayout.center}px`,
-                      width: `${Math.min(640, rootLayout.width)}px`,
-                      maxWidth: 'calc(100vw - 8rem)',
-                      transform: 'translateX(-50%)',
-                    }}
-                  >
-                    <div className="flex flex-col items-center gap-2 text-center">
-                      <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
-                        Visual Map
-                      </span>
-                      <p className="text-sm text-zinc-400">
-                        Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
-                      </p>
+              <div
+                ref={boardContentRef}
+                className="relative"
+                style={{ left: `${contentOffsetX}px`, top: `${contentOffsetY}px`, width: `${rootLayout.width}px` }}
+              >
+                {rootNode && (
+                  <div className="relative" style={{ width: `${rootLayout.width}px`, paddingTop: `${ROOT_HEADER_HEIGHT_PX}px` }}>
+                    <div
+                      className="absolute top-0 text-center"
+                      style={{
+                        left: `${rootLayout.center}px`,
+                        width: `${Math.min(640, rootLayout.width)}px`,
+                        maxWidth: 'calc(100vw - 8rem)',
+                        transform: 'translateX(-50%)',
+                      }}
+                    >
+                      <div className="flex flex-col items-center gap-2 text-center">
+                        <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+                          Visual Map
+                        </span>
+                        <p className="text-sm text-zinc-400">
+                          Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
+                        </p>
+                      </div>
                     </div>
+                    <NodeCard
+                      node={rootNode} edges={edges} allNodes={nodes} depth={0}
+                      parentId={null} primaryParents={primaryParents} confirm={confirm}
+                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                      treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode} onFocusNode={focusNodeInCanvas}
+                      onUpdateNode={updateNode} onDeleteNode={deleteNode}
+                      onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
+                    />
                   </div>
-                  <NodeCard
-                    node={rootNode} edges={edges} allNodes={nodes} depth={0}
-                    parentId={null} primaryParents={primaryParents} confirm={confirm}
-                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                    treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode} onFocusNode={focusNodeInCanvas}
-                    onUpdateNode={updateNode} onDeleteNode={deleteNode}
-                    onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
-                  />
-                </div>
-              )}
+                )}
+              </div>
             </div>
+          </div>
+
+          <div
+            data-no-pan="true"
+            className="absolute bottom-4 left-4 z-20 flex items-center gap-1 rounded-2xl border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-[0_16px_36px_-18px_rgba(0,0,0,0.9)] backdrop-blur"
+          >
+            <button
+              type="button"
+              onClick={zoomOut}
+              disabled={zoom <= MIN_ZOOM}
+              aria-label="Zoom out"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={resetZoom}
+              aria-label="Reset zoom"
+              className="min-w-[4.5rem] rounded-xl px-3 py-2 text-xs font-semibold text-zinc-200 transition-colors hover:bg-zinc-800 hover:text-white"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={zoomIn}
+              disabled={zoom >= MAX_ZOOM}
+              aria-label="Zoom in"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>

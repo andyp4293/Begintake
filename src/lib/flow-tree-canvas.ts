@@ -26,6 +26,10 @@ export interface Camera {
   y: number;
 }
 
+export function clampZoom(zoom: number, min = 0.65, max = 1.5) {
+  return clamp(zoom, min, max);
+}
+
 export function getCanvasMetrics({
   viewportWidth,
   viewportHeight,
@@ -92,5 +96,47 @@ export function getCameraForNodeFocus({
     viewportHeight,
     boardWidth,
     boardHeight,
+  );
+}
+
+export interface ZoomCameraInput {
+  camera: Camera;
+  currentZoom: number;
+  nextZoom: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  boardWidth: number;
+  boardHeight: number;
+  anchorX?: number;
+  anchorY?: number;
+}
+
+export function getCameraForZoom({
+  camera,
+  currentZoom,
+  nextZoom,
+  viewportWidth,
+  viewportHeight,
+  boardWidth,
+  boardHeight,
+  anchorX = viewportWidth / 2,
+  anchorY = viewportHeight / 2,
+}: ZoomCameraInput): Camera {
+  if (!currentZoom || !nextZoom) {
+    return clampCameraToBoard(camera, viewportWidth, viewportHeight, boardWidth, boardHeight);
+  }
+
+  const worldX = (anchorX - camera.x) / currentZoom;
+  const worldY = (anchorY - camera.y) / currentZoom;
+
+  return clampCameraToBoard(
+    {
+      x: anchorX - (worldX * nextZoom),
+      y: anchorY - (worldY * nextZoom),
+    },
+    viewportWidth,
+    viewportHeight,
+    boardWidth * nextZoom,
+    boardHeight * nextZoom,
   );
 }

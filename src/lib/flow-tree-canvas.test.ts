@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampZoom,
   clampCameraToBoard,
+  getCameraForZoom,
   getCameraForNodeFocus,
   getCanvasMetrics,
 } from '@/lib/flow-tree-canvas';
@@ -60,5 +62,28 @@ describe('flow tree canvas', () => {
 
     expect(clamped.x).toBe(0);
     expect(clamped.y).toBe(-1822);
+  });
+
+  it('clamps zoom levels to the supported range', () => {
+    expect(clampZoom(0.2)).toBe(0.65);
+    expect(clampZoom(1)).toBe(1);
+    expect(clampZoom(4)).toBe(1.5);
+  });
+
+  it('zooms around the current viewport center so the focused area stays put', () => {
+    const nextCamera = getCameraForZoom({
+      camera: { x: -520, y: -280 },
+      currentZoom: 1,
+      nextZoom: 1.2,
+      viewportWidth: 1600,
+      viewportHeight: 900,
+      boardWidth: 4280,
+      boardHeight: 2722,
+    });
+
+    expect(nextCamera.x).toBe(-784);
+    expect(nextCamera.y).toBe(-426);
+    expect(800 - nextCamera.x).toBeCloseTo((800 - (-520)) * 1.2);
+    expect(450 - nextCamera.y).toBeCloseTo((450 - (-280)) * 1.2);
   });
 });
