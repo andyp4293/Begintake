@@ -525,6 +525,7 @@ function NodeCard({
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
               const branchStemHeight = branchLabel ? 66 : 40;
+              const childStemTop = primaryChildItems.length > 1 ? 8 : 0;
 
               return (
                 <div
@@ -532,7 +533,17 @@ function NodeCard({
                   className="relative flex shrink-0 flex-none min-w-0 flex-col items-start pt-10"
                   style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px` }}
                 >
-                  <div className="pointer-events-none absolute top-0 w-px" style={{ left: `${childCenter - childLeft}px`, height: `${branchStemHeight}px`, transform: 'translateX(-0.5px)', backgroundColor: CONNECTOR_COLOR }} />
+                  <div
+                    data-testid={`primary-branch-stem-${node.id}-${childNode.id}`}
+                    className="pointer-events-none absolute w-px"
+                    style={{
+                      top: `${childStemTop}px`,
+                      left: `${childCenter - childLeft}px`,
+                      height: `${branchStemHeight - childStemTop}px`,
+                      transform: 'translateX(-0.5px)',
+                      backgroundColor: CONNECTOR_COLOR,
+                    }}
+                  />
                   {branchLabel && (
                     <div className="mb-4 flex items-center justify-center" style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px` }}>
                       <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">

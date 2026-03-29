@@ -51,6 +51,45 @@ const mockFlow = {
   edges: [],
 };
 
+const mockBranchingFlow = {
+  name: 'Branching Flow',
+  nodes: [
+    {
+      id: 'start-node',
+      type: 'start',
+      label: 'Opening Greeting',
+      config: { greeting: 'Hello there' },
+      sortOrder: 0,
+    },
+    {
+      id: 'question-node',
+      type: 'question',
+      label: 'Q1. Shall we get started?',
+      config: { question: 'Shall we get started?' },
+      sortOrder: 1,
+    },
+    {
+      id: 'response-yes',
+      type: 'response',
+      label: "Yes, let's begin",
+      config: { response: "Yes, let's begin" },
+      sortOrder: 2,
+    },
+    {
+      id: 'response-what',
+      type: 'response',
+      label: 'What is this for?',
+      config: { response: 'What is this for?' },
+      sortOrder: 3,
+    },
+  ],
+  edges: [
+    { sourceNodeId: 'start-node', targetNodeId: 'question-node', label: null, condition: null, sortOrder: 0 },
+    { sourceNodeId: 'question-node', targetNodeId: 'response-yes', label: null, condition: null, sortOrder: 0 },
+    { sourceNodeId: 'question-node', targetNodeId: 'response-what', label: null, condition: null, sortOrder: 1 },
+  ],
+};
+
 beforeAll(() => {
   class ResizeObserverMock {
     observe() {}
@@ -101,5 +140,20 @@ describe('FlowEditorPage', () => {
     });
 
     expect(mockRedirect).not.toHaveBeenCalled();
+  });
+
+  it('starts child branch stems at the shared horizontal connector for multi-branch questions', async () => {
+    mockUseQuery.mockReturnValue({
+      data: mockBranchingFlow,
+      isLoading: false,
+    });
+
+    render(<FlowEditorPage />);
+
+    const yesStem = await screen.findByTestId('primary-branch-stem-question-node-response-yes');
+    const whatStem = await screen.findByTestId('primary-branch-stem-question-node-response-what');
+
+    expect((yesStem as HTMLElement).style.top).toBe('8px');
+    expect((whatStem as HTMLElement).style.top).toBe('8px');
   });
 });
