@@ -28,8 +28,25 @@ const NODE_LABELS: Record<string, string> = {
 
 interface FNode { id: string; type: string; label: string; config: any; sortOrder: number; }
 interface FEdge { sourceNodeId: string; targetNodeId: string; label: string | null; condition: string | null; sortOrder: number; }
+interface TreeLayout {
+  width: number;
+  center: number;
+  left: number;
+  right: number;
+  childCenters: Map<string, number>;
+}
 
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+
+const CARD_WIDTH_PX = 272;
+const CHILD_GAP_PX = 36;
+const FALLBACK_LAYOUT: TreeLayout = {
+  width: CARD_WIDTH_PX,
+  center: CARD_WIDTH_PX / 2,
+  left: CARD_WIDTH_PX / 2,
+  right: CARD_WIDTH_PX / 2,
+  childCenters: new Map(),
+};
 
 // Walk primaryParents backwards from targetId to root, collecting IDs along the way.
 // These are the nodes that need to be expanded to make the target visible.
@@ -67,13 +84,13 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
   return primaryParent;
 }
 
-function computeVisibleSubtreeSpans(
+function computeVisibleTreeLayouts(
   rootId: string,
   edges: FEdge[],
   primaryParents: Map<string, string>,
   expandedNodeIds: Set<string>,
   expandedOverrides: Set<string>,
-): Map<string, number> {
+): Map<string, TreeLayout> {
   const primaryChildrenOf = new Map<string, string[]>();
 
   for (const edge of edges) {
@@ -83,30 +100,66 @@ function computeVisibleSubtreeSpans(
   }
 
   const visibleExpanded = new Set([...expandedNodeIds, ...expandedOverrides]);
-  const spans = new Map<string, number>();
+  const layouts = new Map<string, TreeLayout>();
 
-  function walk(nodeId: string): number {
+  function walk(nodeId: string): TreeLayout {
     const primaryChildren = primaryChildrenOf.get(nodeId) || [];
     if (!visibleExpanded.has(nodeId) || primaryChildren.length === 0) {
-      spans.set(nodeId, 1);
-      return 1;
+      const leafLayout = {
+        width: CARD_WIDTH_PX,
+        center: CARD_WIDTH_PX / 2,
+        left: CARD_WIDTH_PX / 2,
+        right: CARD_WIDTH_PX / 2,
+        childCenters: new Map<string, number>(),
+      };
+      layouts.set(nodeId, leafLayout);
+      return leafLayout;
     }
 
-    const total = primaryChildren.reduce((sum, childId) => sum + walk(childId), 0);
-    const span = Math.max(total, 1);
-    spans.set(nodeId, span);
-    return span;
+    const childLayouts = primaryChildren.map((childId) => ({ childId, layout: walk(childId) }));
+
+    let cursor = 0;
+    const rawChildCenters = childLayouts.map(({ childId, layout }, index) => {
+      if (index === 0) {
+        cursor = 0;
+      } else {
+        const previous = childLayouts[index - 1]!.layout;
+        cursor += previous.right + layout.left + CHILD_GAP_PX;
+      }
+
+      return { childId, layout, center: cursor };
+    });
+
+    const firstCenter = rawChildCenters[0]?.center ?? 0;
+    const lastCenter = rawChildCenters[rawChildCenters.length - 1]?.center ?? 0;
+    const naturalCenter = rawChildCenters.length === 1 ? 0 : (firstCenter + lastCenter) / 2;
+    const minLeftEdge = Math.min(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter - layout.left));
+    const maxRightEdge = Math.max(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter + layout.right));
+    const left = Math.max(CARD_WIDTH_PX / 2, naturalCenter - minLeftEdge);
+    const right = Math.max(CARD_WIDTH_PX / 2, maxRightEdge - naturalCenter);
+    const center = left;
+    const width = left + right;
+    const nodeLayout = {
+      width,
+      center,
+      left,
+      right,
+      childCenters: new Map(rawChildCenters.map(({ childId, center: childCenter }) => [childId, childCenter - naturalCenter + left])),
+    };
+
+    layouts.set(nodeId, nodeLayout);
+    return nodeLayout;
   }
 
   walk(rootId);
-  return spans;
+  return layouts;
 }
 
 // ─── Node card component ──────────────────────────────────────────────────
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents, confirm,
-  expandedNodeIds, expandedOverrides, subtreeSpans, onToggleExpanded, onExpandPath,
+  expandedNodeIds, expandedOverrides, treeLayouts, onToggleExpanded, onExpandPath,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
@@ -114,7 +167,7 @@ function NodeCard({
   confirm: (opts: { title?: string; message: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
   expandedNodeIds: Set<string>;
   expandedOverrides: Set<string>;
-  subtreeSpans: Map<string, number>;
+  treeLayouts: Map<string, TreeLayout>;
   onToggleExpanded: (nodeId: string) => void;
   onExpandPath: (targetId: string) => void;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
@@ -154,119 +207,127 @@ function NodeCard({
   if (!isPrimary) return null;
 
   const displayExpanded = expandedOverrides.has(node.id) || expandedNodeIds.has(node.id);
-  const totalChildSpan = primaryChildItems.reduce((sum, { childNode }) => sum + (subtreeSpans.get(childNode.id) ?? 1), 0);
+  const layout = treeLayouts.get(node.id) ?? FALLBACK_LAYOUT;
+  const cardOffset = Math.max(layout.center - (CARD_WIDTH_PX / 2), 0);
+  const firstPrimaryChildId = primaryChildItems[0]?.childNode.id;
+  const lastPrimaryChildId = primaryChildItems[primaryChildItems.length - 1]?.childNode.id;
+  const firstChildCenter = firstPrimaryChildId ? (layout.childCenters.get(firstPrimaryChildId) ?? layout.center) : layout.center;
+  const lastChildCenter = lastPrimaryChildId ? (layout.childCenters.get(lastPrimaryChildId) ?? layout.center) : layout.center;
+  const firstChildLayout = firstPrimaryChildId ? (treeLayouts.get(firstPrimaryChildId) ?? FALLBACK_LAYOUT) : FALLBACK_LAYOUT;
+  const childRowOffset = firstPrimaryChildId ? Math.max(firstChildCenter - firstChildLayout.center, 0) : 0;
 
   return (
-    <div className="flex w-full flex-col items-center">
-      {/* Node card */}
-      <div
-        id={`flow-node-${node.id}`}
-        className="w-[18rem] max-w-[18rem] rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)]"
-        style={{ borderLeftColor: color, borderLeftWidth: 3 }}
-      >
-        <div className="flex items-center gap-2 px-3 py-2">
-          <button onClick={() => onToggleExpanded(node.id)} className="text-zinc-500 hover:text-white flex-shrink-0">
-            {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
-          </button>
-          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0" style={{ color, backgroundColor: `${color}15` }}>
-            {NODE_LABELS[node.type] ?? node.type}
-          </span>
-          <input
-            type="text"
-            value={node.label}
-            onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
-            maxLength={60}
-            className="min-w-0 flex-1 bg-transparent px-1 text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600"
-          />
-          {childEdges.length > 0 && !displayExpanded && (
-            <span className="text-[9px] text-zinc-400 flex-shrink-0">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
-          )}
-          <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-300 hover:text-white px-1 flex-shrink-0">{editing ? 'Done' : 'Edit'}</button>
-          {node.type !== 'start' && (
-            <button onClick={async () => {
-              const ok = await confirm({ title: 'Delete Step', message: `Delete "${node.label}"? This will also remove any steps connected only to this one.`, confirmLabel: 'Delete', destructive: true });
-              if (ok) onDeleteNode(node.id);
-            }} className="text-zinc-600 hover:text-red-400 flex-shrink-0"><Trash2 className="w-3 h-3" /></button>
-          )}
-        </div>
-
-        {/* Content preview */}
-        {!editing && (
-          <div className="px-3 pb-2 space-y-1 overflow-hidden text-xs">
-            <div ref={contentRef} className={contentExpanded ? '' : 'line-clamp-2'}>
-              {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
-                <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
-              )}
-              {node.type === 'question' && (
-                <>
-                  {!node.config?.question && !node.config?.note && (
-                    <p className="text-[10px] text-red-400/80">Requires a verbatim question or AI guidance.</p>
-                  )}
-                  {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
-                  {node.config?.note && <p className="text-[10px] text-amber-400 leading-relaxed">{node.config.note}</p>}
-                  {node.config?.collectFields?.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1 mt-1">
-                      <span className="text-[9px] text-zinc-400 mr-0.5">Collect:</span>
-                      {node.config.collectFields.map((f: any, i: number) => (
-                        <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-              {node.type === 'response' && (
-                <>
-                  {node.config?.response && (
-                    <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
-                  )}
-                </>
-              )}
-              {node.type === 'decision' && (node.config?.description || node.config?.note) && (
-                <p className="text-[11px] text-zinc-300 italic">"{node.config.description || node.config.note}"</p>
-              )}
-              {node.type === 'action' && (
-                <>
-                  <p className="text-[10px] text-zinc-300">
-                    {(!node.config?.actionType || node.config.actionType === 'set_flag') && (node.config?.flagValue || node.config?.petitionType) && (
-                      <><span className="text-zinc-400">Set:</span> {node.config.flagName ? `${node.config.flagName} = ` : ''}{node.config.flagValue || node.config.petitionType}</>
-                    )}
-                    {node.config?.actionType === 'book_appointment' && <span className="text-zinc-400">Book Appointment</span>}
-                    {node.config?.actionType === 'call_tool' && <><span className="text-zinc-400">Call tool:</span> {node.config.toolName}</>}
-                    {node.config?.actionType === 'send_email' && <span className="text-zinc-400">Send Email</span>}
-                  </p>
-                  {node.config?.note && <p className="text-[10px] text-amber-400">{node.config.note}</p>}
-                </>
-              )}
-              {node.type === 'collect_info' && (
-                <>
-                  {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
-                  {node.config?.fields?.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {node.config.fields.map((f: any, i: number) => (
-                        <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-              {node.type === 'end' && node.config?.closingMessage && (
-                <p className="text-[11px] text-zinc-300 italic">"{node.config.closingMessage}"</p>
-              )}
-            </div>
-            {(isClamped || contentExpanded) && (
-              <button
-                onClick={() => setContentExpanded(!contentExpanded)}
-                className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                {contentExpanded ? '▲ show less' : '▼ show more'}
-              </button>
+    <div className="flex flex-col" style={{ width: `${layout.width}px` }}>
+      <div className="flex flex-col items-start" style={{ marginLeft: `${cardOffset}px`, width: `${CARD_WIDTH_PX}px` }}>
+        {/* Node card */}
+        <div
+          id={`flow-node-${node.id}`}
+          className="rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)]"
+          style={{ width: `${CARD_WIDTH_PX}px`, maxWidth: `${CARD_WIDTH_PX}px`, borderLeftColor: color, borderLeftWidth: 3 }}
+        >
+          <div className="flex items-center gap-2 px-3 py-2">
+            <button onClick={() => onToggleExpanded(node.id)} className="text-zinc-500 hover:text-white flex-shrink-0">
+              {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
+            </button>
+            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0" style={{ color, backgroundColor: `${color}15` }}>
+              {NODE_LABELS[node.type] ?? node.type}
+            </span>
+            <input
+              type="text"
+              value={node.label}
+              onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
+              maxLength={60}
+              className="min-w-0 flex-1 bg-transparent px-1 text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600"
+            />
+            {childEdges.length > 0 && !displayExpanded && (
+              <span className="text-[9px] text-zinc-400 flex-shrink-0">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
+            )}
+            <button onClick={() => setEditing(!editing)} className="text-[10px] text-zinc-300 hover:text-white px-1 flex-shrink-0">{editing ? 'Done' : 'Edit'}</button>
+            {node.type !== 'start' && (
+              <button onClick={async () => {
+                const ok = await confirm({ title: 'Delete Step', message: `Delete "${node.label}"? This will also remove any steps connected only to this one.`, confirmLabel: 'Delete', destructive: true });
+                if (ok) onDeleteNode(node.id);
+              }} className="text-zinc-600 hover:text-red-400 flex-shrink-0"><Trash2 className="w-3 h-3" /></button>
             )}
           </div>
-        )}
 
-        {/* Config editor */}
-        {editing && (
-          <div className="px-3 pb-3 space-y-3 border-t border-zinc-800 pt-2">
+          {/* Content preview */}
+          {!editing && (
+            <div className="px-3 pb-2 space-y-1 overflow-hidden text-xs">
+              <div ref={contentRef} className={contentExpanded ? '' : 'line-clamp-2'}>
+                {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
+                  <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
+                )}
+                {node.type === 'question' && (
+                  <>
+                    {!node.config?.question && !node.config?.note && (
+                      <p className="text-[10px] text-red-400/80">Requires a verbatim question or AI guidance.</p>
+                    )}
+                    {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
+                    {node.config?.note && <p className="text-[10px] text-amber-400 leading-relaxed">{node.config.note}</p>}
+                    {node.config?.collectFields?.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mt-1">
+                        <span className="text-[9px] text-zinc-400 mr-0.5">Collect:</span>
+                        {node.config.collectFields.map((f: any, i: number) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {node.type === 'response' && (
+                  <>
+                    {node.config?.response && (
+                      <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
+                    )}
+                  </>
+                )}
+                {node.type === 'decision' && (node.config?.description || node.config?.note) && (
+                  <p className="text-[11px] text-zinc-300 italic">"{node.config.description || node.config.note}"</p>
+                )}
+                {node.type === 'action' && (
+                  <>
+                    <p className="text-[10px] text-zinc-300">
+                      {(!node.config?.actionType || node.config.actionType === 'set_flag') && (node.config?.flagValue || node.config?.petitionType) && (
+                        <><span className="text-zinc-400">Set:</span> {node.config.flagName ? `${node.config.flagName} = ` : ''}{node.config.flagValue || node.config.petitionType}</>
+                      )}
+                      {node.config?.actionType === 'book_appointment' && <span className="text-zinc-400">Book Appointment</span>}
+                      {node.config?.actionType === 'call_tool' && <><span className="text-zinc-400">Call tool:</span> {node.config.toolName}</>}
+                      {node.config?.actionType === 'send_email' && <span className="text-zinc-400">Send Email</span>}
+                    </p>
+                    {node.config?.note && <p className="text-[10px] text-amber-400">{node.config.note}</p>}
+                  </>
+                )}
+                {node.type === 'collect_info' && (
+                  <>
+                    {node.config?.question && <p className="text-[11px] text-zinc-300 italic">"{node.config.question}"</p>}
+                    {node.config?.fields?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {node.config.fields.map((f: any, i: number) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">{f.label || f.name}</span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {node.type === 'end' && node.config?.closingMessage && (
+                  <p className="text-[11px] text-zinc-300 italic">"{node.config.closingMessage}"</p>
+                )}
+              </div>
+              {(isClamped || contentExpanded) && (
+                <button
+                  onClick={() => setContentExpanded(!contentExpanded)}
+                  className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  {contentExpanded ? '▲ show less' : '▼ show more'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Config editor */}
+          {editing && (
+            <div className="px-3 pb-3 space-y-3 border-t border-zinc-800 pt-2">
             {(node.type === 'start' || node.type === 'transfer') && (
               <>
                 {node.type === 'transfer' && (
@@ -449,141 +510,142 @@ function NodeCard({
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
               </div>
             )}
+            </div>
+          )}
+        </div>
+
+        {/* Add child */}
+        {displayExpanded && node.type !== 'end' && node.type !== 'transfer' && (
+          <div className="mt-3 w-full px-2" style={{ maxWidth: `${CARD_WIDTH_PX}px` }}>
+            <AddNodeMenu
+              parentId={node.id} parentLabel={node.label} parentType={node.type}
+              allNodes={allNodes} currentNodeId={node.id}
+              onAdd={onAddChild} onLinkExisting={onLinkExisting}
+            />
+          </div>
+        )}
+
+        {/* Linked children */}
+        {displayExpanded && linkedChildItems.length > 0 && (
+          <div className="mt-8 flex w-full flex-col items-center gap-3 px-2" style={{ maxWidth: `${CARD_WIDTH_PX}px` }}>
+            <div className="h-5 w-px bg-zinc-200" />
+            <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
+            <div className="flex w-full flex-col items-stretch gap-2">
+              {linkedChildItems.map(({ edge, childNode }) => (
+                <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="group/jump flex w-full items-center gap-2 rounded-2xl border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-2">
+                  <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
+                  <span className="text-[10px] text-zinc-300 shrink-0">Continues to:</span>
+                  <button
+                    onClick={() => {
+                      // Expand all nodes on the path so the target is visible, then scroll
+                      onExpandPath(childNode.id);
+                      setTimeout(() => {
+                        const el = document.getElementById(`flow-node-${childNode.id}`);
+                        if (!el) return;
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+                        // Clear any existing highlight
+                        document.querySelectorAll('[data-highlighted]').forEach((n) => {
+                          (n as HTMLElement).style.outline = '';
+                          (n as HTMLElement).style.borderRadius = '';
+                          (n as HTMLElement).style.boxShadow = '';
+                          (n as HTMLElement).removeAttribute('data-highlighted');
+                        });
+                        // Apply persistent green highlight with glow
+                        el.style.outline = '2px solid #22c55e';
+                        el.style.borderRadius = '16px';
+                        el.style.boxShadow = '0 0 0 4px rgba(34,197,94,0.2), 0 0 16px 4px rgba(34,197,94,0.25)';
+                        el.setAttribute('data-highlighted', 'true');
+                        // Dismiss on next click anywhere
+                        setTimeout(() => {
+                          document.addEventListener('click', function dismiss() {
+                            el.style.outline = '';
+                            el.style.borderRadius = '';
+                            el.style.boxShadow = '';
+                            el.removeAttribute('data-highlighted');
+                            document.removeEventListener('click', dismiss);
+                          }, { once: true });
+                        }, 50);
+                      }, 150);
+                    }}
+                    className="min-w-0 truncate text-left text-[10px] font-medium text-blue-400 underline-offset-2 transition-colors hover:text-blue-300 hover:underline"
+                  >
+                    {childNode.label}
+                  </button>
+                  <button onClick={async () => {
+                    const ok = await confirm({ title: 'Remove Link', message: `Remove the link to "${childNode.label}"?`, confirmLabel: 'Remove', destructive: true });
+                    if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
+                  }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/jump:opacity-100 transition-opacity shrink-0">
+                    <Trash2 className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* End-of-flow indicator for terminal nodes */}
+        {(node.type === 'end' || node.type === 'transfer') && (
+          <div className="mt-4 mb-2 flex min-w-[14rem] items-center gap-3">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+            <div className="flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-900/80 px-2.5 py-1">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+              <span className="text-[9px] font-medium tracking-wide text-zinc-500 uppercase">
+                {node.type === 'transfer' ? 'End of flow — transfers call' : 'End of flow'}
+              </span>
+            </div>
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
           </div>
         )}
       </div>
 
-      {/* Add child */}
-      {displayExpanded && node.type !== 'end' && node.type !== 'transfer' && (
-        <div className="mt-3 w-full max-w-[18rem] px-2">
-          <AddNodeMenu
-            parentId={node.id} parentLabel={node.label} parentType={node.type}
-            allNodes={allNodes} currentNodeId={node.id}
-            onAdd={onAddChild} onLinkExisting={onLinkExisting}
-          />
-        </div>
-      )}
-
-      {/* Linked children */}
-      {displayExpanded && linkedChildItems.length > 0 && (
-        <div className="mt-8 flex w-full max-w-[18rem] flex-col items-center gap-3 px-2">
-          <div className="h-5 w-px bg-zinc-200" />
-          <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
-          <div className="flex w-full flex-col items-stretch gap-2">
-            {linkedChildItems.map(({ edge, childNode }) => (
-              <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="group/jump flex w-full items-center gap-2 rounded-2xl border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-2">
-                <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
-                <span className="text-[10px] text-zinc-300 shrink-0">Continues to:</span>
-                <button
-                  onClick={() => {
-                    // Expand all nodes on the path so the target is visible, then scroll
-                    onExpandPath(childNode.id);
-                    setTimeout(() => {
-                      const el = document.getElementById(`flow-node-${childNode.id}`);
-                      if (!el) return;
-                      el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-                      // Clear any existing highlight
-                      document.querySelectorAll('[data-highlighted]').forEach((n) => {
-                        (n as HTMLElement).style.outline = '';
-                        (n as HTMLElement).style.borderRadius = '';
-                        (n as HTMLElement).style.boxShadow = '';
-                        (n as HTMLElement).removeAttribute('data-highlighted');
-                      });
-                      // Apply persistent green highlight with glow
-                      el.style.outline = '2px solid #22c55e';
-                      el.style.borderRadius = '16px';
-                      el.style.boxShadow = '0 0 0 4px rgba(34,197,94,0.2), 0 0 16px 4px rgba(34,197,94,0.25)';
-                      el.setAttribute('data-highlighted', 'true');
-                      // Dismiss on next click anywhere
-                      setTimeout(() => {
-                        document.addEventListener('click', function dismiss() {
-                          el.style.outline = '';
-                          el.style.borderRadius = '';
-                          el.style.boxShadow = '';
-                          el.removeAttribute('data-highlighted');
-                          document.removeEventListener('click', dismiss);
-                        }, { once: true });
-                      }, 50);
-                    }, 150);
-                  }}
-                  className="min-w-0 truncate text-left text-[10px] font-medium text-blue-400 underline-offset-2 transition-colors hover:text-blue-300 hover:underline"
-                >
-                  {childNode.label}
-                </button>
-                <button onClick={async () => {
-                  const ok = await confirm({ title: 'Remove Link', message: `Remove the link to "${childNode.label}"?`, confirmLabel: 'Remove', destructive: true });
-                  if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
-                }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/jump:opacity-100 transition-opacity shrink-0">
-                  <Trash2 className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Primary children */}
       {displayExpanded && primaryChildItems.length > 0 && (
-        <div className="mt-12 flex w-full flex-col items-center">
-          <div className="h-10 w-px bg-zinc-200" />
-          <div className="relative mx-auto w-fit max-w-full pt-7">
-            {primaryChildItems.length > 1 && (
-              <>
-                <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-zinc-200" />
-                <div className="pointer-events-none absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-[3px] bg-zinc-200" />
-              </>
-            )}
+        <div className="mt-12 relative" style={{ width: `${layout.width}px` }}>
+          <div className="pointer-events-none absolute top-0 h-8 w-px bg-zinc-200" style={{ left: `${layout.center}px`, transform: 'translateX(-0.5px)' }} />
+          {primaryChildItems.length > 1 && (
             <div
-              className="grid items-start gap-x-8 gap-y-10 px-6 sm:gap-x-10"
-              style={{ gridTemplateColumns: `repeat(${Math.max(totalChildSpan, 1)}, 18rem)` }}
-            >
-              {primaryChildItems.map(({ edge, childNode }) => {
-                const childSpan = subtreeSpans.get(childNode.id) ?? 1;
-                const branchLabel = edge.label
-                  || edge.condition
-                  || (node.type === 'question' ? childNode.config?.response : null);
+              className="pointer-events-none absolute top-8 h-px bg-zinc-200"
+              style={{ left: `${firstChildCenter}px`, width: `${Math.max(lastChildCenter - firstChildCenter, 1)}px` }}
+            />
+          )}
+          <div
+            className="relative flex items-start"
+            style={{ marginLeft: `${childRowOffset}px`, gap: `${CHILD_GAP_PX}px`, paddingTop: '8px' }}
+          >
+            {primaryChildItems.map(({ edge, childNode }) => {
+              const childLayout = treeLayouts.get(childNode.id) ?? FALLBACK_LAYOUT;
+              const branchLabel = edge.label
+                || edge.condition
+                || (node.type === 'question' ? childNode.config?.response : null);
+              const branchOffset = Math.max(childLayout.center - (CARD_WIDTH_PX / 2), 0);
 
-                return (
-                  <div
-                    key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
-                    className="relative flex w-full min-w-0 flex-col items-center px-2 pt-8"
-                    style={{ gridColumn: `span ${childSpan}` }}
-                  >
-                    <div className="pointer-events-none absolute left-1/2 top-0 h-8 w-px -translate-x-1/2 bg-zinc-200" />
-                    <div className="pointer-events-none absolute left-1/2 top-7 h-2 w-2 -translate-x-1/2 bg-zinc-200" />
-                    {branchLabel && (
-                      <div className="mb-4 inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
+              return (
+                <div
+                  key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
+                  className="relative flex min-w-0 flex-col items-start pt-10"
+                  style={{ width: `${childLayout.width}px` }}
+                >
+                  <div className="pointer-events-none absolute top-0 h-10 w-px bg-zinc-200" style={{ left: `${childLayout.center}px`, transform: 'translateX(-0.5px)' }} />
+                  {branchLabel && (
+                    <div className="mb-4 flex items-center justify-center" style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px` }}>
+                      <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-200" />
                         <span className="truncate">{branchLabel}</span>
                       </div>
-                    )}
-                    <NodeCard
-                      node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-                      parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                      subtreeSpans={subtreeSpans} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
-                      onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-                      onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+                    </div>
+                  )}
+                  <NodeCard
+                    node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
+                    parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                    treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
+                    onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+                    onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+                  />
+                </div>
+              );
+            })}
           </div>
-        </div>
-      )}
-
-      {/* End-of-flow indicator for terminal nodes */}
-      {(node.type === 'end' || node.type === 'transfer') && (
-        <div className="mt-4 mb-2 flex min-w-[14rem] items-center gap-3">
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
-          <div className="flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-900/80 px-2.5 py-1">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-            <span className="text-[9px] font-medium tracking-wide text-zinc-500 uppercase">
-              {node.type === 'transfer' ? 'End of flow — transfers call' : 'End of flow'}
-            </span>
-          </div>
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
         </div>
       )}
     </div>
@@ -741,9 +803,9 @@ export default function FlowEditorPage() {
     });
   }, []);
 
-  const subtreeSpans = useMemo(() => {
-    if (!rootNode) return new Map<string, number>();
-    return computeVisibleSubtreeSpans(rootNode.id, edges, primaryParents, expandedNodeIds, expandedOverrides);
+  const treeLayouts = useMemo(() => {
+    if (!rootNode) return new Map<string, TreeLayout>();
+    return computeVisibleTreeLayouts(rootNode.id, edges, primaryParents, expandedNodeIds, expandedOverrides);
   }, [rootNode?.id, edges, primaryParents, expandedNodeIds, expandedOverrides]);
 
   if (status === 'loading' || isLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" /></div>;
@@ -899,7 +961,7 @@ export default function FlowEditorPage() {
                   node={rootNode} edges={edges} allNodes={nodes} depth={0}
                   parentId={null} primaryParents={primaryParents} confirm={confirm}
                   expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
-                  subtreeSpans={subtreeSpans} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode}
+                  treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode}
                   onUpdateNode={updateNode} onDeleteNode={deleteNode}
                   onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
                 />
