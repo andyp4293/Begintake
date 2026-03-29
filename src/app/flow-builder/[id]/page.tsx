@@ -42,8 +42,8 @@ interface TreeLayout {
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
 const CARD_WIDTH_PX = 272;
-const CHILD_GAP_PX = 24;
-const CANVAS_SIDE_GUTTER = 'max(42vw, 28rem)';
+const CHILD_GAP_PX = 28;
+const CANVAS_SIDE_GUTTER = 'max(52vw, 36rem)';
 const FALLBACK_LAYOUT: TreeLayout = {
   width: CARD_WIDTH_PX,
   center: CARD_WIDTH_PX / 2,
@@ -54,14 +54,6 @@ const FALLBACK_LAYOUT: TreeLayout = {
   slotRight: CARD_WIDTH_PX / 2,
   childCenters: new Map(),
 };
-
-function getNodeSlotWidth(width: number, branchCount: number): number {
-  if (branchCount <= 1) return CARD_WIDTH_PX;
-  if (branchCount === 2) return Math.min(width, CARD_WIDTH_PX * 1.35);
-  if (branchCount === 3) return Math.min(width, CARD_WIDTH_PX * 1.75);
-  if (branchCount === 4) return Math.min(width, CARD_WIDTH_PX * 2.2);
-  return width;
-}
 
 // Walk primaryParents backwards from targetId to root, collecting IDs along the way.
 // These are the nodes that need to be expanded to make the target visible.
@@ -151,21 +143,20 @@ function computeVisibleTreeLayouts(
     const firstCenter = rawChildCenters[0]?.center ?? 0;
     const lastCenter = rawChildCenters[rawChildCenters.length - 1]?.center ?? 0;
     const naturalCenter = rawChildCenters.length === 1 ? 0 : (firstCenter + lastCenter) / 2;
-    const minLeftEdge = Math.min(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter - layout.slotLeft));
-    const maxRightEdge = Math.max(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter + layout.slotRight));
+    const minLeftEdge = Math.min(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter - layout.left));
+    const maxRightEdge = Math.max(...rawChildCenters.map(({ center: childCenter, layout }) => childCenter + layout.right));
     const left = Math.max(CARD_WIDTH_PX / 2, naturalCenter - minLeftEdge);
     const right = Math.max(CARD_WIDTH_PX / 2, maxRightEdge - naturalCenter);
     const center = left;
     const width = left + right;
-    const slotWidth = getNodeSlotWidth(width, primaryChildren.length);
     const nodeLayout = {
       width,
       center,
       left,
       right,
-      slotWidth,
-      slotLeft: slotWidth / 2,
-      slotRight: slotWidth / 2,
+      slotWidth: width,
+      slotLeft: left,
+      slotRight: right,
       childCenters: new Map(rawChildCenters.map(({ childId, center: childCenter }) => [childId, childCenter - naturalCenter + left])),
     };
 
@@ -778,11 +769,13 @@ export default function FlowEditorPage() {
   const flowId = params.id as string;
   const canvasRef = useRef<HTMLDivElement>(null);
   const hasCenteredInitialViewRef = useRef(false);
+  const panStateRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(new Set());
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
+  const [isPanningCanvas, setIsPanningCanvas] = useState(false);
 
   const { data: flow, isLoading } = useQuery({
     queryKey: ['flow', flowId],
@@ -914,6 +907,54 @@ export default function FlowEditorPage() {
     } catch { toast.error('Failed to activate'); }
   };
 
+  const endCanvasPan = useCallback((el?: HTMLDivElement | null) => {
+    if (el && panStateRef.current) {
+      try {
+        el.releasePointerCapture(panStateRef.current.pointerId);
+      } catch {}
+    }
+    panStateRef.current = null;
+    setIsPanningCanvas(false);
+    document.body.style.userSelect = '';
+  }, []);
+
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, a, label, [role="button"], [data-no-pan="true"]')) return;
+
+    panStateRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: e.currentTarget.scrollLeft,
+      scrollTop: e.currentTarget.scrollTop,
+    };
+    setIsPanningCanvas(true);
+    document.body.style.userSelect = 'none';
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }, []);
+
+  const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panStateRef.current;
+    if (!pan || pan.pointerId !== e.pointerId) return;
+
+    e.currentTarget.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
+    e.currentTarget.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+    e.preventDefault();
+  }, []);
+
+  const handleCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panStateRef.current;
+    if (!pan || pan.pointerId !== e.pointerId) return;
+    endCanvasPan(e.currentTarget);
+  }, [endCanvasPan]);
+
+  useEffect(() => () => {
+    document.body.style.userSelect = '';
+  }, []);
+
   return (
     <div className="min-h-screen bg-black">
       <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between sticky top-0 bg-black z-10">
@@ -994,7 +1035,14 @@ export default function FlowEditorPage() {
         </aside>
 
         {/* ── Main flow document ── */}
-        <div ref={canvasRef} className="flex-1 min-w-0 overflow-auto bg-black">
+        <div
+          ref={canvasRef}
+          className={`flex-1 min-w-0 overflow-auto bg-black ${isPanningCanvas ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={handleCanvasPointerUp}
+          onPointerCancel={handleCanvasPointerUp}
+        >
           <div
             className="min-h-full w-max min-w-full py-10"
             style={{ paddingLeft: CANVAS_SIDE_GUTTER, paddingRight: CANVAS_SIDE_GUTTER }}
