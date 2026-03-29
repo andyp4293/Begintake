@@ -391,9 +391,8 @@ export function getConnectorSpan(
     return { start: fallbackCenter, end: fallbackCenter, width: 1 };
   }
 
-  const centers = placements.map((placement) => placement.childCenter);
-  const start = Math.min(...centers);
-  const end = Math.max(...centers);
+  const start = Math.min(...placements.map((placement) => placement.childCenter - (CARD_WIDTH_PX / 2)));
+  const end = Math.max(...placements.map((placement) => placement.childCenter + (CARD_WIDTH_PX / 2)));
 
   return {
     start,

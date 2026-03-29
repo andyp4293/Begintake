@@ -11,6 +11,7 @@ import {
   getSiblingGap,
   type FlowLayoutEdge,
 } from '@/lib/flow-tree-layout';
+import { createDefaultIntakeTemplate } from '@/lib/templates/default-intake';
 
 function makeEdge(sourceNodeId: string, targetNodeId: string, sortOrder: number): FlowLayoutEdge {
   return {
@@ -34,9 +35,9 @@ describe('flow tree layout', () => {
     const connectorSpan = getConnectorSpan(placements, layouts.get('root')!.center);
 
     expect(placements.map((placement) => placement.childId)).toEqual(['left', 'right']);
-    expect(connectorSpan.start).toBe(placements[0].childCenter);
-    expect(connectorSpan.end).toBe(placements[1].childCenter);
-    expect(connectorSpan.width).toBe(placements[1].childCenter - placements[0].childCenter);
+    expect(connectorSpan.start).toBe(placements[0].childCenter - (CARD_WIDTH_PX / 2));
+    expect(connectorSpan.end).toBe(placements[1].childCenter + (CARD_WIDTH_PX / 2));
+    expect(connectorSpan.width).toBe((placements[1].childCenter - placements[0].childCenter) + CARD_WIDTH_PX);
   });
 
   it('uses a larger sibling gap for wide decisions so neighboring cards do not overlap', () => {
@@ -97,5 +98,22 @@ describe('flow tree layout', () => {
       const diffs = centers.slice(1).map((center, index) => center - centers[index]);
       expect(diffs.every((diff) => diff >= CARD_WIDTH_PX + LEVEL_GAP_PX)).toBe(true);
     }
+  });
+
+  it('extends the default intake branching trunk across the visible child cards', () => {
+    const template = createDefaultIntakeTemplate();
+    const root = template.nodes.find((node: any) => !template.edges.some((edge: any) => edge.targetNodeId === node.id));
+    const primaryParents = computePrimaryParents(root.id, template.edges);
+    const expanded = new Set(template.nodes.map((node: any) => node.id));
+    const layouts = computeVisibleTreeLayouts(root.id, template.edges, primaryParents, expanded, new Set());
+    const q4 = template.nodes.find((node: any) => node.label === 'Q4. New or Existing Client');
+    const childEdges = template.edges.filter((edge: any) => edge.sourceNodeId === q4.id);
+    const placements = getPrimaryChildPlacements(q4.id, childEdges, primaryParents, layouts);
+    const connectorSpan = getConnectorSpan(placements, layouts.get(q4.id)!.center);
+
+    expect(placements).toHaveLength(2);
+    expect(connectorSpan.start).toBe(placements[0].childCenter - (CARD_WIDTH_PX / 2));
+    expect(connectorSpan.end).toBe(placements[1].childCenter + (CARD_WIDTH_PX / 2));
+    expect(connectorSpan.width).toBe(580);
   });
 });
