@@ -18,6 +18,7 @@ import {
   computePrimaryParents,
   computeVisibleTreeLayouts,
   getConnectorSpan,
+  getConnectorSpanFromBounds,
   getPrimaryChildPlacements,
   type FlowLayoutEdge as FEdge,
   type FlowLayoutNode as FNode,
@@ -61,7 +62,7 @@ const ZOOM_STEP = 0.1;
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents, confirm,
-  expandedNodeIds, expandedOverrides, treeLayouts, onToggleExpanded, onExpandPath, onFocusNode,
+  expandedNodeIds, expandedOverrides, treeLayouts, canvasZoom, onToggleExpanded, onExpandPath, onFocusNode,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
@@ -70,6 +71,7 @@ function NodeCard({
   expandedNodeIds: Set<string>;
   expandedOverrides: Set<string>;
   treeLayouts: Map<string, TreeLayout>;
+  canvasZoom: number;
   onToggleExpanded: (nodeId: string) => void;
   onExpandPath: (targetId: string) => void;
   onFocusNode: (targetId: string, behavior?: ScrollBehavior) => void;
@@ -82,7 +84,9 @@ function NodeCard({
   const [editing, setEditing] = useState(false);
   const [contentExpanded, setContentExpanded] = useState(false);
   const [isClamped, setIsClamped] = useState(false);
+  const [measuredConnectorSpan, setMeasuredConnectorSpan] = useState<{ start: number; end: number; width: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const branchRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = contentRef.current;
@@ -118,7 +122,45 @@ function NodeCard({
       const childNode = childNodeById.get(placement.childId);
       return childNode ? [{ ...placement, childNode }] : [];
     });
-  const connectorSpan = getConnectorSpan(primaryChildLayouts, layout.center);
+  const estimatedConnectorSpan = getConnectorSpan(primaryChildLayouts, layout.center);
+  const connectorSpan = measuredConnectorSpan ?? estimatedConnectorSpan;
+
+  useEffect(() => {
+    if (!displayExpanded || primaryChildLayouts.length <= 1) {
+      setMeasuredConnectorSpan(null);
+      return;
+    }
+
+    let frameId = 0;
+    frameId = requestAnimationFrame(() => {
+      const rowEl = branchRowRef.current;
+      if (!rowEl) {
+        setMeasuredConnectorSpan(null);
+        return;
+      }
+
+      const rowRect = rowEl.getBoundingClientRect();
+      const measuredBounds = primaryChildLayouts.flatMap(({ childNode }) => {
+        const cardEl = document.getElementById(`flow-node-${childNode.id}`);
+        if (!cardEl) return [];
+
+        const cardRect = cardEl.getBoundingClientRect();
+        return [{
+          left: (cardRect.left - rowRect.left) / canvasZoom,
+          right: (cardRect.right - rowRect.left) / canvasZoom,
+        }];
+      });
+
+      if (measuredBounds.length !== primaryChildLayouts.length) {
+        setMeasuredConnectorSpan(null);
+        return;
+      }
+
+      setMeasuredConnectorSpan(getConnectorSpanFromBounds(measuredBounds, layout.center));
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [canvasZoom, displayExpanded, layout.center, primaryChildLayouts]);
 
   return (
     <div className="flex shrink-0 flex-col" style={{ width: `${layout.width}px` }}>
@@ -508,11 +550,14 @@ function NodeCard({
           <div className="pointer-events-none absolute top-0 h-8 w-px" style={{ left: `${layout.center}px`, transform: 'translateX(-0.5px)', backgroundColor: CONNECTOR_COLOR }} />
           {primaryChildItems.length > 1 && (
             <div
+              data-testid={`primary-branch-line-${node.id}`}
               className="pointer-events-none absolute top-8 h-px"
               style={{ left: `${connectorSpan.start}px`, width: `${connectorSpan.width}px`, backgroundColor: CONNECTOR_COLOR }}
             />
           )}
           <div
+            ref={branchRowRef}
+            data-testid={`primary-branch-row-${node.id}`}
             className="relative flex items-start"
             style={{ paddingTop: '8px' }}
           >
@@ -554,7 +599,7 @@ function NodeCard({
                   <NodeCard
                     node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
                     parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides} canvasZoom={canvasZoom}
                     treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath} onFocusNode={onFocusNode}
                     onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
                     onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
@@ -1108,7 +1153,7 @@ export default function FlowEditorPage() {
                     <NodeCard
                       node={rootNode} edges={edges} allNodes={nodes} depth={0}
                       parentId={null} primaryParents={primaryParents} confirm={confirm}
-                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides} canvasZoom={zoom}
                       treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode} onFocusNode={focusNodeInCanvas}
                       onUpdateNode={updateNode} onDeleteNode={deleteNode}
                       onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}

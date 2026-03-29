@@ -7,6 +7,7 @@ import {
   computeVisibleNodeCentersByDepth,
   computeVisibleTreeLayouts,
   getConnectorSpan,
+  getConnectorSpanFromBounds,
   getPrimaryChildPlacements,
   getSiblingGap,
   type FlowLayoutEdge,
@@ -115,5 +116,16 @@ describe('flow tree layout', () => {
     expect(connectorSpan.start).toBe(placements[0].childCenter - (CARD_WIDTH_PX / 2));
     expect(connectorSpan.end).toBe(placements[1].childCenter + (CARD_WIDTH_PX / 2));
     expect(connectorSpan.width).toBe(580);
+  });
+
+  it('can extend a connector across measured child card bounds when rendered cards sit wider than the estimate', () => {
+    const measuredSpan = getConnectorSpanFromBounds([
+      { left: 24, right: 296 },
+      { left: 860, right: 1132 },
+    ], 136);
+
+    expect(measuredSpan.start).toBe(24);
+    expect(measuredSpan.end).toBe(1132);
+    expect(measuredSpan.width).toBe(1108);
   });
 });

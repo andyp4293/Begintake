@@ -37,6 +37,20 @@ vi.mock('@/components/ui/ConfirmDialog', () => ({
 
 import FlowEditorPage from '@/app/flow-builder/[id]/page';
 
+function makeRect(left: number, top: number, width: number, height: number) {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
 const mockFlow = {
   name: 'Immediate Flow',
   nodes: [
@@ -155,5 +169,35 @@ describe('FlowEditorPage', () => {
 
     expect((yesStem as HTMLElement).style.top).toBe('0px');
     expect((whatStem as HTMLElement).style.top).toBe('0px');
+  });
+
+  it('extends the shared horizontal branch line across the rendered child cards', async () => {
+    mockUseQuery.mockReturnValue({
+      data: mockBranchingFlow,
+      isLoading: false,
+    });
+
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this.id === 'flow-node-response-yes') return makeRect(130, 220, 272, 88);
+      if (this.id === 'flow-node-response-what') return makeRect(930, 220, 272, 88);
+
+      if (this.getAttribute('data-testid') === 'primary-branch-row-question-node') {
+        return makeRect(100, 180, 1200, 240);
+      }
+
+      return makeRect(0, 0, 0, 0);
+    });
+
+    try {
+      render(<FlowEditorPage />);
+
+      await waitFor(() => {
+        const line = screen.getByTestId('primary-branch-line-question-node') as HTMLElement;
+        expect(line.style.left).toBe('30px');
+        expect(line.style.width).toBe('1072px');
+      });
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 });

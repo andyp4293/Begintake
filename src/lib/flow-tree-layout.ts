@@ -400,3 +400,21 @@ export function getConnectorSpan(
     width: Math.max(end - start, 1),
   };
 }
+
+export function getConnectorSpanFromBounds(
+  bounds: Array<{ left: number; right: number }>,
+  fallbackCenter: number,
+) {
+  if (bounds.length === 0) {
+    return { start: fallbackCenter, end: fallbackCenter, width: 1 };
+  }
+
+  const start = Math.min(...bounds.map((bound) => bound.left));
+  const end = Math.max(...bounds.map((bound) => bound.right));
+
+  return {
+    start,
+    end,
+    width: Math.max(end - start, 1),
+  };
+}
