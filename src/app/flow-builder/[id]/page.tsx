@@ -43,6 +43,7 @@ function generateId() { return `node-${Date.now()}-${Math.random().toString(36).
 
 const CARD_WIDTH_PX = 272;
 const CHILD_GAP_PX = 24;
+const CANVAS_SIDE_GUTTER = 'max(42vw, 28rem)';
 const FALLBACK_LAYOUT: TreeLayout = {
   width: CARD_WIDTH_PX,
   center: CARD_WIDTH_PX / 2,
@@ -994,7 +995,10 @@ export default function FlowEditorPage() {
 
         {/* ── Main flow document ── */}
         <div ref={canvasRef} className="flex-1 min-w-0 overflow-auto bg-black">
-          <div className="min-h-full px-8 py-10">
+          <div
+            className="min-h-full w-max min-w-full py-10"
+            style={{ paddingLeft: CANVAS_SIDE_GUTTER, paddingRight: CANVAS_SIDE_GUTTER }}
+          >
             <div className="inline-flex min-w-full justify-center">
               {rootNode && (
                 <div className="flex flex-col items-center gap-4">
