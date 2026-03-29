@@ -11,6 +11,18 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import {
+  CARD_WIDTH_PX,
+  FALLBACK_LAYOUT,
+  computePathToNode,
+  computePrimaryParents,
+  computeVisibleTreeLayouts,
+  getConnectorSpan,
+  getPrimaryChildPlacements,
+  type FlowLayoutEdge as FEdge,
+  type FlowLayoutNode as FNode,
+  type TreeLayout,
+} from '@/lib/flow-tree-layout';
 
 const NODE_COLORS: Record<string, string> = {
   start: '#22c55e', question: '#3b82f6', response: '#7c3aed',
@@ -26,197 +38,15 @@ const NODE_LABELS: Record<string, string> = {
   decision: 'Question',
 };
 
-interface FNode { id: string; type: string; label: string; config: any; sortOrder: number; }
-interface FEdge { sourceNodeId: string; targetNodeId: string; label: string | null; condition: string | null; sortOrder: number; }
-interface TreeLayout {
-  width: number;
-  center: number;
-  left: number;
-  right: number;
-  slotWidth: number;
-  slotLeft: number;
-  slotRight: number;
-  childCenters: Map<string, number>;
-  leftContour: number[];
-  rightContour: number[];
-}
-
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
-const CARD_WIDTH_PX = 272;
-const CHILD_GAP_PX = 28;
 const CONNECTOR_COLOR = 'rgba(255, 255, 255, 0.88)';
 const BOARD_PADDING_X_PX = 240;
 const BOARD_PADDING_TOP_PX = 112;
 const BOARD_PADDING_BOTTOM_PX = 180;
-const FALLBACK_LAYOUT: TreeLayout = {
-  width: CARD_WIDTH_PX,
-  center: CARD_WIDTH_PX / 2,
-  left: CARD_WIDTH_PX / 2,
-  right: CARD_WIDTH_PX / 2,
-  slotWidth: CARD_WIDTH_PX,
-  slotLeft: CARD_WIDTH_PX / 2,
-  slotRight: CARD_WIDTH_PX / 2,
-  childCenters: new Map(),
-  leftContour: [-(CARD_WIDTH_PX / 2)],
-  rightContour: [CARD_WIDTH_PX / 2],
-};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-// Walk primaryParents backwards from targetId to root, collecting IDs along the way.
-// These are the nodes that need to be expanded to make the target visible.
-function computePathToNode(targetId: string, primaryParents: Map<string, string>): string[] {
-  const path: string[] = [];
-  let current: string | undefined = targetId;
-  while (current) {
-    path.unshift(current);
-    current = primaryParents.get(current);
-  }
-  return path;
-}
-
-// Pre-compute which parent "owns" each node for primary rendering.
-// DFS from root: first parent to reach a node is its primary parent.
-function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, string> {
-  const primaryParent = new Map<string, string>();
-  const childrenOf = new Map<string, FEdge[]>();
-  for (const e of edges) {
-    if (!childrenOf.has(e.sourceNodeId)) childrenOf.set(e.sourceNodeId, []);
-    childrenOf.get(e.sourceNodeId)!.push(e);
-  }
-  const visited = new Set<string>();
-  function dfs(nodeId: string) {
-    if (visited.has(nodeId)) return;
-    visited.add(nodeId);
-    for (const edge of childrenOf.get(nodeId) || []) {
-      if (!primaryParent.has(edge.targetNodeId)) {
-        primaryParent.set(edge.targetNodeId, nodeId);
-      }
-      dfs(edge.targetNodeId);
-    }
-  }
-  dfs(rootId);
-  return primaryParent;
-}
-
-function computeVisibleTreeLayouts(
-  rootId: string,
-  edges: FEdge[],
-  primaryParents: Map<string, string>,
-  expandedNodeIds: Set<string>,
-  expandedOverrides: Set<string>,
-): Map<string, TreeLayout> {
-  const primaryChildrenOf = new Map<string, string[]>();
-
-  for (const edge of edges) {
-    if (primaryParents.get(edge.targetNodeId) !== edge.sourceNodeId) continue;
-    if (!primaryChildrenOf.has(edge.sourceNodeId)) primaryChildrenOf.set(edge.sourceNodeId, []);
-    primaryChildrenOf.get(edge.sourceNodeId)!.push(edge.targetNodeId);
-  }
-
-  const visibleExpanded = new Set([...expandedNodeIds, ...expandedOverrides]);
-  const layouts = new Map<string, TreeLayout>();
-
-  function walk(nodeId: string): TreeLayout {
-    const primaryChildren = primaryChildrenOf.get(nodeId) || [];
-    if (!visibleExpanded.has(nodeId) || primaryChildren.length === 0) {
-      const leafLayout = {
-        width: CARD_WIDTH_PX,
-        center: CARD_WIDTH_PX / 2,
-        left: CARD_WIDTH_PX / 2,
-        right: CARD_WIDTH_PX / 2,
-        slotWidth: CARD_WIDTH_PX,
-        slotLeft: CARD_WIDTH_PX / 2,
-        slotRight: CARD_WIDTH_PX / 2,
-        childCenters: new Map<string, number>(),
-        leftContour: [-(CARD_WIDTH_PX / 2)],
-        rightContour: [CARD_WIDTH_PX / 2],
-      };
-      layouts.set(nodeId, leafLayout);
-      return leafLayout;
-    }
-
-    const childLayouts = primaryChildren.map((childId) => ({ childId, layout: walk(childId) }));
-
-    const placedChildren: Array<{ childId: string; layout: TreeLayout; center: number }> = [];
-    const aggregateRightContour: number[] = [];
-
-    childLayouts.forEach(({ childId, layout }, index) => {
-      let center = 0;
-
-      if (index > 0) {
-        center = layout.leftContour.reduce((requiredShift, leftAtDepth, depth) => {
-          const occupiedRight = aggregateRightContour[depth];
-          if (occupiedRight === undefined) return requiredShift;
-          return Math.max(requiredShift, occupiedRight + CHILD_GAP_PX - leftAtDepth);
-        }, 0);
-      }
-
-      placedChildren.push({ childId, layout, center });
-
-      layout.rightContour.forEach((rightAtDepth, depth) => {
-        const absoluteRight = center + rightAtDepth;
-        aggregateRightContour[depth] = aggregateRightContour[depth] === undefined
-          ? absoluteRight
-          : Math.max(aggregateRightContour[depth]!, absoluteRight);
-      });
-    });
-
-    const firstCenter = placedChildren[0]?.center ?? 0;
-    const lastCenter = placedChildren[placedChildren.length - 1]?.center ?? 0;
-    const naturalCenter = placedChildren.length === 1 ? 0 : (firstCenter + lastCenter) / 2;
-
-    const childLeftContour: number[] = [];
-    const childRightContour: number[] = [];
-
-    placedChildren.forEach(({ center, layout }) => {
-      layout.leftContour.forEach((leftAtDepth, depth) => {
-        const absoluteLeft = center - naturalCenter + leftAtDepth;
-        const parentDepth = depth + 1;
-        childLeftContour[parentDepth] = childLeftContour[parentDepth] === undefined
-          ? absoluteLeft
-          : Math.min(childLeftContour[parentDepth]!, absoluteLeft);
-      });
-
-      layout.rightContour.forEach((rightAtDepth, depth) => {
-        const absoluteRight = center - naturalCenter + rightAtDepth;
-        const parentDepth = depth + 1;
-        childRightContour[parentDepth] = childRightContour[parentDepth] === undefined
-          ? absoluteRight
-          : Math.max(childRightContour[parentDepth]!, absoluteRight);
-      });
-    });
-
-    const leftContour = [-(CARD_WIDTH_PX / 2), ...childLeftContour.slice(1)];
-    const rightContour = [CARD_WIDTH_PX / 2, ...childRightContour.slice(1)];
-    const minLeftEdge = Math.min(...leftContour);
-    const maxRightEdge = Math.max(...rightContour);
-    const left = Math.max(CARD_WIDTH_PX / 2, -minLeftEdge);
-    const right = Math.max(CARD_WIDTH_PX / 2, maxRightEdge);
-    const center = left;
-    const width = left + right;
-    const nodeLayout = {
-      width,
-      center,
-      left,
-      right,
-      slotWidth: width,
-      slotLeft: left,
-      slotRight: right,
-      childCenters: new Map(placedChildren.map(({ childId, center: childCenter }) => [childId, childCenter - naturalCenter + left])),
-      leftContour,
-      rightContour,
-    };
-
-    layouts.set(nodeId, nodeLayout);
-    return nodeLayout;
-  }
-
-  walk(rootId);
-  return layouts;
 }
 
 // ─── Node card component ──────────────────────────────────────────────────
@@ -258,7 +88,7 @@ function NodeCard({
 
   const color = NODE_COLORS[node.type] || '#666';
 
-  const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
+  const childEdges = [...edges.filter((e) => e.sourceNodeId === node.id)].sort((a, b) => a.sortOrder - b.sortOrder);
   const childItems = childEdges.flatMap((edge) => {
     const childNode = allNodes.find((n) => n.id === edge.targetNodeId);
     return childNode ? [{ edge, childNode }] : [];
@@ -274,19 +104,13 @@ function NodeCard({
   const displayExpanded = expandedOverrides.has(node.id) || expandedNodeIds.has(node.id);
   const layout = treeLayouts.get(node.id) ?? FALLBACK_LAYOUT;
   const cardOffset = Math.max(layout.center - (CARD_WIDTH_PX / 2), 0);
-  const primaryChildLayouts = primaryChildItems.map(({ edge, childNode }) => {
-    const childLayout = treeLayouts.get(childNode.id) ?? FALLBACK_LAYOUT;
-    const childCenter = layout.childCenters.get(childNode.id) ?? layout.center;
-    return {
-      edge,
-      childNode,
-      childLayout,
-      childCenter,
-      childLeft: Math.max(childCenter - childLayout.center, 0),
-    };
-  });
-  const firstChildCenter = primaryChildLayouts[0]?.childCenter ?? layout.center;
-  const lastChildCenter = primaryChildLayouts[primaryChildLayouts.length - 1]?.childCenter ?? layout.center;
+  const childNodeById = new Map(childItems.map(({ childNode }) => [childNode.id, childNode]));
+  const primaryChildLayouts = getPrimaryChildPlacements(node.id, childEdges, primaryParents, treeLayouts)
+    .flatMap((placement) => {
+      const childNode = childNodeById.get(placement.childId);
+      return childNode ? [{ ...placement, childNode }] : [];
+    });
+  const connectorSpan = getConnectorSpan(primaryChildLayouts, layout.center);
 
   return (
     <div className="flex flex-col" style={{ width: `${layout.width}px` }}>
@@ -677,7 +501,7 @@ function NodeCard({
           {primaryChildItems.length > 1 && (
             <div
               className="pointer-events-none absolute top-8 h-px"
-              style={{ left: `${firstChildCenter}px`, width: `${Math.max(lastChildCenter - firstChildCenter, 1)}px`, backgroundColor: CONNECTOR_COLOR }}
+              style={{ left: `${connectorSpan.start}px`, width: `${connectorSpan.width}px`, backgroundColor: CONNECTOR_COLOR }}
             />
           )}
           <div
