@@ -850,6 +850,54 @@ export default function FlowEditorPage() {
     return () => cancelAnimationFrame(raf);
   }, [rootNode?.id, nodes.length, treeLayouts]);
 
+  const endCanvasPan = useCallback((el?: HTMLDivElement | null) => {
+    if (el && panStateRef.current) {
+      try {
+        el.releasePointerCapture(panStateRef.current.pointerId);
+      } catch {}
+    }
+    panStateRef.current = null;
+    setIsPanningCanvas(false);
+    document.body.style.userSelect = '';
+  }, []);
+
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, a, label, [role="button"], [data-no-pan="true"]')) return;
+
+    panStateRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: e.currentTarget.scrollLeft,
+      scrollTop: e.currentTarget.scrollTop,
+    };
+    setIsPanningCanvas(true);
+    document.body.style.userSelect = 'none';
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }, []);
+
+  const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panStateRef.current;
+    if (!pan || pan.pointerId !== e.pointerId) return;
+
+    e.currentTarget.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
+    e.currentTarget.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+    e.preventDefault();
+  }, []);
+
+  const handleCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panStateRef.current;
+    if (!pan || pan.pointerId !== e.pointerId) return;
+    endCanvasPan(e.currentTarget);
+  }, [endCanvasPan]);
+
+  useEffect(() => () => {
+    document.body.style.userSelect = '';
+  }, []);
+
   if (status === 'loading' || isLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" /></div>;
   if (!session) redirect('/login');
   if (!nodes.length) return <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500">Flow not found</div>;
@@ -906,54 +954,6 @@ export default function FlowEditorPage() {
       toast.success('Flow activated - calls will use this script');
     } catch { toast.error('Failed to activate'); }
   };
-
-  const endCanvasPan = useCallback((el?: HTMLDivElement | null) => {
-    if (el && panStateRef.current) {
-      try {
-        el.releasePointerCapture(panStateRef.current.pointerId);
-      } catch {}
-    }
-    panStateRef.current = null;
-    setIsPanningCanvas(false);
-    document.body.style.userSelect = '';
-  }, []);
-
-  const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('button, input, textarea, select, a, label, [role="button"], [data-no-pan="true"]')) return;
-
-    panStateRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      scrollLeft: e.currentTarget.scrollLeft,
-      scrollTop: e.currentTarget.scrollTop,
-    };
-    setIsPanningCanvas(true);
-    document.body.style.userSelect = 'none';
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  }, []);
-
-  const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const pan = panStateRef.current;
-    if (!pan || pan.pointerId !== e.pointerId) return;
-
-    e.currentTarget.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
-    e.currentTarget.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
-    e.preventDefault();
-  }, []);
-
-  const handleCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const pan = panStateRef.current;
-    if (!pan || pan.pointerId !== e.pointerId) return;
-    endCanvasPan(e.currentTarget);
-  }, [endCanvasPan]);
-
-  useEffect(() => () => {
-    document.body.style.userSelect = '';
-  }, []);
 
   return (
     <div className="min-h-screen bg-black">
