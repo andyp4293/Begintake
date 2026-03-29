@@ -5,7 +5,7 @@ import { redirect, useParams } from 'next/navigation';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, ChevronLeft, Link2,
+  Scale, Save, Zap, ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -110,6 +110,12 @@ function NodeCard({
   const color = NODE_COLORS[node.type] || '#666';
 
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
+  const childItems = childEdges.flatMap((edge) => {
+    const childNode = allNodes.find((n) => n.id === edge.targetNodeId);
+    return childNode ? [{ edge, childNode }] : [];
+  });
+  const primaryChildItems = childItems.filter(({ childNode }) => primaryParents.get(childNode.id) === node.id);
+  const linkedChildItems = childItems.filter(({ childNode }) => primaryParents.get(childNode.id) !== node.id);
 
   const isRoot = parentId === null;
   const isPrimary = isRoot || primaryParents.get(node.id) === parentId;
@@ -117,9 +123,13 @@ function NodeCard({
   if (!isPrimary) return null;
 
   return (
-    <div className={depth > 0 ? 'ml-3 border-l-2 border-zinc-700/50 pl-3' : ''}>
+    <div className="flex flex-col items-center">
       {/* Node card */}
-      <div id={`flow-node-${node.id}`} className="bg-zinc-900 border border-zinc-800 rounded-lg mb-2 w-fit min-w-[10rem]" style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
+      <div
+        id={`flow-node-${node.id}`}
+        className="w-fit min-w-[13rem] rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)] backdrop-blur-sm"
+        style={{ borderLeftColor: color, borderLeftWidth: 3 }}
+      >
         <div className="flex items-center gap-2 px-3 py-2">
           <button onClick={() => setExpanded(!displayExpanded)} className="text-zinc-500 hover:text-white flex-shrink-0">
             {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
@@ -406,101 +416,111 @@ function NodeCard({
         )}
       </div>
 
-      {/* Children */}
-      {displayExpanded && childEdges.map((edge) => {
-        const childNode = allNodes.find((n) => n.id === edge.targetNodeId);
-        if (!childNode) return null;
-
-        const childIsPrimary = primaryParents.get(childNode.id) === node.id;
-
-        return (
-          <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`}>
-            {childIsPrimary ? (
-              <NodeCard
-                node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-                parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                expandedOverrides={expandedOverrides} onExpandPath={onExpandPath}
-                onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-                onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
-              />
-            ) : (
-              <div className="ml-6 pl-4 mb-2 group/jump">
-                <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900/50 border border-zinc-800 border-dashed rounded-lg">
-                  <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
-                  <span className="text-[10px] text-zinc-300">Continues to:</span>
-                  <button
-                    onClick={() => {
-                      // Expand all nodes on the path so the target is visible, then scroll
-                      onExpandPath(childNode.id);
-                      setTimeout(() => {
-                        const el = document.getElementById(`flow-node-${childNode.id}`);
-                        if (!el) return;
-                        el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-                        // Clear any existing highlight
-                        document.querySelectorAll('[data-highlighted]').forEach((n) => {
-                          (n as HTMLElement).style.outline = '';
-                          (n as HTMLElement).style.borderRadius = '';
-                          (n as HTMLElement).style.boxShadow = '';
-                          (n as HTMLElement).removeAttribute('data-highlighted');
-                        });
-                        // Apply persistent green highlight with glow
-                        el.style.outline = '2px solid #22c55e';
-                        el.style.borderRadius = '8px';
-                        el.style.boxShadow = '0 0 0 4px rgba(34,197,94,0.2), 0 0 16px 4px rgba(34,197,94,0.25)';
-                        el.setAttribute('data-highlighted', 'true');
-                        // Dismiss on next click anywhere
-                        setTimeout(() => {
-                          document.addEventListener('click', function dismiss() {
-                            el.style.outline = '';
-                            el.style.borderRadius = '';
-                            el.style.boxShadow = '';
-                            el.removeAttribute('data-highlighted');
-                            document.removeEventListener('click', dismiss);
-                          }, { once: true });
-                        }, 50);
-                      }, 150);
-                    }}
-                    className="text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate underline-offset-2 hover:underline transition-colors"
-                  >
-                    {childNode.label}
-                  </button>
-                  <button onClick={async () => {
-                    const ok = await confirm({ title: 'Remove Link', message: `Remove the link to "${childNode.label}"?`, confirmLabel: 'Remove', destructive: true });
-                    if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
-                  }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/jump:opacity-100 transition-opacity ml-auto shrink-0">
-                    <Trash2 className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* End-of-flow indicator for terminal nodes */}
-      {(node.type === 'end' || node.type === 'transfer') && (
-        <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-3 mt-1`}>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-px bg-gradient-to-r from-zinc-700 to-transparent" />
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-700/60 bg-zinc-900/80">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-[9px] font-medium tracking-wide text-zinc-500 uppercase">
-                {node.type === 'transfer' ? 'End of flow — transfers call' : 'End of flow'}
-              </span>
-            </div>
-            <div className="flex-1 h-px bg-gradient-to-l from-zinc-700 to-transparent" />
-          </div>
-        </div>
-      )}
-
       {/* Add child */}
       {displayExpanded && node.type !== 'end' && node.type !== 'transfer' && (
-        <div className={`${depth > 0 ? 'ml-6 pl-4' : ''} mb-2`}>
+        <div className="mt-2">
           <AddNodeMenu
             parentId={node.id} parentLabel={node.label} parentType={node.type}
             allNodes={allNodes} currentNodeId={node.id}
             onAdd={onAddChild} onLinkExisting={onLinkExisting}
           />
+        </div>
+      )}
+
+      {/* Linked children */}
+      {displayExpanded && linkedChildItems.length > 0 && (
+        <div className="mt-4 flex flex-col items-center gap-2 px-4">
+          <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {linkedChildItems.map(({ edge, childNode }) => (
+              <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="group/jump flex items-center gap-2 rounded-full border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-1.5">
+                <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
+                <span className="text-[10px] text-zinc-300">Continues to:</span>
+                <button
+                  onClick={() => {
+                    // Expand all nodes on the path so the target is visible, then scroll
+                    onExpandPath(childNode.id);
+                    setTimeout(() => {
+                      const el = document.getElementById(`flow-node-${childNode.id}`);
+                      if (!el) return;
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+                      // Clear any existing highlight
+                      document.querySelectorAll('[data-highlighted]').forEach((n) => {
+                        (n as HTMLElement).style.outline = '';
+                        (n as HTMLElement).style.borderRadius = '';
+                        (n as HTMLElement).style.boxShadow = '';
+                        (n as HTMLElement).removeAttribute('data-highlighted');
+                      });
+                      // Apply persistent green highlight with glow
+                      el.style.outline = '2px solid #22c55e';
+                      el.style.borderRadius = '16px';
+                      el.style.boxShadow = '0 0 0 4px rgba(34,197,94,0.2), 0 0 16px 4px rgba(34,197,94,0.25)';
+                      el.setAttribute('data-highlighted', 'true');
+                      // Dismiss on next click anywhere
+                      setTimeout(() => {
+                        document.addEventListener('click', function dismiss() {
+                          el.style.outline = '';
+                          el.style.borderRadius = '';
+                          el.style.boxShadow = '';
+                          el.removeAttribute('data-highlighted');
+                          document.removeEventListener('click', dismiss);
+                        }, { once: true });
+                      }, 50);
+                    }, 150);
+                  }}
+                  className="text-[10px] text-blue-400 hover:text-blue-300 font-medium truncate underline-offset-2 hover:underline transition-colors"
+                >
+                  {childNode.label}
+                </button>
+                <button onClick={async () => {
+                  const ok = await confirm({ title: 'Remove Link', message: `Remove the link to "${childNode.label}"?`, confirmLabel: 'Remove', destructive: true });
+                  if (ok) onDeleteEdge(edge.sourceNodeId, edge.targetNodeId);
+                }} className="text-zinc-700 hover:text-red-400 opacity-0 group-hover/jump:opacity-100 transition-opacity shrink-0">
+                  <Trash2 className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Primary children */}
+      {displayExpanded && primaryChildItems.length > 0 && (
+        <div className="mt-6 flex w-full flex-col items-center">
+          <div className="h-5 w-px bg-gradient-to-b from-zinc-500/90 to-zinc-700/10" />
+          <div className="relative flex w-max min-w-full justify-center px-4 pt-5">
+            {primaryChildItems.length > 1 && (
+              <div className="absolute left-10 right-10 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600/80 to-transparent" />
+            )}
+            <div className="flex items-start justify-center gap-4 sm:gap-6 xl:gap-8">
+              {primaryChildItems.map(({ edge, childNode }) => (
+                <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="relative flex flex-col items-center pt-5">
+                  <div className="absolute top-0 h-5 w-px bg-gradient-to-b from-zinc-600/80 to-zinc-700/10" />
+                  <NodeCard
+                    node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
+                    parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                    expandedOverrides={expandedOverrides} onExpandPath={onExpandPath}
+                    onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+                    onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* End-of-flow indicator for terminal nodes */}
+      {(node.type === 'end' || node.type === 'transfer') && (
+        <div className="mt-4 mb-2 flex min-w-[14rem] items-center gap-3">
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+          <div className="flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-900/80 px-2.5 py-1">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+            <span className="text-[9px] font-medium tracking-wide text-zinc-500 uppercase">
+              {node.type === 'transfer' ? 'End of flow — transfers call' : 'End of flow'}
+            </span>
+          </div>
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
         </div>
       )}
     </div>
@@ -608,27 +628,7 @@ export default function FlowEditorPage() {
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
-
-  const updateScrollButtons = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    updateScrollButtons();
-    el.addEventListener('scroll', updateScrollButtons, { passive: true });
-    const ro = new ResizeObserver(updateScrollButtons);
-    ro.observe(el);
-    return () => { el.removeEventListener('scroll', updateScrollButtons); ro.disconnect(); };
-  }, [updateScrollButtons, nodes, edges]);
 
   const { data: flow, isLoading } = useQuery({
     queryKey: ['flow', flowId],
@@ -741,7 +741,7 @@ export default function FlowEditorPage() {
       </header>
 
       <div className="flex">
-        {/* ── Left legend sidebar ── */}
+        {/* ── Legend sidebar ── */}
         <aside className="w-56 shrink-0 sticky top-[53px] h-[calc(100vh-53px)] overflow-y-auto border-r border-zinc-800 px-4 py-6 space-y-5">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-4">Node Types</p>
 
@@ -795,28 +795,18 @@ export default function FlowEditorPage() {
           </div>
         </aside>
 
-        {/* ── Main flow canvas ── */}
-        <div className="flex-1 relative overflow-hidden">
-          {/* Left scroll button */}
-          {canScrollLeft && (
-            <button
-              onClick={() => scrollRef.current?.scrollBy({ left: -480, behavior: 'smooth' })}
-              className="fixed left-[248px] top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-8 h-8 bg-zinc-800 border border-zinc-700 rounded-full shadow-lg hover:bg-zinc-700 transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4 text-zinc-300" />
-            </button>
-          )}
-          {/* Right scroll button */}
-          {canScrollRight && (
-            <button
-              onClick={() => scrollRef.current?.scrollBy({ left: 480, behavior: 'smooth' })}
-              className="fixed right-4 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-8 h-8 bg-zinc-800 border border-zinc-700 rounded-full shadow-lg hover:bg-zinc-700 transition-colors"
-            >
-              <ChevronRight className="w-4 h-4 text-zinc-300" />
-            </button>
-          )}
-          <div ref={scrollRef} className="h-full overflow-x-auto overflow-y-auto">
-            <div className="px-6 py-8 min-w-max">
+        {/* ── Main flow document ── */}
+        <div className="flex-1 min-w-0 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_32%),linear-gradient(to_bottom,_rgba(24,24,27,0.92),_rgba(0,0,0,0.98))]">
+          <div className="min-h-full px-6 py-8">
+            <div className="mb-8 flex flex-col items-center gap-2 text-center">
+              <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+                Visual Map
+              </span>
+              <p className="max-w-2xl text-sm text-zinc-400">
+                Primary branches now fan downward like a decision tree. Linked reuse paths stay visible as jump chips instead of pulling the whole flow sideways.
+              </p>
+            </div>
+            <div className="inline-flex min-w-full justify-center">
               {rootNode && (
                 <NodeCard
                   node={rootNode} edges={edges} allNodes={nodes} depth={0}
