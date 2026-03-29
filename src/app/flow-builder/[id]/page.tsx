@@ -67,17 +67,55 @@ function computePrimaryParents(rootId: string, edges: FEdge[]): Map<string, stri
   return primaryParent;
 }
 
+function computeVisibleSubtreeSpans(
+  rootId: string,
+  edges: FEdge[],
+  primaryParents: Map<string, string>,
+  expandedNodeIds: Set<string>,
+  expandedOverrides: Set<string>,
+): Map<string, number> {
+  const primaryChildrenOf = new Map<string, string[]>();
+
+  for (const edge of edges) {
+    if (primaryParents.get(edge.targetNodeId) !== edge.sourceNodeId) continue;
+    if (!primaryChildrenOf.has(edge.sourceNodeId)) primaryChildrenOf.set(edge.sourceNodeId, []);
+    primaryChildrenOf.get(edge.sourceNodeId)!.push(edge.targetNodeId);
+  }
+
+  const visibleExpanded = new Set([...expandedNodeIds, ...expandedOverrides]);
+  const spans = new Map<string, number>();
+
+  function walk(nodeId: string): number {
+    const primaryChildren = primaryChildrenOf.get(nodeId) || [];
+    if (!visibleExpanded.has(nodeId) || primaryChildren.length === 0) {
+      spans.set(nodeId, 1);
+      return 1;
+    }
+
+    const total = primaryChildren.reduce((sum, childId) => sum + walk(childId), 0);
+    const span = Math.max(total, 1);
+    spans.set(nodeId, span);
+    return span;
+  }
+
+  walk(rootId);
+  return spans;
+}
+
 // ─── Node card component ──────────────────────────────────────────────────
 
 function NodeCard({
   node, edges, allNodes, depth, parentId, primaryParents, confirm,
-  expandedOverrides, onExpandPath,
+  expandedNodeIds, expandedOverrides, subtreeSpans, onToggleExpanded, onExpandPath,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
   parentId: string | null; primaryParents: Map<string, string>;
   confirm: (opts: { title?: string; message: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
+  expandedNodeIds: Set<string>;
   expandedOverrides: Set<string>;
+  subtreeSpans: Map<string, number>;
+  onToggleExpanded: (nodeId: string) => void;
   onExpandPath: (targetId: string) => void;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
@@ -85,7 +123,6 @@ function NodeCard({
   onLinkExisting: (parentId: string, targetId: string) => void;
   onDeleteEdge: (sourceId: string, targetId: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(() => !node.config?.defaultCollapsed);
   const [editing, setEditing] = useState(false);
   const [contentExpanded, setContentExpanded] = useState(false);
   const [isClamped, setIsClamped] = useState(false);
@@ -105,8 +142,6 @@ function NodeCard({
   // ch units here use text-xs (12px) to match the input's font — same as the size= attribute.
   const inputSize = Math.max(8, Math.min(62, node.label.length + 2));
 
-  // Force-expanded when parent clicked "Continues to" and this node is on the path
-  const displayExpanded = expandedOverrides.has(node.id) || expanded;
   const color = NODE_COLORS[node.type] || '#666';
 
   const childEdges = edges.filter((e) => e.sourceNodeId === node.id);
@@ -122,6 +157,9 @@ function NodeCard({
 
   if (!isPrimary) return null;
 
+  const displayExpanded = expandedOverrides.has(node.id) || expandedNodeIds.has(node.id);
+  const totalChildSpan = primaryChildItems.reduce((sum, { childNode }) => sum + (subtreeSpans.get(childNode.id) ?? 1), 0);
+
   return (
     <div className="flex w-full flex-col items-center">
       {/* Node card */}
@@ -131,7 +169,7 @@ function NodeCard({
         style={{ borderLeftColor: color, borderLeftWidth: 3 }}
       >
         <div className="flex items-center gap-2 px-3 py-2">
-          <button onClick={() => setExpanded(!displayExpanded)} className="text-zinc-500 hover:text-white flex-shrink-0">
+          <button onClick={() => onToggleExpanded(node.id)} className="text-zinc-500 hover:text-white flex-shrink-0">
             {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
           </button>
           <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0" style={{ color, backgroundColor: `${color}15` }}>
@@ -430,7 +468,7 @@ function NodeCard({
       {/* Linked children */}
       {displayExpanded && linkedChildItems.length > 0 && (
         <div className="mt-5 flex flex-col items-center gap-3 px-4">
-          <div className="h-4 w-px bg-gradient-to-b from-zinc-500/90 to-transparent" />
+          <div className="h-5 w-px rounded-full bg-gradient-to-b from-white via-white/85 to-transparent shadow-[0_0_14px_rgba(255,255,255,0.35)]" />
           <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {linkedChildItems.map(({ edge, childNode }) => (
@@ -487,38 +525,44 @@ function NodeCard({
 
       {/* Primary children */}
       {displayExpanded && primaryChildItems.length > 0 && (
-        <div className="mt-8 flex w-full flex-col items-center">
-          <div className="h-8 w-[3px] rounded-full bg-gradient-to-b from-sky-100 via-sky-400/90 to-sky-500/10 shadow-[0_0_20px_rgba(56,189,248,0.45)]" />
-          <div className="relative mx-auto w-fit max-w-full pt-4">
+        <div className="mt-10 flex w-full flex-col items-center">
+          <div className="h-10 w-[3px] rounded-full bg-gradient-to-b from-white via-white/92 to-white/10 shadow-[0_0_22px_rgba(255,255,255,0.55)]" />
+          <div className="relative mx-auto w-fit max-w-full pt-5">
             {primaryChildItems.length > 1 && (
               <>
-                <div className="pointer-events-none absolute inset-x-4 top-0 h-[3px] rounded-full bg-gradient-to-r from-sky-500/10 via-sky-300/90 to-sky-500/10 shadow-[0_0_22px_rgba(56,189,248,0.45)]" />
-                <div className="pointer-events-none absolute left-1/2 top-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-[5px] rounded-full border border-sky-100/80 bg-sky-300 shadow-[0_0_22px_rgba(125,211,252,0.95)]" />
+                <div className="pointer-events-none absolute inset-x-6 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent shadow-[0_0_24px_rgba(255,255,255,0.55)]" />
+                <div className="pointer-events-none absolute left-1/2 top-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-[5px] rounded-full border border-white/90 bg-white shadow-[0_0_22px_rgba(255,255,255,0.95)]" />
               </>
             )}
             <div
-              className="grid items-start gap-x-6 gap-y-6 px-4 sm:gap-x-8 xl:gap-x-10"
-              style={{ gridTemplateColumns: `repeat(${primaryChildItems.length}, minmax(15rem, 1fr))` }}
+              className="grid items-start gap-x-8 gap-y-8 px-6 sm:gap-x-12 xl:gap-x-16"
+              style={{ gridTemplateColumns: `repeat(${Math.max(totalChildSpan, 1)}, minmax(16rem, 1fr))` }}
             >
               {primaryChildItems.map(({ edge, childNode }) => {
+                const childSpan = subtreeSpans.get(childNode.id) ?? 1;
                 const branchLabel = edge.label
                   || edge.condition
                   || (node.type === 'question' ? childNode.config?.response : null);
 
                 return (
-                  <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="relative flex min-w-[15rem] flex-col items-center pt-7">
-                    <div className="pointer-events-none absolute left-1/2 top-0 h-7 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-sky-100 via-sky-400/75 to-sky-500/5 shadow-[0_0_18px_rgba(56,189,248,0.42)]" />
-                    <div className="pointer-events-none absolute left-1/2 top-6 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-sky-100/70 bg-sky-300 shadow-[0_0_16px_rgba(125,211,252,0.85)]" />
+                  <div
+                    key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
+                    className="relative flex min-w-[16rem] flex-col items-center px-2 pt-8"
+                    style={{ gridColumn: `span ${childSpan}` }}
+                  >
+                    <div className="pointer-events-none absolute left-1/2 top-0 h-8 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-white via-white/88 to-white/5 shadow-[0_0_18px_rgba(255,255,255,0.52)]" />
+                    <div className="pointer-events-none absolute left-1/2 top-7 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-[0_0_18px_rgba(255,255,255,0.9)]" />
                     {branchLabel && (
-                      <div className="mb-3 inline-flex max-w-[14rem] items-center gap-1.5 rounded-full border border-sky-300/25 bg-sky-400/10 px-3 py-1 text-[10px] font-medium text-sky-100 shadow-[0_8px_24px_-18px_rgba(56,189,248,0.85)]">
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+                      <div className="mb-4 inline-flex max-w-[15rem] items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-medium text-white shadow-[0_10px_28px_-20px_rgba(255,255,255,0.85)]">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" />
                         <span className="truncate">{branchLabel}</span>
                       </div>
                     )}
                     <NodeCard
                       node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
                       parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                      expandedOverrides={expandedOverrides} onExpandPath={onExpandPath}
+                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                      subtreeSpans={subtreeSpans} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath}
                       onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
                       onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
                     />
@@ -648,6 +692,7 @@ export default function FlowEditorPage() {
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
+  const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(new Set());
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
 
   const { data: flow, isLoading } = useQuery({
@@ -662,9 +707,11 @@ export default function FlowEditorPage() {
 
   useEffect(() => {
     if (flow) {
+      const nextNodes = flow.nodes.map((n: any) => ({ id: n.id, type: n.type, label: n.label, config: n.config || {}, sortOrder: n.sortOrder }));
       setFlowName(flow.name);
-      setNodes(flow.nodes.map((n: any) => ({ id: n.id, type: n.type, label: n.label, config: n.config || {}, sortOrder: n.sortOrder })));
+      setNodes(nextNodes);
       setEdges(flow.edges.map((e: any) => ({ sourceNodeId: e.sourceNodeId, targetNodeId: e.targetNodeId, label: e.label, condition: e.condition, sortOrder: e.sortOrder })));
+      setExpandedNodeIds(new Set(nextNodes.filter((n: FNode) => !n.config?.defaultCollapsed).map((n: FNode) => n.id)));
     }
   }, [flow]);
 
@@ -677,8 +724,28 @@ export default function FlowEditorPage() {
   }, [rootNode?.id, edges]);
 
   const expandPathToNode = useCallback((targetId: string) => {
-    setExpandedOverrides(new Set(computePathToNode(targetId, primaryParents)));
+    const path = computePathToNode(targetId, primaryParents);
+    setExpandedOverrides(new Set(path));
+    setExpandedNodeIds((prev) => {
+      const next = new Set(prev);
+      path.forEach((id) => next.add(id));
+      return next;
+    });
   }, [primaryParents]);
+
+  const toggleExpanded = useCallback((nodeId: string) => {
+    setExpandedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }, []);
+
+  const subtreeSpans = useMemo(() => {
+    if (!rootNode) return new Map<string, number>();
+    return computeVisibleSubtreeSpans(rootNode.id, edges, primaryParents, expandedNodeIds, expandedOverrides);
+  }, [rootNode?.id, edges, primaryParents, expandedNodeIds, expandedOverrides]);
 
   if (status === 'loading' || isLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" /></div>;
   if (!session) redirect('/login');
@@ -706,6 +773,7 @@ export default function FlowEditorPage() {
     const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type] ?? type, config: defaultConfigs[type] || {}, sortOrder: nodes.length };
     setNodes((prev) => [...prev, newNode]);
     setEdges((prev) => [...prev, { sourceNodeId: parentId, targetNodeId: newNode.id, label: null, condition: null, sortOrder: prev.length }]);
+    setExpandedNodeIds((prev) => new Set([...prev, parentId, newNode.id]));
   };
 
   const linkExisting = (parentId: string, targetId: string) => {
@@ -816,8 +884,12 @@ export default function FlowEditorPage() {
         </aside>
 
         {/* ── Main flow document ── */}
-        <div className="flex-1 min-w-0 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_32%),linear-gradient(to_bottom,_rgba(24,24,27,0.92),_rgba(0,0,0,0.98))]">
-          <div className="min-h-full px-6 py-8">
+        <div className="relative flex-1 min-w-0 overflow-auto bg-[#060b16]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_26%),radial-gradient(circle_at_20%_18%,_rgba(96,165,250,0.24),_transparent_28%),linear-gradient(180deg,_rgba(30,41,59,0.98)_0%,_rgba(9,14,28,0.98)_38%,_rgba(2,6,23,1)_100%)]" />
+          <div className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:5rem_5rem]" />
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-black/20 to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-black/20 to-transparent" />
+          <div className="relative min-h-full px-8 py-10">
             <div className="mb-8 flex flex-col items-center gap-2 text-center">
               <span className="rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
                 Visual Map
@@ -831,7 +903,8 @@ export default function FlowEditorPage() {
                 <NodeCard
                   node={rootNode} edges={edges} allNodes={nodes} depth={0}
                   parentId={null} primaryParents={primaryParents} confirm={confirm}
-                  expandedOverrides={expandedOverrides} onExpandPath={expandPathToNode}
+                  expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides}
+                  subtreeSpans={subtreeSpans} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode}
                   onUpdateNode={updateNode} onDeleteNode={deleteNode}
                   onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
                 />
