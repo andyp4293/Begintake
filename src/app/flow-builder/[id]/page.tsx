@@ -123,7 +123,7 @@ function NodeCard({
   if (!isPrimary) return null;
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex w-full flex-col items-center">
       {/* Node card */}
       <div
         id={`flow-node-${node.id}`}
@@ -429,7 +429,8 @@ function NodeCard({
 
       {/* Linked children */}
       {displayExpanded && linkedChildItems.length > 0 && (
-        <div className="mt-4 flex flex-col items-center gap-2 px-4">
+        <div className="mt-5 flex flex-col items-center gap-3 px-4">
+          <div className="h-4 w-px bg-gradient-to-b from-zinc-500/90 to-transparent" />
           <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {linkedChildItems.map(({ edge, childNode }) => (
@@ -486,25 +487,44 @@ function NodeCard({
 
       {/* Primary children */}
       {displayExpanded && primaryChildItems.length > 0 && (
-        <div className="mt-6 flex w-full flex-col items-center">
-          <div className="h-5 w-px bg-gradient-to-b from-zinc-500/90 to-zinc-700/10" />
-          <div className="relative flex w-max min-w-full justify-center px-4 pt-5">
+        <div className="mt-8 flex w-full flex-col items-center">
+          <div className="h-8 w-[3px] rounded-full bg-gradient-to-b from-sky-100 via-sky-400/90 to-sky-500/10 shadow-[0_0_20px_rgba(56,189,248,0.45)]" />
+          <div className="relative mx-auto w-fit max-w-full pt-4">
             {primaryChildItems.length > 1 && (
-              <div className="absolute left-10 right-10 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600/80 to-transparent" />
+              <>
+                <div className="pointer-events-none absolute inset-x-4 top-0 h-[3px] rounded-full bg-gradient-to-r from-sky-500/10 via-sky-300/90 to-sky-500/10 shadow-[0_0_22px_rgba(56,189,248,0.45)]" />
+                <div className="pointer-events-none absolute left-1/2 top-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-[5px] rounded-full border border-sky-100/80 bg-sky-300 shadow-[0_0_22px_rgba(125,211,252,0.95)]" />
+              </>
             )}
-            <div className="flex items-start justify-center gap-4 sm:gap-6 xl:gap-8">
-              {primaryChildItems.map(({ edge, childNode }) => (
-                <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="relative flex flex-col items-center pt-5">
-                  <div className="absolute top-0 h-5 w-px bg-gradient-to-b from-zinc-600/80 to-zinc-700/10" />
-                  <NodeCard
-                    node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-                    parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                    expandedOverrides={expandedOverrides} onExpandPath={onExpandPath}
-                    onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-                    onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
-                  />
-                </div>
-              ))}
+            <div
+              className="grid items-start gap-x-6 gap-y-6 px-4 sm:gap-x-8 xl:gap-x-10"
+              style={{ gridTemplateColumns: `repeat(${primaryChildItems.length}, minmax(15rem, 1fr))` }}
+            >
+              {primaryChildItems.map(({ edge, childNode }) => {
+                const branchLabel = edge.label
+                  || edge.condition
+                  || (node.type === 'question' ? childNode.config?.response : null);
+
+                return (
+                  <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="relative flex min-w-[15rem] flex-col items-center pt-7">
+                    <div className="pointer-events-none absolute left-1/2 top-0 h-7 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-sky-100 via-sky-400/75 to-sky-500/5 shadow-[0_0_18px_rgba(56,189,248,0.42)]" />
+                    <div className="pointer-events-none absolute left-1/2 top-6 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-sky-100/70 bg-sky-300 shadow-[0_0_16px_rgba(125,211,252,0.85)]" />
+                    {branchLabel && (
+                      <div className="mb-3 inline-flex max-w-[14rem] items-center gap-1.5 rounded-full border border-sky-300/25 bg-sky-400/10 px-3 py-1 text-[10px] font-medium text-sky-100 shadow-[0_8px_24px_-18px_rgba(56,189,248,0.85)]">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+                        <span className="truncate">{branchLabel}</span>
+                      </div>
+                    )}
+                    <NodeCard
+                      node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
+                      parentId={node.id} primaryParents={primaryParents} confirm={confirm}
+                      expandedOverrides={expandedOverrides} onExpandPath={onExpandPath}
+                      onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
+                      onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
