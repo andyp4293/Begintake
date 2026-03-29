@@ -23,6 +23,11 @@ import {
   type FlowLayoutNode as FNode,
   type TreeLayout,
 } from '@/lib/flow-tree-layout';
+import {
+  clampCameraToBoard,
+  getCameraForNodeFocus,
+  getCanvasMetrics,
+} from '@/lib/flow-tree-canvas';
 
 const NODE_COLORS: Record<string, string> = {
   start: '#22c55e', question: '#3b82f6', response: '#7c3aed',
@@ -44,10 +49,6 @@ const CONNECTOR_COLOR = 'rgba(255, 255, 255, 0.88)';
 const BOARD_PADDING_X_PX = 240;
 const BOARD_PADDING_TOP_PX = 112;
 const BOARD_PADDING_BOTTOM_PX = 180;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 // ─── Node card component ──────────────────────────────────────────────────
 
@@ -717,17 +718,30 @@ export default function FlowEditorPage() {
 
   const rootLayout = rootNode ? (treeLayouts.get(rootNode.id) ?? FALLBACK_LAYOUT) : FALLBACK_LAYOUT;
   const boardContentWidth = Math.max(contentSize.width, rootLayout.width);
-  const boardWidth = Math.max(boardContentWidth + (BOARD_PADDING_X_PX * 2), viewportSize.width);
-  const boardHeight = Math.max(contentSize.height + BOARD_PADDING_TOP_PX + BOARD_PADDING_BOTTOM_PX, viewportSize.height);
+  const canvasMetrics = useMemo(() => getCanvasMetrics({
+    viewportWidth: viewportSize.width,
+    viewportHeight: viewportSize.height,
+    contentWidth: boardContentWidth,
+    contentHeight: contentSize.height,
+    paddingX: BOARD_PADDING_X_PX,
+    paddingTop: BOARD_PADDING_TOP_PX,
+    paddingBottom: BOARD_PADDING_BOTTOM_PX,
+  }), [boardContentWidth, contentSize.height, viewportSize.height, viewportSize.width]);
+  const {
+    boardWidth,
+    boardHeight,
+    contentOffsetX,
+    contentOffsetY,
+  } = canvasMetrics;
 
   const clampCamera = useCallback((x: number, y: number) => {
-    const minX = Math.min(0, viewportSize.width - boardWidth);
-    const minY = Math.min(0, viewportSize.height - boardHeight);
-
-    return {
-      x: clamp(x, minX, 0),
-      y: clamp(y, minY, 0),
-    };
+    return clampCameraToBoard(
+      { x, y },
+      viewportSize.width,
+      viewportSize.height,
+      boardWidth,
+      boardHeight,
+    );
   }, [boardHeight, boardWidth, viewportSize.height, viewportSize.width]);
 
   useEffect(() => {
@@ -741,7 +755,10 @@ export default function FlowEditorPage() {
 
     const updateMeasurements = () => {
       setViewportSize({ width: viewportEl.clientWidth, height: viewportEl.clientHeight });
-      setContentSize({ width: contentEl.offsetWidth, height: contentEl.offsetHeight });
+      setContentSize({
+        width: Math.max(contentEl.offsetWidth, contentEl.scrollWidth),
+        height: Math.max(contentEl.offsetHeight, contentEl.scrollHeight),
+      });
     };
 
     updateMeasurements();
@@ -761,13 +778,17 @@ export default function FlowEditorPage() {
 
     const contentRect = contentEl.getBoundingClientRect();
     const nodeRect = nodeEl.getBoundingClientRect();
-    const nodeCenterX = BOARD_PADDING_X_PX + (nodeRect.left - contentRect.left) + (nodeRect.width / 2);
-    const nodeCenterY = BOARD_PADDING_TOP_PX + (nodeRect.top - contentRect.top) + (nodeRect.height / 2);
-    setCamera(clampCamera(
-      (viewportSize.width / 2) - nodeCenterX,
-      (viewportSize.height / 2) - nodeCenterY,
-    ));
-  }, [clampCamera, viewportSize.height, viewportSize.width]);
+    const nodeCenterX = contentOffsetX + (nodeRect.left - contentRect.left) + (nodeRect.width / 2);
+    const nodeCenterY = contentOffsetY + (nodeRect.top - contentRect.top) + (nodeRect.height / 2);
+    setCamera(getCameraForNodeFocus({
+      viewportWidth: viewportSize.width,
+      viewportHeight: viewportSize.height,
+      nodeCenterX,
+      nodeCenterY,
+      boardWidth,
+      boardHeight,
+    }));
+  }, [boardHeight, boardWidth, contentOffsetX, contentOffsetY, viewportSize.height, viewportSize.width]);
 
   useEffect(() => {
     if (!rootNode || hasCenteredInitialViewRef.current || !viewportSize.width || !viewportSize.height || !contentSize.width) return;
@@ -999,7 +1020,7 @@ export default function FlowEditorPage() {
             <div
               ref={boardContentRef}
               className="relative"
-              style={{ left: `${BOARD_PADDING_X_PX}px`, top: `${BOARD_PADDING_TOP_PX}px`, width: `${rootLayout.width}px` }}
+              style={{ left: `${contentOffsetX}px`, top: `${contentOffsetY}px`, width: `${rootLayout.width}px` }}
             >
               {rootNode && (
                 <div className="flex flex-col items-center gap-4">
