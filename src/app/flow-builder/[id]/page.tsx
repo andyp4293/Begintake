@@ -569,15 +569,18 @@ function NodeCard({
               const previousChild = primaryChildLayouts[index - 1];
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
-              const responseBranchGap = isResponseBranch ? 12 : 0;
-              const branchStemHeight = branchLabel ? 66 + responseBranchGap : 40;
-              const branchLabelMarginBottom = isResponseBranch ? 28 : 16;
+              const branchColumnPaddingTop = isResponseBranch ? 48 : 40;
+              const branchLabelMarginBottom = isResponseBranch ? 40 : 16;
+              const branchStemHeight = branchLabel
+                ? (isResponseBranch ? branchColumnPaddingTop + 26 + branchLabelMarginBottom : 66)
+                : 40;
 
               return (
                 <div
                   key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
-                  className="relative flex shrink-0 flex-none min-w-0 flex-col items-start pt-10"
-                  style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px` }}
+                  data-testid={`primary-branch-column-${node.id}-${childNode.id}`}
+                  className="relative flex shrink-0 flex-none min-w-0 flex-col items-start"
+                  style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px`, paddingTop: `${branchColumnPaddingTop}px` }}
                 >
                   <div
                     data-testid={`primary-branch-stem-${node.id}-${childNode.id}`}
