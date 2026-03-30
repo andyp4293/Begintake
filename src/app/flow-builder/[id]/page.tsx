@@ -178,13 +178,17 @@ function NodeCard({
             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0" style={{ color, backgroundColor: `${color}15` }}>
               {NODE_LABELS[node.type] ?? node.type}
             </span>
-            <input
-              type="text"
-              value={node.label}
-              onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
-              maxLength={60}
-              className="min-w-0 flex-1 bg-transparent px-1 text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600"
-            />
+            {node.type === 'response' ? (
+              <div className="min-w-0 flex-1" />
+            ) : (
+              <input
+                type="text"
+                value={node.label}
+                onChange={(e) => onUpdateNode(node.id, { label: e.target.value })}
+                maxLength={60}
+                className="min-w-0 flex-1 bg-transparent px-1 text-xs text-white focus:outline-none border-b border-transparent focus:border-zinc-600"
+              />
+            )}
             {childEdges.length > 0 && !displayExpanded && (
               <span className="text-[9px] text-zinc-400 flex-shrink-0">{childEdges.length} branch{childEdges.length > 1 ? 'es' : ''}</span>
             )}
@@ -198,7 +202,16 @@ function NodeCard({
           </div>
 
           {/* Content preview */}
-          {!editing && (
+          {!editing && node.type === 'response' ? (
+            <div className="px-3 pb-3">
+              <p
+                data-testid={`response-node-title-${node.id}`}
+                className="text-[15px] font-medium leading-tight text-white break-words"
+              >
+                {node.label}
+              </p>
+            </div>
+          ) : !editing && (
             <div className="px-3 pb-2 space-y-1 overflow-hidden text-xs">
               <div ref={contentRef} className={contentExpanded ? '' : 'line-clamp-2'}>
                 {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
@@ -218,13 +231,6 @@ function NodeCard({
                           <span key={i} className="text-[10px] px-1.5 py-0.5 bg-purple-900/20 border border-purple-900/30 rounded text-purple-400/70">{f.label || f.name}</span>
                         ))}
                       </div>
-                    )}
-                  </>
-                )}
-                {node.type === 'response' && (
-                  <>
-                    {node.config?.response && (
-                      <p className="text-[11px] font-medium" style={{ color: NODE_COLORS.response }}>"{node.config.response}"</p>
                     )}
                   </>
                 )}
@@ -349,7 +355,7 @@ function NodeCard({
               <div>
                 <label className="block text-[10px] font-medium text-zinc-400 mb-1">Caller response label <span className="text-zinc-600 font-normal">(describe their intent, not exact words)</span></label>
                 <input type="text" value={node.config?.response || ''}
-                  onChange={(e) => onUpdateNode(node.id, { config: { ...node.config, response: e.target.value } })}
+                  onChange={(e) => onUpdateNode(node.id, { label: e.target.value, config: { ...node.config, response: e.target.value } })}
                   className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none" />
                 <p className="text-[9px] text-zinc-500 mt-1">e.g. &ldquo;Wants to talk now&rdquo; — not &ldquo;Yes connect me please&rdquo;</p>
               </div>
@@ -561,19 +567,18 @@ function NodeCard({
             className="relative flex items-start"
           >
             {primaryChildLayouts.map(({ edge, childNode, childLayout, childCenter, childLeft }, index) => {
-              const branchLabel = edge.label
-                || edge.condition
-                || (node.type === 'question' ? childNode.config?.response : null);
-              const isResponseBranch = Boolean(branchLabel) && childNode.type === 'response';
+              const branchLabel = childNode.type === 'response'
+                ? null
+                : edge.label
+                  || edge.condition
+                  || (node.type === 'question' ? childNode.config?.response : null);
               const branchOffset = Math.max(childLayout.center - (CARD_WIDTH_PX / 2), 0);
               const previousChild = primaryChildLayouts[index - 1];
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
-              const branchColumnPaddingTop = isResponseBranch ? 48 : 40;
-              const branchLabelMarginBottom = isResponseBranch ? 40 : 16;
-              const branchStemHeight = branchLabel
-                ? (isResponseBranch ? branchColumnPaddingTop + 26 + branchLabelMarginBottom : 66)
-                : 40;
+              const branchColumnPaddingTop = 40;
+              const branchLabelMarginBottom = 16;
+              const branchStemHeight = branchLabel ? 66 : 40;
 
               return (
                 <div
