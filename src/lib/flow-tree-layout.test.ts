@@ -76,6 +76,28 @@ describe('flow tree layout', () => {
     expect(expandedLayouts.get('root')!.width).toBeGreaterThan(collapsedLayouts.get('root')!.width);
   });
 
+  it('keeps upper-level siblings compact even when one branch expands deeply', () => {
+    const edges = [
+      makeEdge('root', 'left', 0),
+      makeEdge('root', 'right', 1),
+      makeEdge('left', 'left-branch-root', 0),
+      makeEdge('left-branch-root', 'left-a', 0),
+      makeEdge('left-branch-root', 'left-b', 1),
+      makeEdge('left-branch-root', 'left-c', 2),
+      makeEdge('left-branch-root', 'left-d', 3),
+      makeEdge('left-branch-root', 'left-e', 4),
+      makeEdge('left-branch-root', 'left-f', 5),
+    ];
+
+    const primaryParents = computePrimaryParents('root', edges);
+    const expanded = new Set(['root', 'left', 'left-branch-root']);
+    const layouts = computeVisibleTreeLayouts('root', edges, primaryParents, expanded, new Set());
+    const placements = getPrimaryChildPlacements('root', edges, primaryParents, layouts);
+
+    expect(placements).toHaveLength(2);
+    expect(placements[1].childCenter - placements[0].childCenter).toBe(CARD_WIDTH_PX + LEVEL_GAP_PX);
+  });
+
   it('keeps visible nodes on the same depth from overlapping even across different branches', () => {
     const edges = [
       makeEdge('root', 'left', 0),

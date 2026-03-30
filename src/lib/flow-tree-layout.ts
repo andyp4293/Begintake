@@ -129,27 +129,16 @@ export function computeVisibleTreeLayouts(
     const siblingGap = getSiblingGap(primaryChildren.length);
 
     const placedChildren: Array<{ childId: string; layout: TreeLayout; center: number }> = [];
-    const aggregateRightContour: number[] = [];
 
     childLayouts.forEach(({ childId, layout }, index) => {
       let center = 0;
 
       if (index > 0) {
-        center = layout.leftContour.reduce((requiredShift, leftAtDepth, depth) => {
-          const occupiedRight = aggregateRightContour[depth];
-          if (occupiedRight === undefined) return requiredShift;
-          return Math.max(requiredShift, occupiedRight + siblingGap - leftAtDepth);
-        }, 0);
+        const previousChild = placedChildren[index - 1];
+        center = previousChild.center + previousChild.layout.slotRight + siblingGap + layout.slotLeft;
       }
 
       placedChildren.push({ childId, layout, center });
-
-      layout.rightContour.forEach((rightAtDepth, depth) => {
-        const absoluteRight = center + rightAtDepth;
-        aggregateRightContour[depth] = aggregateRightContour[depth] === undefined
-          ? absoluteRight
-          : Math.max(aggregateRightContour[depth]!, absoluteRight);
-      });
     });
 
     const firstCenter = placedChildren[0]?.center ?? 0;
@@ -190,9 +179,9 @@ export function computeVisibleTreeLayouts(
       center,
       left,
       right,
-      slotWidth: width,
-      slotLeft: left,
-      slotRight: right,
+      slotWidth: CARD_WIDTH_PX,
+      slotLeft: CARD_WIDTH_PX / 2,
+      slotRight: CARD_WIDTH_PX / 2,
       childCenters: new Map(
         placedChildren.map(({ childId, center: childCenter }) => [
           childId,
@@ -298,9 +287,9 @@ function applyLevelAwareSpacing(
       center,
       left,
       right,
-      slotWidth: width,
-      slotLeft: left,
-      slotRight: right,
+      slotWidth: CARD_WIDTH_PX,
+      slotLeft: CARD_WIDTH_PX / 2,
+      slotRight: CARD_WIDTH_PX / 2,
       childCenters,
       leftContour: [-left],
       rightContour: [right],
