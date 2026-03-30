@@ -207,7 +207,7 @@ function NodeCard({
             <div className="px-3 pb-3">
               <p
                 data-testid={`response-node-title-${node.id}`}
-                className="text-[15px] font-medium leading-tight text-white break-words"
+                className="text-xs font-medium leading-snug text-white break-words"
               >
                 {node.label}
               </p>
@@ -568,7 +568,8 @@ function NodeCard({
             className="relative flex items-start"
           >
             {primaryChildLayouts.map(({ edge, childNode, childLayout, childCenter, childLeft }, index) => {
-              const branchLabel = childNode.type === 'response'
+              const isResponseBranch = childNode.type === 'response';
+              const branchLabel = isResponseBranch
                 ? null
                 : edge.label
                   || edge.condition
@@ -577,9 +578,10 @@ function NodeCard({
               const previousChild = primaryChildLayouts[index - 1];
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
-              const branchColumnPaddingTop = 40;
+              const branchColumnPaddingTop = isResponseBranch ? 56 : 40;
               const branchLabelMarginBottom = 16;
-              const branchStemHeight = branchLabel ? 66 : 40;
+              const branchStemTop = 8;
+              const branchStemHeight = branchLabel ? 66 : Math.max(branchColumnPaddingTop - branchStemTop, 0);
 
               return (
                 <div
@@ -592,9 +594,9 @@ function NodeCard({
                     data-testid={`primary-branch-stem-${node.id}-${childNode.id}`}
                     className="pointer-events-none absolute w-px"
                     style={{
-                      top: '8px',
+                      top: `${branchStemTop}px`,
                       left: `${childCenter - childLeft}px`,
-                      height: `${Math.max(branchStemHeight - 8, 0)}px`,
+                      height: `${branchStemHeight}px`,
                       transform: 'translateX(-0.5px)',
                       backgroundColor: CONNECTOR_COLOR,
                     }}

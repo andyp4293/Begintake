@@ -165,13 +165,16 @@ describe('FlowEditorPage', () => {
     render(<FlowEditorPage />);
 
     const line = await screen.findByTestId('primary-branch-line-question-node');
+    const yesColumn = await screen.findByTestId('primary-branch-column-question-node-response-yes');
     const responseTitle = await screen.findByTestId('response-node-title-response-yes');
     const yesStem = await screen.findByTestId('primary-branch-stem-question-node-response-yes');
     const whatStem = await screen.findByTestId('primary-branch-stem-question-node-response-what');
 
     expect((line as HTMLElement).className).toContain('top-8');
+    expect((yesColumn as HTMLElement).style.paddingTop).toBe('56px');
     expect(screen.queryByTestId('primary-branch-label-question-node-response-yes')).not.toBeInTheDocument();
     expect(responseTitle.textContent).toBe("Yes, let's begin");
+    expect((responseTitle as HTMLElement).className).toContain('text-xs');
     expect((yesStem as HTMLElement).style.top).toBe('8px');
     expect((whatStem as HTMLElement).style.top).toBe('8px');
   });
