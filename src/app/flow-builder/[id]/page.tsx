@@ -559,7 +559,6 @@ function NodeCard({
             ref={branchRowRef}
             data-testid={`primary-branch-row-${node.id}`}
             className="relative flex items-start"
-            style={{ paddingTop: '8px' }}
           >
             {primaryChildLayouts.map(({ edge, childNode, childLayout, childCenter, childLeft }, index) => {
               const branchLabel = edge.label
@@ -581,9 +580,9 @@ function NodeCard({
                     data-testid={`primary-branch-stem-${node.id}-${childNode.id}`}
                     className="pointer-events-none absolute w-px"
                     style={{
-                      top: '0px',
+                      top: '8px',
                       left: `${childCenter - childLeft}px`,
-                      height: `${branchStemHeight}px`,
+                      height: `${Math.max(branchStemHeight - 8, 0)}px`,
                       transform: 'translateX(-0.5px)',
                       backgroundColor: CONNECTOR_COLOR,
                     }}

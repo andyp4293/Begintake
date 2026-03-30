@@ -164,11 +164,13 @@ describe('FlowEditorPage', () => {
 
     render(<FlowEditorPage />);
 
+    const line = await screen.findByTestId('primary-branch-line-question-node');
     const yesStem = await screen.findByTestId('primary-branch-stem-question-node-response-yes');
     const whatStem = await screen.findByTestId('primary-branch-stem-question-node-response-what');
 
-    expect((yesStem as HTMLElement).style.top).toBe('0px');
-    expect((whatStem as HTMLElement).style.top).toBe('0px');
+    expect((line as HTMLElement).className).toContain('top-8');
+    expect((yesStem as HTMLElement).style.top).toBe('8px');
+    expect((whatStem as HTMLElement).style.top).toBe('8px');
   });
 
   it('extends the shared horizontal branch line across the rendered child cards', async () => {
