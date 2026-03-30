@@ -142,3 +142,11 @@ export function getCameraForZoom({
     boardHeight * nextZoom,
   );
 }
+
+export function registerNonPassiveWheelListener(
+  target: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>,
+  listener: (event: WheelEvent) => void,
+) {
+  target.addEventListener('wheel', listener as EventListener, { passive: false });
+  return () => target.removeEventListener('wheel', listener as EventListener);
+}

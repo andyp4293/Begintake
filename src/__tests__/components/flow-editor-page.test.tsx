@@ -226,4 +226,5 @@ describe('FlowEditorPage', () => {
       clientHeightSpy.mockRestore();
     }
   });
+
 });

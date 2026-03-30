@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   clampZoom,
   clampCameraToBoard,
   getCameraForZoom,
   getCameraForNodeFocus,
   getCanvasMetrics,
+  registerNonPassiveWheelListener,
 } from '@/lib/flow-tree-canvas';
 
 describe('flow tree canvas', () => {
@@ -98,5 +99,20 @@ describe('flow tree canvas', () => {
 
     expect(clamped.x).toBe(350);
     expect(clamped.y).toBe(150);
+  });
+
+  it('registers the wheel listener as non-passive and returns a cleanup function', () => {
+    const addEventListener = vi.fn();
+    const removeEventListener = vi.fn();
+    const target = { addEventListener, removeEventListener };
+    const listener = vi.fn();
+
+    const cleanup = registerNonPassiveWheelListener(target, listener);
+
+    expect(addEventListener).toHaveBeenCalledWith('wheel', listener, { passive: false });
+
+    cleanup();
+
+    expect(removeEventListener).toHaveBeenCalledWith('wheel', listener);
   });
 });

@@ -30,6 +30,7 @@ import {
   getCameraForZoom,
   getCameraForNodeFocus,
   getCanvasMetrics,
+  registerNonPassiveWheelListener,
 } from '@/lib/flow-tree-canvas';
 
 const NODE_COLORS: Record<string, string> = {
@@ -956,7 +957,7 @@ export default function FlowEditorPage() {
     });
   }, [boardHeight, boardWidth, viewportSize.height, viewportSize.width]);
 
-  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+  const handleCanvasWheel = useCallback((e: WheelEvent) => {
     if (!viewportSize.width || !viewportSize.height) return;
     e.preventDefault();
 
@@ -972,6 +973,13 @@ export default function FlowEditorPage() {
 
     setCamera((prev) => clampCamera(prev.x - e.deltaX, prev.y - e.deltaY));
   }, [clampCamera, setZoomLevel, viewportSize.height, viewportSize.width, zoom]);
+
+  useEffect(() => {
+    const viewportEl = canvasRef.current;
+    if (!viewportEl) return;
+
+    return registerNonPassiveWheelListener(viewportEl, handleCanvasWheel);
+  }, [handleCanvasWheel]);
 
   const zoomIn = useCallback(() => {
     setZoomLevel(zoom + ZOOM_STEP);
@@ -1134,7 +1142,6 @@ export default function FlowEditorPage() {
           onPointerMove={handleCanvasPointerMove}
           onPointerUp={handleCanvasPointerUp}
           onPointerCancel={handleCanvasPointerUp}
-          onWheel={handleCanvasWheel}
         >
           <div
             className="absolute left-0 top-0"
