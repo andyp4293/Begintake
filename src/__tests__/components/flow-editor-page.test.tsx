@@ -165,10 +165,12 @@ describe('FlowEditorPage', () => {
     render(<FlowEditorPage />);
 
     const line = await screen.findByTestId('primary-branch-line-question-node');
+    const yesLabel = await screen.findByTestId('primary-branch-label-question-node-response-yes');
     const yesStem = await screen.findByTestId('primary-branch-stem-question-node-response-yes');
     const whatStem = await screen.findByTestId('primary-branch-stem-question-node-response-what');
 
     expect((line as HTMLElement).className).toContain('top-8');
+    expect((yesLabel as HTMLElement).style.marginBottom).toBe('28px');
     expect((yesStem as HTMLElement).style.top).toBe('8px');
     expect((whatStem as HTMLElement).style.top).toBe('8px');
   });

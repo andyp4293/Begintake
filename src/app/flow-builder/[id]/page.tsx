@@ -564,11 +564,14 @@ function NodeCard({
               const branchLabel = edge.label
                 || edge.condition
                 || (node.type === 'question' ? childNode.config?.response : null);
+              const isResponseBranch = Boolean(branchLabel) && childNode.type === 'response';
               const branchOffset = Math.max(childLayout.center - (CARD_WIDTH_PX / 2), 0);
               const previousChild = primaryChildLayouts[index - 1];
               const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
               const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
-              const branchStemHeight = branchLabel ? 66 : 40;
+              const responseBranchGap = isResponseBranch ? 12 : 0;
+              const branchStemHeight = branchLabel ? 66 + responseBranchGap : 40;
+              const branchLabelMarginBottom = isResponseBranch ? 28 : 16;
 
               return (
                 <div
@@ -588,7 +591,11 @@ function NodeCard({
                     }}
                   />
                   {branchLabel && (
-                    <div className="mb-4 flex items-center justify-center" style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px` }}>
+                    <div
+                      data-testid={`primary-branch-label-${node.id}-${childNode.id}`}
+                      className="flex items-center justify-center"
+                      style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px`, marginBottom: `${branchLabelMarginBottom}px` }}
+                    >
                       <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-200" />
                         <span className="truncate">{branchLabel}</span>
