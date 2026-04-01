@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultIntakeTemplate } from './default-intake';
-import { extractToolsFromFlow } from '@/lib/flow-compiler';
+import { compileFlowToPrompt, extractToolsFromFlow } from '@/lib/flow-compiler';
 
 describe('default intake template', () => {
   it('creates a valid visual template with one start node and all 13 practice areas', () => {
@@ -46,5 +46,22 @@ describe('default intake template', () => {
     expect(tools.has('scheduleConsultation')).toBe(true);
     expect(tools.has('generateTransferSummary')).toBe(true);
     expect(tools.has('endCall')).toBe(true);
+  });
+
+  it('uses a live paralegal handoff node for client-routing flows', () => {
+    const template = createDefaultIntakeTemplate();
+    const paralegalTransfer = template.nodes.find((node: any) => node.type === 'transfer' && node.config?.transferTarget === 'paralegal');
+
+    expect(paralegalTransfer).toBeDefined();
+    expect(paralegalTransfer.config?.handoffMode).toBe('live_transfer');
+  });
+
+  it('compiled prompt keeps new prospective callers in the intake flow', () => {
+    const template = createDefaultIntakeTemplate();
+    const prompt = compileFlowToPrompt({ id: 'default-intake', ...template });
+
+    expect(prompt).toContain('New or prospective client');
+    expect(prompt).not.toContain('Do not continue with the rest of intake first.');
+    expect(prompt).toContain('Then proceed to SECTION');
   });
 });

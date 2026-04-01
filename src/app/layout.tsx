@@ -10,8 +10,8 @@ import { ConfirmProvider } from '@/components/ui/ConfirmDialog';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'AI Paralegal',
-  description: 'AI-powered legal intake and call management',
+  title: 'Begintake',
+  description: 'AI-powered intake, routing, and follow-up orchestration',
 };
 
 export default function RootLayout({

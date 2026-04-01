@@ -81,6 +81,39 @@ export interface FocusNodeCameraInput {
   boardHeight: number;
 }
 
+export interface FocusPointCameraInput {
+  viewportWidth: number;
+  viewportHeight: number;
+  pointX: number;
+  pointY: number;
+  boardWidth: number;
+  boardHeight: number;
+  anchorX?: number;
+  anchorY?: number;
+}
+
+export function getCameraForPointFocus({
+  viewportWidth,
+  viewportHeight,
+  pointX,
+  pointY,
+  boardWidth,
+  boardHeight,
+  anchorX = viewportWidth / 2,
+  anchorY = viewportHeight / 2,
+}: FocusPointCameraInput): Camera {
+  return clampCameraToBoard(
+    {
+      x: anchorX - pointX,
+      y: anchorY - pointY,
+    },
+    viewportWidth,
+    viewportHeight,
+    boardWidth,
+    boardHeight,
+  );
+}
+
 export function getCameraForNodeFocus({
   viewportWidth,
   viewportHeight,
@@ -89,16 +122,14 @@ export function getCameraForNodeFocus({
   boardWidth,
   boardHeight,
 }: FocusNodeCameraInput): Camera {
-  return clampCameraToBoard(
-    {
-      x: (viewportWidth / 2) - nodeCenterX,
-      y: (viewportHeight / 2) - nodeCenterY,
-    },
+  return getCameraForPointFocus({
     viewportWidth,
     viewportHeight,
+    pointX: nodeCenterX,
+    pointY: nodeCenterY,
     boardWidth,
     boardHeight,
-  );
+  });
 }
 
 export interface ZoomCameraInput {

@@ -16,12 +16,12 @@ function renderWithProviders(component: React.ReactElement) {
 describe('LawyerList', () => {
   it('renders heading', () => {
     renderWithProviders(<LawyerList />);
-    expect(screen.getByText('Attorneys')).toBeInTheDocument();
+    expect(screen.getByText('Routing Team')).toBeInTheDocument();
   });
 
   it('shows loading state initially', () => {
     renderWithProviders(<LawyerList />);
-    const container = screen.getByText('Attorneys').closest('div');
+    const container = screen.getByText('Routing Team').closest('div');
     expect(container).toBeInTheDocument();
   });
 });

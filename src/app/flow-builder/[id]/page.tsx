@@ -2,10 +2,10 @@
 
 import { useSession } from 'next-auth/react';
 import { redirect, useParams } from 'next/navigation';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale, Save, Zap, ArrowLeft, Plus, Minus, Trash2, ChevronDown, ChevronRight, Link2,
+  Workflow, Save, Zap, ArrowLeft, Plus, Minus, Trash2, ChevronDown, ChevronRight, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -16,17 +16,17 @@ import {
   FALLBACK_LAYOUT,
   computePathToNode,
   computePrimaryParents,
+  computeVisibleTreeMap,
   computeVisibleTreeLayouts,
-  getConnectorSpan,
-  getConnectorSpanFromBounds,
-  getPrimaryChildPlacements,
   type FlowLayoutEdge as FEdge,
   type FlowLayoutNode as FNode,
   type TreeLayout,
+  type VisibleTreeNodePlacement,
 } from '@/lib/flow-tree-layout';
 import {
   clampZoom,
   clampCameraToBoard,
+  getCameraForPointFocus,
   getCameraForZoom,
   getCameraForNodeFocus,
   getCanvasMetrics,
@@ -50,32 +50,99 @@ const NODE_LABELS: Record<string, string> = {
 function generateId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
 const CONNECTOR_COLOR = 'rgba(255, 255, 255, 0.88)';
+const MERGE_CONNECTOR_COLOR = 'rgba(96, 165, 250, 0.96)';
+const MERGE_CONNECTOR_GLOW = 'rgba(59, 130, 246, 0.28)';
 const BOARD_PADDING_X_PX = 240;
 const BOARD_PADDING_TOP_PX = 112;
 const BOARD_PADDING_BOTTOM_PX = 180;
 const ROOT_HEADER_HEIGHT_PX = 92;
+const TREE_ROW_HEIGHT_PX = 360;
+const TREE_FOOTER_HEIGHT_PX = 72;
+const TREE_PARENT_BRIDGE_PX = 88;
+const TREE_CONNECTOR_LINE_Y_PX = 20;
+const TREE_CONNECTOR_ENDPOINT_TRIM_PX = 1;
+const TREE_NODE_TOP_PX = 24;
+const TREE_NODE_TOP_WITH_LABEL_PX = 72;
+const TREE_BRANCH_LABEL_TOP_PX = 28;
+const TREE_CHILD_STEM_HEIGHT_PX = 28;
+const TREE_MERGE_RAIL_CLEARANCE_PX = 18;
+const TREE_MERGE_RAIL_OFFSET_PX = 28;
 const DEFAULT_ZOOM = 1;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 1.5;
 const ZOOM_STEP = 0.1;
+const EXPANDED_SUBTREE_VIEWPORT_PADDING_PX = 96;
+const EXPANDED_SUBTREE_NODE_ANCHOR_X_RATIO = 0.32;
+const EXPANDED_SUBTREE_NODE_ANCHOR_Y_RATIO = 0.24;
+const GENERAL_INTAKE_FLOW_NAMES = new Set([
+  'General Legal Intake',
+  'General Legal Intake - All Practice Areas',
+]);
+const GENERAL_INTAKE_SIGNATURE_LABELS = [
+  'Family Law - Matter Triage',
+  'IP - Matter Type',
+  'Environmental - Matter Type',
+];
+const GENERAL_INTAKE_ALWAYS_EXPANDED_QUESTION_LABELS = new Set([
+  'Q1. Shall we get started?',
+  'Q1b. New or Existing Client?',
+  'Q2. Caller Name',
+  'Q3. Best Phone Number',
+  'Q4. Self or On Behalf Of',
+  "Q5. Tell Me What's Going On",
+]);
+
+function isGeneralIntakeFlow(flowName: string | undefined, flowNodes: FNode[]) {
+  if (flowName && GENERAL_INTAKE_FLOW_NAMES.has(flowName)) return true;
+  const nodeLabels = new Set(flowNodes.map((node) => node.label));
+  return GENERAL_INTAKE_SIGNATURE_LABELS.every((label) => nodeLabels.has(label));
+}
+
+function applyGeneralIntakeCollapsedDefaults(flowName: string | undefined, flowNodes: FNode[]) {
+  if (!isGeneralIntakeFlow(flowName, flowNodes)) return flowNodes;
+
+  return flowNodes.map((node) => {
+    if (node.type !== 'question') return node;
+    if (GENERAL_INTAKE_ALWAYS_EXPANDED_QUESTION_LABELS.has(node.label)) return node;
+
+    return {
+      ...node,
+      config: {
+        ...node.config,
+        defaultCollapsed: node.config?.defaultCollapsed ?? true,
+      },
+    };
+  });
+}
+
+function getTreeRowTop(depth: number) {
+  return ROOT_HEADER_HEIGHT_PX + (depth * TREE_ROW_HEIGHT_PX);
+}
+
+function getNodeStackTop(branchLabel: string | null) {
+  return branchLabel ? TREE_NODE_TOP_WITH_LABEL_PX : TREE_NODE_TOP_PX;
+}
 
 // ─── Node card component ──────────────────────────────────────────────────
 
 function NodeCard({
-  node, edges, allNodes, depth, parentId, primaryParents, confirm,
-  expandedNodeIds, expandedOverrides, treeLayouts, canvasZoom, onToggleExpanded, onExpandPath, onFocusNode,
+  node, edges, allNodes, branchLabel, primaryParents, confirm,
+  mergedLinkedTargetIds,
+  expandedNodeIds, expandedOverrides, showIncomingStem, showOutgoingStem, onToggleExpanded, onExpandPath, onFocusNode, onRevealExpandedNode,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
-  node: FNode; edges: FEdge[]; allNodes: FNode[]; depth: number;
-  parentId: string | null; primaryParents: Map<string, string>;
+  node: FNode; edges: FEdge[]; allNodes: FNode[];
+  branchLabel: string | null; primaryParents: Map<string, string>;
   confirm: (opts: { title?: string; message: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
+  mergedLinkedTargetIds?: Set<string>;
   expandedNodeIds: Set<string>;
   expandedOverrides: Set<string>;
-  treeLayouts: Map<string, TreeLayout>;
-  canvasZoom: number;
+  showIncomingStem: boolean;
+  showOutgoingStem: boolean;
   onToggleExpanded: (nodeId: string) => void;
   onExpandPath: (targetId: string) => void;
   onFocusNode: (targetId: string, behavior?: ScrollBehavior) => void;
+  onRevealExpandedNode: (targetId: string) => void;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string) => void;
@@ -85,9 +152,7 @@ function NodeCard({
   const [editing, setEditing] = useState(false);
   const [contentExpanded, setContentExpanded] = useState(false);
   const [isClamped, setIsClamped] = useState(false);
-  const [measuredConnectorSpan, setMeasuredConnectorSpan] = useState<{ start: number; end: number; width: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const branchRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = contentRef.current;
@@ -107,73 +172,102 @@ function NodeCard({
     return childNode ? [{ edge, childNode }] : [];
   });
   const primaryChildItems = childItems.filter(({ childNode }) => primaryParents.get(childNode.id) === node.id);
-  const linkedChildItems = childItems.filter(({ childNode }) => primaryParents.get(childNode.id) !== node.id);
-
-  const isRoot = parentId === null;
-  const isPrimary = isRoot || primaryParents.get(node.id) === parentId;
-
-  if (!isPrimary) return null;
+  const linkedChildItems = childItems.filter(({ childNode }) => (
+    primaryParents.get(childNode.id) !== node.id
+    && !mergedLinkedTargetIds?.has(childNode.id)
+  ));
 
   const displayExpanded = expandedOverrides.has(node.id) || expandedNodeIds.has(node.id);
-  const layout = treeLayouts.get(node.id) ?? FALLBACK_LAYOUT;
-  const cardOffset = Math.max(layout.center - (CARD_WIDTH_PX / 2), 0);
-  const childNodeById = new Map(childItems.map(({ childNode }) => [childNode.id, childNode]));
-  const primaryChildLayouts = getPrimaryChildPlacements(node.id, childEdges, primaryParents, treeLayouts)
-    .flatMap((placement) => {
-      const childNode = childNodeById.get(placement.childId);
-      return childNode ? [{ ...placement, childNode }] : [];
-    });
-  const estimatedConnectorSpan = getConnectorSpan(primaryChildLayouts, layout.center);
-  const connectorSpan = measuredConnectorSpan ?? estimatedConnectorSpan;
 
-  useEffect(() => {
-    if (!displayExpanded || primaryChildLayouts.length <= 1) {
-      setMeasuredConnectorSpan(null);
-      return;
-    }
+  const highlightNode = useCallback((targetId: string) => {
+    const el = document.getElementById(`flow-node-${targetId}`);
+    if (!el) return;
 
-    let frameId = 0;
-    frameId = requestAnimationFrame(() => {
-      const rowEl = branchRowRef.current;
-      if (!rowEl) {
-        setMeasuredConnectorSpan(null);
-        return;
-      }
-
-      const rowRect = rowEl.getBoundingClientRect();
-      const measuredBounds = primaryChildLayouts.flatMap(({ childNode }) => {
-        const cardEl = document.getElementById(`flow-node-${childNode.id}`);
-        if (!cardEl) return [];
-
-        const cardRect = cardEl.getBoundingClientRect();
-        return [{
-          left: (cardRect.left - rowRect.left) / canvasZoom,
-          right: (cardRect.right - rowRect.left) / canvasZoom,
-        }];
-      });
-
-      if (measuredBounds.length !== primaryChildLayouts.length) {
-        setMeasuredConnectorSpan(null);
-        return;
-      }
-
-      setMeasuredConnectorSpan(getConnectorSpanFromBounds(measuredBounds, layout.center));
+    document.querySelectorAll('[data-highlighted]').forEach((nodeEl) => {
+      (nodeEl as HTMLElement).style.outline = '';
+      (nodeEl as HTMLElement).style.borderRadius = '';
+      (nodeEl as HTMLElement).style.boxShadow = '';
+      (nodeEl as HTMLElement).removeAttribute('data-highlighted');
     });
 
-    return () => cancelAnimationFrame(frameId);
-  }, [canvasZoom, displayExpanded, layout.center, primaryChildLayouts]);
+    el.style.outline = '2px solid #22c55e';
+    el.style.borderRadius = '16px';
+    el.style.boxShadow = '0 0 0 4px rgba(34,197,94,0.2), 0 0 16px 4px rgba(34,197,94,0.25)';
+    el.setAttribute('data-highlighted', 'true');
+
+    setTimeout(() => {
+      document.addEventListener('click', function dismiss() {
+        el.style.outline = '';
+        el.style.borderRadius = '';
+        el.style.boxShadow = '';
+        el.removeAttribute('data-highlighted');
+        document.removeEventListener('click', dismiss);
+      }, { once: true });
+    }, 50);
+  }, []);
+
+  const focusAndHighlightNode = useCallback((targetId: string) => {
+    onFocusNode(targetId, 'smooth');
+    highlightNode(targetId);
+  }, [highlightNode, onFocusNode]);
 
   return (
-    <div className="flex shrink-0 flex-col" style={{ width: `${layout.width}px` }}>
-      <div className="flex flex-col items-start" style={{ marginLeft: `${cardOffset}px`, width: `${CARD_WIDTH_PX}px` }}>
+    <div
+      id={`flow-subtree-${node.id}`}
+      className="relative flex flex-col items-start"
+      style={{
+        width: `${CARD_WIDTH_PX}px`,
+        paddingTop: `${branchLabel ? TREE_NODE_TOP_WITH_LABEL_PX : TREE_NODE_TOP_PX}px`,
+      }}
+    >
+      {showIncomingStem && (
+        <div
+          className="pointer-events-none absolute w-px"
+          style={{
+            top: 0,
+            left: '50%',
+            height: `${branchLabel ? TREE_BRANCH_LABEL_TOP_PX : TREE_NODE_TOP_PX}px`,
+            transform: 'translateX(-0.5px)',
+            backgroundColor: CONNECTOR_COLOR,
+          }}
+        />
+      )}
+      {branchLabel && (
+        <div
+          data-testid={`primary-branch-label-${node.id}`}
+          className="absolute left-0 flex w-full items-center justify-center"
+          style={{ top: `${TREE_BRANCH_LABEL_TOP_PX}px` }}
+        >
+          <div
+            data-overlap-audit="true"
+            data-overlap-kind="branch-label"
+            data-overlap-label={`Branch label: ${branchLabel}`}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100"
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-200" />
+            <span className="truncate">{branchLabel}</span>
+          </div>
+        </div>
+      )}
+      <div className="flex w-full flex-col items-start">
         {/* Node card */}
         <div
           id={`flow-node-${node.id}`}
+          data-overlap-audit="true"
+          data-overlap-kind="node"
+          data-overlap-label={node.label}
           className="rounded-2xl border border-zinc-800/90 bg-zinc-900/95 shadow-[0_20px_45px_-30px_rgba(0,0,0,0.9)]"
           style={{ width: `${CARD_WIDTH_PX}px`, maxWidth: `${CARD_WIDTH_PX}px`, borderLeftColor: color, borderLeftWidth: 3 }}
         >
           <div className="flex items-center gap-2 px-3 py-2">
-            <button onClick={() => onToggleExpanded(node.id)} className="text-zinc-500 hover:text-white flex-shrink-0">
+            <button onClick={() => {
+              const shouldRevealExpandedNode = childEdges.length > 0 && !displayExpanded;
+              onToggleExpanded(node.id);
+              if (shouldRevealExpandedNode) {
+                highlightNode(node.id);
+                onRevealExpandedNode(node.id);
+              }
+            }} className="text-zinc-500 hover:text-white flex-shrink-0">
               {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
             </button>
             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0" style={{ color, backgroundColor: `${color}15` }}>
@@ -215,8 +309,8 @@ function NodeCard({
           ) : !editing && (
             <div className="px-3 pb-2 space-y-1 overflow-hidden text-xs">
               <div ref={contentRef} className={contentExpanded ? '' : 'line-clamp-2'}>
-                {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.message) && (
-                  <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.message}</p>
+                {(node.type === 'start' || node.type === 'transfer') && (node.config?.greeting || node.config?.callbackMessage || node.config?.message) && (
+                  <p className="text-[11px] text-zinc-300 italic leading-relaxed">{node.config?.greeting || node.config?.callbackMessage || node.config?.message}</p>
                 )}
                 {node.type === 'question' && (
                   <>
@@ -289,22 +383,46 @@ function NodeCard({
                     <CustomSelect
                       value={node.config?.transferTarget || 'attorney'}
                       options={[
-                        { value: 'attorney', label: 'Attorney (AI selects best match)' },
-                        { value: 'paralegal', label: 'Paralegal / Reception (firm number)' },
+                        { value: 'attorney', label: 'Best matched specialist' },
+                        { value: 'paralegal', label: 'Front desk / operations line' },
                       ]}
                       onChange={(v) => onUpdateNode(node.id, { config: { ...node.config, transferTarget: v } })}
                     />
                   </div>
                 )}
+                {node.type === 'transfer' && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-zinc-400 mb-1">Handoff mode</label>
+                    <CustomSelect
+                      value={node.config?.handoffMode || 'summary_only'}
+                      options={[
+                        { value: 'summary_only', label: 'Summary only (team follows up later)' },
+                        { value: 'live_transfer', label: 'Live transfer (future option)' },
+                      ]}
+                      onChange={(v) => onUpdateNode(node.id, { config: { ...node.config, handoffMode: v } })}
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-[10px] font-medium text-zinc-400 mb-1">
-                    {node.type === 'start' ? 'Opening greeting' : 'Handoff message'}
+                    {node.type === 'start'
+                      ? 'Opening greeting'
+                      : node.config?.handoffMode === 'live_transfer'
+                        ? 'Live handoff message'
+                        : 'Callback message'}
                   </label>
-                  <textarea value={node.config?.greeting || node.config?.message || ''}
-                    onChange={(e) => { const key = node.type === 'start' ? 'greeting' : 'message'; onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } }); }}
+                  <textarea value={node.config?.greeting || node.config?.callbackMessage || node.config?.message || ''}
+                    onChange={(e) => {
+                      const key = node.type === 'start'
+                        ? 'greeting'
+                        : node.config?.handoffMode === 'live_transfer'
+                          ? 'message'
+                          : 'callbackMessage';
+                      onUpdateNode(node.id, { config: { ...node.config, [key]: e.target.value } });
+                    }}
                     rows={3}
                     className="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs text-white focus:outline-none resize-none" />
-                  <p className="text-[9px] text-zinc-500 mt-1">Use <span className="font-mono text-zinc-400">{'{name}'}</span> for assistant name and <span className="font-mono text-zinc-400">{'{firm}'}</span> for firm name.</p>
+                  <p className="text-[9px] text-zinc-500 mt-1">Use <span className="font-mono text-zinc-400">{'{name}'}</span> for assistant name and <span className="font-mono text-zinc-400">{'{firm}'}</span> for your organization name.</p>
                 </div>
               </>
             )}
@@ -412,7 +530,7 @@ function NodeCard({
                   <p className="text-[10px] text-zinc-400">Calls the bookAppointment tool with collected caller data and confirms the date/time.</p>
                 )}
                 {node.config?.actionType === 'send_email' && (
-                  <p className="text-[10px] text-zinc-400">Sends an email summary to the matched attorney.</p>
+                  <p className="text-[10px] text-zinc-400">Sends an email summary to the matched owner or specialist.</p>
                 )}
                 <div>
                   <label className="block text-[10px] font-medium text-zinc-400 mb-1">Internal note <span className="text-zinc-600 font-normal">(optional, not seen by AI)</span></label>
@@ -485,7 +603,13 @@ function NodeCard({
             <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Linked Steps</span>
             <div className="flex w-full flex-col items-stretch gap-2">
               {linkedChildItems.map(({ edge, childNode }) => (
-                <div key={`${edge.sourceNodeId}-${edge.targetNodeId}`} className="group/jump flex w-full items-center gap-2 rounded-2xl border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-2">
+                <div
+                  key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
+                  data-overlap-audit="true"
+                  data-overlap-kind="linked-step"
+                  data-overlap-label={`Linked step: ${childNode.label}`}
+                  className="group/jump flex w-full items-center gap-2 rounded-2xl border border-dashed border-zinc-700/80 bg-zinc-900/70 px-3 py-2"
+                >
                   <Link2 className="w-3 h-3 text-zinc-600 shrink-0" />
                   <span className="text-[10px] text-zinc-300 shrink-0">Continues to:</span>
                   <button
@@ -493,31 +617,7 @@ function NodeCard({
                       // Expand all nodes on the path so the target is visible, then scroll
                       onExpandPath(childNode.id);
                       setTimeout(() => {
-                        const el = document.getElementById(`flow-node-${childNode.id}`);
-                        if (!el) return;
-                        onFocusNode(childNode.id, 'smooth');
-                        // Clear any existing highlight
-                        document.querySelectorAll('[data-highlighted]').forEach((n) => {
-                          (n as HTMLElement).style.outline = '';
-                          (n as HTMLElement).style.borderRadius = '';
-                          (n as HTMLElement).style.boxShadow = '';
-                          (n as HTMLElement).removeAttribute('data-highlighted');
-                        });
-                        // Apply persistent green highlight with glow
-                        el.style.outline = '2px solid #22c55e';
-                        el.style.borderRadius = '16px';
-                        el.style.boxShadow = '0 0 0 4px rgba(34,197,94,0.2), 0 0 16px 4px rgba(34,197,94,0.25)';
-                        el.setAttribute('data-highlighted', 'true');
-                        // Dismiss on next click anywhere
-                        setTimeout(() => {
-                          document.addEventListener('click', function dismiss() {
-                            el.style.outline = '';
-                            el.style.borderRadius = '';
-                            el.style.boxShadow = '';
-                            el.removeAttribute('data-highlighted');
-                            document.removeEventListener('click', dismiss);
-                          }, { once: true });
-                        }, 50);
+                        focusAndHighlightNode(childNode.id);
                       }, 150);
                     }}
                     className="min-w-0 truncate text-left text-[10px] font-medium text-blue-400 underline-offset-2 transition-colors hover:text-blue-300 hover:underline"
@@ -549,84 +649,12 @@ function NodeCard({
             <div className="flex-1 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
           </div>
         )}
-      </div>
-
-      {/* Primary children */}
-      {displayExpanded && primaryChildItems.length > 0 && (
-        <div className="mt-12 relative" style={{ width: `${layout.width}px` }}>
-          <div className="pointer-events-none absolute top-0 h-8 w-px" style={{ left: `${layout.center}px`, transform: 'translateX(-0.5px)', backgroundColor: CONNECTOR_COLOR }} />
-          {primaryChildItems.length > 1 && (
-            <div
-              data-testid={`primary-branch-line-${node.id}`}
-              className="pointer-events-none absolute top-8 h-px"
-              style={{ left: `${connectorSpan.start}px`, width: `${connectorSpan.width}px`, backgroundColor: CONNECTOR_COLOR }}
-            />
-          )}
-          <div
-            ref={branchRowRef}
-            data-testid={`primary-branch-row-${node.id}`}
-            className="relative flex items-start"
-          >
-            {primaryChildLayouts.map(({ edge, childNode, childLayout, childCenter, childLeft }, index) => {
-              const isResponseBranch = childNode.type === 'response';
-              const branchLabel = isResponseBranch
-                ? null
-                : edge.label
-                  || edge.condition
-                  || (node.type === 'question' ? childNode.config?.response : null);
-              const branchOffset = Math.max(childLayout.center - (CARD_WIDTH_PX / 2), 0);
-              const previousChild = primaryChildLayouts[index - 1];
-              const previousRightEdge = previousChild ? previousChild.childLeft + previousChild.childLayout.width : 0;
-              const marginLeft = index === 0 ? childLeft : Math.max(childLeft - previousRightEdge, 0);
-              const branchColumnPaddingTop = isResponseBranch ? 56 : 40;
-              const branchLabelMarginBottom = 16;
-              const branchStemTop = 8;
-              const branchStemHeight = branchLabel ? 66 : Math.max(branchColumnPaddingTop - branchStemTop, 0);
-
-              return (
-                <div
-                  key={`${edge.sourceNodeId}-${edge.targetNodeId}`}
-                  data-testid={`primary-branch-column-${node.id}-${childNode.id}`}
-                  className="relative flex shrink-0 flex-none min-w-0 flex-col items-start"
-                  style={{ width: `${childLayout.width}px`, marginLeft: `${marginLeft}px`, paddingTop: `${branchColumnPaddingTop}px` }}
-                >
-                  <div
-                    data-testid={`primary-branch-stem-${node.id}-${childNode.id}`}
-                    className="pointer-events-none absolute w-px"
-                    style={{
-                      top: `${branchStemTop}px`,
-                      left: `${childCenter - childLeft}px`,
-                      height: `${branchStemHeight}px`,
-                      transform: 'translateX(-0.5px)',
-                      backgroundColor: CONNECTOR_COLOR,
-                    }}
-                  />
-                  {branchLabel && (
-                    <div
-                      data-testid={`primary-branch-label-${node.id}-${childNode.id}`}
-                      className="flex items-center justify-center"
-                      style={{ width: `${CARD_WIDTH_PX}px`, marginLeft: `${branchOffset}px`, marginBottom: `${branchLabelMarginBottom}px` }}
-                    >
-                      <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-medium text-zinc-100">
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-200" />
-                        <span className="truncate">{branchLabel}</span>
-                      </div>
-                    </div>
-                  )}
-                  <NodeCard
-                    node={childNode} edges={edges} allNodes={allNodes} depth={depth + 1}
-                    parentId={node.id} primaryParents={primaryParents} confirm={confirm}
-                    expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides} canvasZoom={canvasZoom}
-                    treeLayouts={treeLayouts} onToggleExpanded={onToggleExpanded} onExpandPath={onExpandPath} onFocusNode={onFocusNode}
-                    onUpdateNode={onUpdateNode} onDeleteNode={onDeleteNode}
-                    onAddChild={onAddChild} onLinkExisting={onLinkExisting} onDeleteEdge={onDeleteEdge}
-                  />
-                </div>
-              );
-            })}
+        {showOutgoingStem && (
+          <div className="pointer-events-none mt-6 flex w-full justify-center">
+            <div className="w-px" style={{ height: `${TREE_CHILD_STEM_HEIGHT_PX}px`, backgroundColor: CONNECTOR_COLOR }} />
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -659,8 +687,12 @@ function AddNodeMenu({ parentId, parentLabel, parentType, allNodes, currentNodeI
   return (
     <div className="relative block w-full">
       <button onClick={() => { setOpen(!open); setShowLinkPicker(false); setLinkSearch(''); }}
-        className="flex w-full items-center justify-center gap-1 px-2 py-1 text-center text-[10px] text-zinc-400 transition-colors hover:text-white">
-        <Plus className="w-3 h-3 shrink-0" /> <span className="truncate">Add step under <span className="text-zinc-300 ml-0.5">{shortParent}</span></span>
+        data-overlap-audit="true"
+        data-overlap-kind="add-step"
+        data-overlap-label={`Add step under ${parentLabel}`}
+        className="flex w-full items-center gap-1 overflow-hidden px-2 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:text-white">
+        <Plus className="w-3 h-3 shrink-0" />
+        <span className="block min-w-0 truncate">Add step under <span className="text-zinc-300 ml-0.5">{shortParent}</span></span>
       </button>
       {open && (
         <div className="absolute left-1/2 z-10 mt-1 w-56 -translate-x-1/2 rounded-lg border border-zinc-700 bg-zinc-900 p-2 shadow-xl">
@@ -733,6 +765,16 @@ export default function FlowEditorPage() {
   const boardContentRef = useRef<HTMLDivElement>(null);
   const hasCenteredInitialViewRef = useRef(false);
   const panStateRef = useRef<{ pointerId: number; startX: number; startY: number; startCameraX: number; startCameraY: number } | null>(null);
+  const canvasGeometryRef = useRef({
+    viewportWidth: 0,
+    viewportHeight: 0,
+    contentOffsetX: 0,
+    contentOffsetY: 0,
+    scaledBoardWidth: 0,
+    scaledBoardHeight: 0,
+    zoom: DEFAULT_ZOOM,
+  });
+  const latestRevealRequestRef = useRef(0);
   const [flowName, setFlowName] = useState('');
   const [nodes, setNodes] = useState<FNode[]>([]);
   const [edges, setEdges] = useState<FEdge[]>([]);
@@ -743,6 +785,9 @@ export default function FlowEditorPage() {
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
+  const [connectorStartYByNodeId, setConnectorStartYByNodeId] = useState<Map<string, number>>(new Map());
+  const [subtreeBottomYByNodeId, setSubtreeBottomYByNodeId] = useState<Map<string, number>>(new Map());
+  const [nodeFrameByNodeId, setNodeFrameByNodeId] = useState<Map<string, { left: number; right: number; top: number; bottom: number }>>(new Map());
 
   const { data: flow, isLoading } = useQuery({
     queryKey: ['flow', flowId],
@@ -756,7 +801,10 @@ export default function FlowEditorPage() {
 
   useEffect(() => {
     if (flow) {
-      const nextNodes = flow.nodes.map((n: any) => ({ id: n.id, type: n.type, label: n.label, config: n.config || {}, sortOrder: n.sortOrder }));
+      const nextNodes = applyGeneralIntakeCollapsedDefaults(
+        flow.name,
+        flow.nodes.map((n: any) => ({ id: n.id, type: n.type, label: n.label, config: n.config || {}, sortOrder: n.sortOrder })),
+      );
       setFlowName(flow.name);
       setNodes(nextNodes);
       setEdges(flow.edges.map((e: any) => ({ sourceNodeId: e.sourceNodeId, targetNodeId: e.targetNodeId, label: e.label, condition: e.condition, sortOrder: e.sortOrder })));
@@ -766,6 +814,7 @@ export default function FlowEditorPage() {
 
   const incomingIds = new Set(edges.map((e) => e.targetNodeId));
   const rootNode = nodes.find((n) => !incomingIds.has(n.id)) || nodes[0];
+  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
 
   const primaryParents = useMemo(() => {
     if (!rootNode) return new Map<string, string>();
@@ -796,17 +845,120 @@ export default function FlowEditorPage() {
     return computeVisibleTreeLayouts(rootNode.id, edges, primaryParents, expandedNodeIds, expandedOverrides);
   }, [rootNode?.id, edges, primaryParents, expandedNodeIds, expandedOverrides]);
 
+  const visibleTree = useMemo(() => {
+    if (!rootNode) {
+      return {
+        nodes: [] as VisibleTreeNodePlacement[],
+        rows: new Map<number, VisibleTreeNodePlacement[]>(),
+        maxDepth: 0,
+      };
+    }
+
+    return computeVisibleTreeMap(rootNode.id, edges, primaryParents, treeLayouts, expandedNodeIds, expandedOverrides);
+  }, [rootNode?.id, edges, primaryParents, treeLayouts, expandedNodeIds, expandedOverrides]);
+
+  const visibleChildrenByParent = useMemo(() => {
+    const childrenByParent = new Map<string, VisibleTreeNodePlacement[]>();
+
+    for (const placement of visibleTree.nodes) {
+      if (!placement.parentId) continue;
+      if (!childrenByParent.has(placement.parentId)) childrenByParent.set(placement.parentId, []);
+      childrenByParent.get(placement.parentId)!.push(placement);
+    }
+
+    for (const [parentId, placements] of childrenByParent) {
+      childrenByParent.set(parentId, placements.sort(
+        (a, b) => a.centerX - b.centerX || a.nodeId.localeCompare(b.nodeId),
+      ));
+    }
+
+    return childrenByParent;
+  }, [visibleTree]);
+
+  const branchLabelByNodeId = useMemo(() => {
+    const labels = new Map<string, string | null>();
+
+    for (const placement of visibleTree.nodes) {
+      if (!placement.parentId || !placement.incomingEdge) {
+        labels.set(placement.nodeId, null);
+        continue;
+      }
+
+      const node = nodeById.get(placement.nodeId);
+      const parentNode = nodeById.get(placement.parentId);
+      const branchLabel = node?.type === 'response'
+        ? null
+        : placement.incomingEdge.label
+          || placement.incomingEdge.condition
+          || (parentNode?.type === 'question' ? node?.config?.response ?? null : null);
+
+      labels.set(placement.nodeId, branchLabel ?? null);
+    }
+
+    return labels;
+  }, [nodeById, visibleTree]);
+
+  const visiblePlacementByNodeId = useMemo(() => {
+    return new Map(visibleTree.nodes.map((placement) => [placement.nodeId, placement]));
+  }, [visibleTree]);
+
+  const visibleMergeGroups = useMemo(() => {
+    const groups = new Map<string, { targetPlacement: VisibleTreeNodePlacement; sourcePlacements: VisibleTreeNodePlacement[] }>();
+
+    for (const edge of [...edges].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      if (primaryParents.get(edge.targetNodeId) === edge.sourceNodeId) continue;
+      const sourcePlacement = visiblePlacementByNodeId.get(edge.sourceNodeId);
+      const targetPlacement = visiblePlacementByNodeId.get(edge.targetNodeId);
+      if (!sourcePlacement || !targetPlacement) continue;
+
+      if (!groups.has(edge.targetNodeId)) {
+        groups.set(edge.targetNodeId, {
+          targetPlacement,
+          sourcePlacements: [],
+        });
+      }
+
+      const group = groups.get(edge.targetNodeId)!;
+      if (!group.sourcePlacements.some((placement) => placement.nodeId === sourcePlacement.nodeId)) {
+        group.sourcePlacements.push(sourcePlacement);
+      }
+    }
+
+    return [...groups.values()].map((group) => ({
+      ...group,
+      sourcePlacements: [...group.sourcePlacements].sort(
+        (a, b) => a.centerX - b.centerX || a.nodeId.localeCompare(b.nodeId),
+      ),
+    }));
+  }, [edges, primaryParents, visiblePlacementByNodeId]);
+
+  const mergedLinkedTargetIdsBySource = useMemo(() => {
+    const targetsBySource = new Map<string, Set<string>>();
+
+    visibleMergeGroups.forEach((group) => {
+      group.sourcePlacements.forEach((placement) => {
+        if (!targetsBySource.has(placement.nodeId)) targetsBySource.set(placement.nodeId, new Set());
+        targetsBySource.get(placement.nodeId)!.add(group.targetPlacement.nodeId);
+      });
+    });
+
+    return targetsBySource;
+  }, [visibleMergeGroups]);
+
   const rootLayout = rootNode ? (treeLayouts.get(rootNode.id) ?? FALLBACK_LAYOUT) : FALLBACK_LAYOUT;
+  const boardContentHeight = rootNode
+    ? getTreeRowTop(visibleTree.maxDepth + 1) + TREE_FOOTER_HEIGHT_PX
+    : ROOT_HEADER_HEIGHT_PX + TREE_FOOTER_HEIGHT_PX;
   const boardContentWidth = Math.max(contentSize.width, rootLayout.width);
   const canvasMetrics = useMemo(() => getCanvasMetrics({
     viewportWidth: viewportSize.width,
     viewportHeight: viewportSize.height,
     contentWidth: boardContentWidth,
-    contentHeight: contentSize.height,
+    contentHeight: Math.max(contentSize.height, boardContentHeight),
     paddingX: BOARD_PADDING_X_PX,
     paddingTop: BOARD_PADDING_TOP_PX,
     paddingBottom: BOARD_PADDING_BOTTOM_PX,
-  }), [boardContentWidth, contentSize.height, viewportSize.height, viewportSize.width]);
+  }), [boardContentHeight, boardContentWidth, contentSize.height, viewportSize.height, viewportSize.width]);
   const {
     boardWidth,
     boardHeight,
@@ -815,6 +967,18 @@ export default function FlowEditorPage() {
   } = canvasMetrics;
   const scaledBoardWidth = boardWidth * zoom;
   const scaledBoardHeight = boardHeight * zoom;
+
+  useEffect(() => {
+    canvasGeometryRef.current = {
+      viewportWidth: viewportSize.width,
+      viewportHeight: viewportSize.height,
+      contentOffsetX,
+      contentOffsetY,
+      scaledBoardWidth,
+      scaledBoardHeight,
+      zoom,
+    };
+  }, [contentOffsetX, contentOffsetY, scaledBoardHeight, scaledBoardWidth, viewportSize.height, viewportSize.width, zoom]);
 
   const clampCamera = useCallback((x: number, y: number) => {
     return clampCameraToBoard(
@@ -854,6 +1018,51 @@ export default function FlowEditorPage() {
     return () => ro.disconnect();
   }, [nodes.length, treeLayouts]);
 
+  useLayoutEffect(() => {
+    const contentEl = boardContentRef.current;
+    if (!contentEl || !rootNode) return;
+
+    let cancelled = false;
+    const frameId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const contentRect = contentEl.getBoundingClientRect();
+      const next = new Map<string, number>();
+      const nextSubtreeBottoms = new Map<string, number>();
+      const nextNodeFrames = new Map<string, { left: number; right: number; top: number; bottom: number }>();
+
+      for (const placement of visibleTree.nodes) {
+        const childPlacements = visibleChildrenByParent.get(placement.nodeId) || [];
+        const nodeEl = document.getElementById(`flow-node-${placement.nodeId}`);
+        if (nodeEl) {
+          const nodeRect = nodeEl.getBoundingClientRect();
+          nextNodeFrames.set(placement.nodeId, {
+            left: (nodeRect.left - contentRect.left) / zoom,
+            right: (nodeRect.right - contentRect.left) / zoom,
+            top: (nodeRect.top - contentRect.top) / zoom,
+            bottom: (nodeRect.bottom - contentRect.top) / zoom,
+          });
+        }
+
+        const subtreeEl = document.getElementById(`flow-subtree-${placement.nodeId}`);
+        if (subtreeEl) {
+          const subtreeRect = subtreeEl.getBoundingClientRect();
+          const subtreeBottom = Math.max((subtreeRect.bottom - contentRect.top) / zoom, getTreeRowTop(placement.depth));
+          nextSubtreeBottoms.set(placement.nodeId, subtreeBottom);
+          if (childPlacements.length > 0) next.set(placement.nodeId, subtreeBottom);
+        }
+      }
+
+      setConnectorStartYByNodeId(next);
+      setSubtreeBottomYByNodeId(nextSubtreeBottoms);
+      setNodeFrameByNodeId(nextNodeFrames);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [rootNode, visibleTree, visibleChildrenByParent, zoom, expandedNodeIds, expandedOverrides, nodes, edges]);
+
   const focusNodeInCanvas = useCallback((targetId: string, _behavior: ScrollBehavior = 'smooth') => {
     const viewportEl = canvasRef.current;
     const contentEl = boardContentRef.current;
@@ -873,6 +1082,61 @@ export default function FlowEditorPage() {
       boardHeight: scaledBoardHeight,
     }));
   }, [contentOffsetX, contentOffsetY, scaledBoardHeight, scaledBoardWidth, viewportSize.height, viewportSize.width, zoom]);
+
+  const revealExpandedNodeAtCurrentMetrics = useCallback((targetId: string) => {
+    const contentEl = boardContentRef.current;
+    const nodeEl = document.getElementById(`flow-node-${targetId}`);
+    const subtreeEl = document.getElementById(`flow-subtree-${targetId}`) ?? nodeEl;
+    const {
+      viewportWidth,
+      viewportHeight,
+      contentOffsetX: latestContentOffsetX,
+      contentOffsetY: latestContentOffsetY,
+      scaledBoardWidth: latestScaledBoardWidth,
+      scaledBoardHeight: latestScaledBoardHeight,
+      zoom: latestZoom,
+    } = canvasGeometryRef.current;
+    if (!contentEl || !nodeEl || !subtreeEl || !viewportWidth || !viewportHeight) return;
+
+    const contentRect = contentEl.getBoundingClientRect();
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const subtreeRect = subtreeEl.getBoundingClientRect();
+    const subtreeFitsViewport = (
+      subtreeRect.width + EXPANDED_SUBTREE_VIEWPORT_PADDING_PX <= viewportWidth
+      && subtreeRect.height + EXPANDED_SUBTREE_VIEWPORT_PADDING_PX <= viewportHeight
+    );
+
+    const pointX = (latestContentOffsetX * latestZoom)
+      + (subtreeFitsViewport ? (subtreeRect.left - contentRect.left) + (subtreeRect.width / 2) : (nodeRect.left - contentRect.left) + (nodeRect.width / 2));
+    const pointY = (latestContentOffsetY * latestZoom)
+      + (subtreeFitsViewport ? (subtreeRect.top - contentRect.top) + (subtreeRect.height / 2) : (nodeRect.top - contentRect.top) + (nodeRect.height / 2));
+
+    setCamera(getCameraForPointFocus({
+      viewportWidth,
+      viewportHeight,
+      pointX,
+      pointY,
+      boardWidth: latestScaledBoardWidth,
+      boardHeight: latestScaledBoardHeight,
+      anchorX: subtreeFitsViewport ? viewportWidth / 2 : Math.round(viewportWidth * EXPANDED_SUBTREE_NODE_ANCHOR_X_RATIO),
+      anchorY: subtreeFitsViewport ? viewportHeight / 2 : Math.round(viewportHeight * EXPANDED_SUBTREE_NODE_ANCHOR_Y_RATIO),
+    }));
+  }, []);
+
+  const revealExpandedNodeInCanvas = useCallback((targetId: string) => {
+    const requestId = latestRevealRequestRef.current + 1;
+    latestRevealRequestRef.current = requestId;
+
+    const runReveal = () => {
+      if (latestRevealRequestRef.current !== requestId) return;
+      revealExpandedNodeAtCurrentMetrics(targetId);
+    };
+
+    runReveal();
+    [160, 420].forEach((delay) => {
+      window.setTimeout(runReveal, delay);
+    });
+  }, [revealExpandedNodeAtCurrentMetrics]);
 
   useEffect(() => {
     if (!rootNode || hasCenteredInitialViewRef.current || !viewportSize.width || !viewportSize.height || !contentSize.width) return;
@@ -1019,7 +1283,11 @@ export default function FlowEditorPage() {
       decision: { description: '' },
       collect_info: { fields: [{ name: 'field_1', label: '', type: 'text', required: true }] },
       action: { actionType: 'set_flag', flagName: '', flagValue: '' },
-      transfer: { message: "Thank you so much for sharing all of that with me. I now have everything the attorney will need. Please hold - I'm connecting you now." },
+      transfer: {
+        transferTarget: 'attorney',
+        handoffMode: 'summary_only',
+        callbackMessage: "Thank you for sharing all of that with me. I've sent everything to the right team member, and they will reach out to you directly about next steps.",
+      },
       end: { closingMessage: 'Thank you for calling! Have a wonderful day. Goodbye!' },
     };
     const newNode: FNode = { id: generateId(), type, label: NODE_LABELS[type] ?? type, config: defaultConfigs[type] || {}, sortOrder: nodes.length };
@@ -1061,7 +1329,7 @@ export default function FlowEditorPage() {
       <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between sticky top-0 bg-black z-10">
         <div className="flex items-center gap-3">
           <Link href="/flow-builder" className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"><ArrowLeft className="w-4 h-4 text-zinc-400" /></Link>
-          <Scale className="w-5 h-5 text-white" />
+          <Workflow className="w-5 h-5 text-white" />
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <input type="text" value={flowName} maxLength={80}
               onChange={(e) => setFlowName(e.target.value)}
@@ -1094,7 +1362,7 @@ export default function FlowEditorPage() {
             {
               type: 'question',
               title: 'Question',
-              desc: 'Aria asks the caller something. Add Response child nodes for each possible answer. Optionally collect specific values inline.',
+              desc: 'The assistant asks the caller something. Add Response child nodes for each possible answer. Optionally collect specific values inline.',
             },
             {
               type: 'response',
@@ -1104,17 +1372,17 @@ export default function FlowEditorPage() {
             {
               type: 'action',
               title: 'Action',
-              desc: 'Sets an internal flag or calls a tool behind the scenes. The caller never hears this. Use it to tag petition type, urgency, or other metadata passed to the attorney at transfer.',
+              desc: 'Sets an internal flag or calls a tool behind the scenes. The caller never hears this. Use it to tag category, urgency, or other metadata passed to your team.',
             },
             {
               type: 'transfer',
               title: 'Transfer',
-              desc: 'Hands the call off to an attorney. The AI summarises everything collected and connects the caller.',
+              desc: 'Hands the call off to a live teammate or marks the interaction for follow-up after intake is complete.',
             },
             {
               type: 'end',
               title: 'End Call',
-              desc: 'Closes the call with a farewell message and hangs up. Use when no attorney handoff is needed.',
+              desc: 'Closes the call with a farewell message and hangs up. Use when no live handoff is needed.',
             },
           ] as { type: string; title: string; desc: string }[]).map(({ type, title, desc }) => (
             <div key={type} className="space-y-1">
@@ -1164,11 +1432,17 @@ export default function FlowEditorPage() {
             >
               <div
                 ref={boardContentRef}
+                data-testid="flow-board-content"
                 className="relative"
-                style={{ left: `${contentOffsetX}px`, top: `${contentOffsetY}px`, width: `${rootLayout.width}px` }}
+                style={{
+                  left: `${contentOffsetX}px`,
+                  top: `${contentOffsetY}px`,
+                  width: `${rootLayout.width}px`,
+                  height: `${boardContentHeight}px`,
+                }}
               >
                 {rootNode && (
-                  <div className="relative" style={{ width: `${rootLayout.width}px`, paddingTop: `${ROOT_HEADER_HEIGHT_PX}px` }}>
+                  <div className="relative" style={{ width: `${rootLayout.width}px`, height: `${boardContentHeight}px` }}>
                     <div
                       className="absolute top-0 text-center"
                       style={{
@@ -1187,14 +1461,188 @@ export default function FlowEditorPage() {
                         </p>
                       </div>
                     </div>
-                    <NodeCard
-                      node={rootNode} edges={edges} allNodes={nodes} depth={0}
-                      parentId={null} primaryParents={primaryParents} confirm={confirm}
-                      expandedNodeIds={expandedNodeIds} expandedOverrides={expandedOverrides} canvasZoom={zoom}
-                      treeLayouts={treeLayouts} onToggleExpanded={toggleExpanded} onExpandPath={expandPathToNode} onFocusNode={focusNodeInCanvas}
-                      onUpdateNode={updateNode} onDeleteNode={deleteNode}
-                      onAddChild={addChild} onLinkExisting={linkExisting} onDeleteEdge={deleteEdge}
-                    />
+                    <div className="pointer-events-none absolute inset-0">
+                      {visibleTree.nodes.map((placement) => {
+                        const childPlacements = visibleChildrenByParent.get(placement.nodeId) || [];
+                        if (childPlacements.length === 0) return null;
+
+                        const childRowTop = getTreeRowTop(childPlacements[0]!.depth);
+                        const lineY = childRowTop + TREE_CONNECTOR_LINE_Y_PX;
+                        const connectorStartY = Math.min(
+                          connectorStartYByNodeId.get(placement.nodeId) ?? Math.max(childRowTop - TREE_PARENT_BRIDGE_PX, 0),
+                          lineY,
+                        );
+                        const firstChildCenter = childPlacements[0]!.centerX;
+                        const lastChildCenter = childPlacements[childPlacements.length - 1]!.centerX;
+
+                        return (
+                          <div key={`connector-${placement.nodeId}`}>
+                            <div
+                              data-testid={`primary-branch-bridge-${placement.nodeId}`}
+                              className="absolute w-px"
+                              style={{
+                                left: `${placement.centerX}px`,
+                                top: `${connectorStartY}px`,
+                                height: `${Math.max(lineY - connectorStartY, 1)}px`,
+                                transform: 'translateX(-0.5px)',
+                                backgroundColor: CONNECTOR_COLOR,
+                              }}
+                            />
+                            {childPlacements.length > 1 && (
+                              <div
+                                data-testid={`primary-branch-line-${placement.nodeId}`}
+                                className="absolute h-px"
+                                style={{
+                                  top: `${lineY}px`,
+                                  left: `${firstChildCenter + (TREE_CONNECTOR_ENDPOINT_TRIM_PX / 2)}px`,
+                                  width: `${Math.max(lastChildCenter - firstChildCenter - TREE_CONNECTOR_ENDPOINT_TRIM_PX, 1)}px`,
+                                  backgroundColor: CONNECTOR_COLOR,
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                      {visibleMergeGroups.map((group) => {
+                        const targetFrame = nodeFrameByNodeId.get(group.targetPlacement.nodeId);
+                        if (!targetFrame) return null;
+
+                        const sourceFrames = group.sourcePlacements.flatMap((placement) => {
+                          const frame = nodeFrameByNodeId.get(placement.nodeId);
+                          if (!frame) return [];
+                          return [{
+                            nodeId: placement.nodeId,
+                            centerX: (frame.left + frame.right) / 2,
+                            startY: subtreeBottomYByNodeId.get(placement.nodeId) ?? frame.bottom,
+                          }];
+                        });
+
+                        if (sourceFrames.length === 0) return null;
+
+                        const maxSourceStartY = Math.max(...sourceFrames.map((frame) => frame.startY));
+                        const targetCenterX = (targetFrame.left + targetFrame.right) / 2;
+                        const minRailY = maxSourceStartY + TREE_MERGE_RAIL_CLEARANCE_PX;
+                        const maxRailY = targetFrame.top - TREE_MERGE_RAIL_CLEARANCE_PX;
+                        const railY = maxRailY <= minRailY
+                          ? (maxSourceStartY + targetFrame.top) / 2
+                          : Math.min(minRailY + TREE_MERGE_RAIL_OFFSET_PX, maxRailY);
+                        const lineStartX = Math.min(targetCenterX, ...sourceFrames.map((frame) => frame.centerX));
+                        const lineEndX = Math.max(targetCenterX, ...sourceFrames.map((frame) => frame.centerX));
+
+                        return (
+                          <div key={`merge-${group.targetPlacement.nodeId}`}>
+                            {sourceFrames.map((frame) => (
+                              <div key={`merge-source-${frame.nodeId}-${group.targetPlacement.nodeId}`}>
+                                <div
+                                  data-testid={`merge-connector-source-${frame.nodeId}-${group.targetPlacement.nodeId}`}
+                                  className="absolute border-l-2 border-dashed"
+                                  style={{
+                                    left: `${frame.centerX}px`,
+                                    top: `${frame.startY}px`,
+                                    height: `${Math.max(railY - frame.startY, 1)}px`,
+                                    transform: 'translateX(-1px)',
+                                    borderColor: MERGE_CONNECTOR_COLOR,
+                                    boxShadow: `0 0 0 1px ${MERGE_CONNECTOR_GLOW}`,
+                                  }}
+                                />
+                                <div
+                                  className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-300 bg-sky-400/80"
+                                  style={{
+                                    left: `${frame.centerX}px`,
+                                    top: `${railY}px`,
+                                    boxShadow: `0 0 0 4px ${MERGE_CONNECTOR_GLOW}`,
+                                  }}
+                                />
+                              </div>
+                            ))}
+                            <div
+                              data-testid={`merge-connector-line-${group.targetPlacement.nodeId}`}
+                              className="absolute border-t-2 border-dashed"
+                              style={{
+                                left: `${lineStartX}px`,
+                                top: `${railY}px`,
+                                width: `${Math.max(lineEndX - lineStartX, 1)}px`,
+                                borderColor: MERGE_CONNECTOR_COLOR,
+                                boxShadow: `0 0 0 1px ${MERGE_CONNECTOR_GLOW}`,
+                              }}
+                            />
+                            <div
+                              data-testid={`merge-connector-label-${group.targetPlacement.nodeId}`}
+                              className="absolute -translate-x-1/2 rounded-full border border-sky-300/70 bg-sky-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-100 shadow-[0_0_0_1px_rgba(96,165,250,0.14)]"
+                              style={{
+                                left: `${targetCenterX}px`,
+                                top: `${railY - 32}px`,
+                              }}
+                            >
+                              Shared Next Step
+                            </div>
+                            <div
+                              data-testid={`merge-connector-target-${group.targetPlacement.nodeId}`}
+                              className="absolute border-l-2 border-dashed"
+                              style={{
+                                left: `${targetCenterX}px`,
+                                top: `${railY}px`,
+                                height: `${Math.max(targetFrame.top - railY, 1)}px`,
+                                transform: 'translateX(-1px)',
+                                borderColor: MERGE_CONNECTOR_COLOR,
+                                boxShadow: `0 0 0 1px ${MERGE_CONNECTOR_GLOW}`,
+                              }}
+                            />
+                            <div
+                              className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-200 bg-sky-400 shadow-[0_0_0_6px_rgba(59,130,246,0.16)]"
+                              style={{
+                                left: `${targetCenterX}px`,
+                                top: `${railY}px`,
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {visibleTree.nodes.map((placement) => {
+                      const node = nodeById.get(placement.nodeId);
+                      if (!node) return null;
+
+                      const branchLabel = branchLabelByNodeId.get(node.id) ?? null;
+                      const hasVisibleChildren = (visibleChildrenByParent.get(node.id)?.length ?? 0) > 0;
+                      const hasVisibleMergeChildren = (mergedLinkedTargetIdsBySource.get(node.id)?.size ?? 0) > 0;
+
+                      return (
+                        <div
+                          key={node.id}
+                          data-testid={`tree-node-placement-${node.id}`}
+                          className="absolute"
+                          style={{
+                            left: `${placement.centerX - (CARD_WIDTH_PX / 2)}px`,
+                            top: `${getTreeRowTop(placement.depth)}px`,
+                            width: `${CARD_WIDTH_PX}px`,
+                          }}
+                        >
+                          <NodeCard
+                            node={node}
+                            edges={edges}
+                            allNodes={nodes}
+                            branchLabel={branchLabel}
+                            primaryParents={primaryParents}
+                            confirm={confirm}
+                            mergedLinkedTargetIds={mergedLinkedTargetIdsBySource.get(node.id)}
+                            expandedNodeIds={expandedNodeIds}
+                            expandedOverrides={expandedOverrides}
+                            showIncomingStem={placement.depth > 0}
+                            showOutgoingStem={hasVisibleChildren || hasVisibleMergeChildren}
+                            onToggleExpanded={toggleExpanded}
+                            onExpandPath={expandPathToNode}
+                            onFocusNode={focusNodeInCanvas}
+                            onRevealExpandedNode={revealExpandedNodeInCanvas}
+                            onUpdateNode={updateNode}
+                            onDeleteNode={deleteNode}
+                            onAddChild={addChild}
+                            onLinkExisting={linkExisting}
+                            onDeleteEdge={deleteEdge}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

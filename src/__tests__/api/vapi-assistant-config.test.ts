@@ -4,6 +4,8 @@ import { NextRequest } from 'next/server';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
+    intakeFlow: { findFirst: vi.fn() },
+    intakeData: { findMany: vi.fn(), createMany: vi.fn() },
     lawyer: { findMany: vi.fn(), findUnique: vi.fn() },
     client: { findUnique: vi.fn(), create: vi.fn() },
     callSession: { create: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
@@ -32,11 +34,13 @@ function makeRequest(body: any) {
 
 describe('VAPI Assistant Config (thorough)', () => {
   beforeEach(() => {
+    vi.mocked(prisma.intakeFlow.findFirst).mockResolvedValue(null as any);
     vi.mocked(prisma.lawyer.findMany).mockResolvedValue([
       { id: 'l1', name: 'Sarah Chen', email: 's@t.com', phone: '+15551001001', specialties: ['family'], available: true, googleCalendarId: null },
     ] as any);
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://ai-paralegal-andyp4293s-projects.vercel.app');
     vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+    vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', '');
   });
 
   it('returns assistant object at top level', async () => {
@@ -102,8 +106,87 @@ describe('VAPI Assistant Config (thorough)', () => {
     const prompt = assistant.model.messages[0].content;
     expect(prompt).toContain('CURRENT CLIENT');
     expect(prompt).toContain('PROSPECTIVE CLIENT');
-    expect(prompt).toContain('TRANSFER');
+    expect(prompt).toContain('REQUESTS FOR A REAL PERSON');
     expect(prompt).toContain('empathetic');
+    expect(prompt).toContain('Call tools silently');
+    expect(prompt).toContain('silently call captureIntakeState');
+    expect(prompt).toContain('Do NOT add filler like "one moment"');
+    expect(prompt).toContain('The live transfer itself will say exactly: "Welcome back. We\'ll transfer you to our team right away."');
+    expect(prompt).toContain('Continue the normal intake flow. Do NOT transfer them to the paralegal just because they are new.');
+    expect(prompt).toContain('If the caller volunteers answers to later intake questions early, capture those facts immediately and skip the later duplicate questions instead of re-asking them.');
+    expect(prompt).toContain('If one caller response answers multiple intake slots at once, treat every clearly answered slot as captured and move to the first still-unanswered question.');
+  });
+
+  it('dedupes the first spoken message when the next question repeats the greeting ending', async () => {
+    vi.mocked(prisma.intakeFlow.findFirst).mockResolvedValue({
+      id: 'flow-1',
+      name: 'Test Flow',
+      description: null,
+      nodes: [
+        {
+          id: 'start-1',
+          type: 'start',
+          label: 'Opening Greeting',
+          sortOrder: 0,
+          config: {
+            greeting: 'Good afternoon. Thank you for calling {firm}. My name is {name}. Everything you share is confidential. Shall we get started?',
+          },
+        },
+        {
+          id: 'q-1',
+          type: 'question',
+          label: 'Q1. Shall we get started?',
+          sortOrder: 1,
+          config: {
+            question: 'Shall we get started?',
+          },
+        },
+      ],
+      edges: [
+        { id: 'e-1', sourceNodeId: 'start-1', targetNodeId: 'q-1', label: null, condition: null, sortOrder: 0 },
+      ],
+    } as any);
+
+    const req = makeRequest({ message: { type: 'assistant-request' } });
+    const res = await POST(req);
+    const { assistant } = await res.json();
+    expect(assistant.firstMessage).toBe('Good afternoon. Thank you for calling our law firm. My name is Aria. Everything you share is confidential. Shall we get started?');
+  });
+
+  it('includes the next question in the first spoken message for active flows', async () => {
+    vi.mocked(prisma.intakeFlow.findFirst).mockResolvedValue({
+      id: 'flow-2',
+      name: 'Test Flow With Name Question',
+      description: null,
+      nodes: [
+        {
+          id: 'start-1',
+          type: 'start',
+          label: 'Opening Greeting',
+          sortOrder: 0,
+          config: {
+            greeting: 'Thank you for calling {firm}. My name is {name}.',
+          },
+        },
+        {
+          id: 'q-1',
+          type: 'question',
+          label: 'Q1. Caller Name',
+          sortOrder: 1,
+          config: {
+            question: 'Could I start with your first and last name?',
+          },
+        },
+      ],
+      edges: [
+        { id: 'e-1', sourceNodeId: 'start-1', targetNodeId: 'q-1', label: null, condition: null, sortOrder: 0 },
+      ],
+    } as any);
+
+    const req = makeRequest({ message: { type: 'assistant-request' } });
+    const res = await POST(req);
+    const { assistant } = await res.json();
+    expect(assistant.firstMessage).toBe('Thank you for calling our law firm. My name is Aria. Could I start with your first and last name?');
   });
 
   it('assistant has all tool definitions', async () => {
@@ -111,13 +194,15 @@ describe('VAPI Assistant Config (thorough)', () => {
     const res = await POST(req);
     const { assistant } = await res.json();
     const toolNames = assistant.model.tools.filter((t: any) => t.function).map((t: any) => t.function.name);
+    expect(toolNames).toContain('captureIntakeState');
+    expect(toolNames).toContain('advanceActiveFlow');
     expect(toolNames).toContain('checkClient');
     expect(toolNames).toContain('identifyLawyer');
     expect(toolNames).toContain('scheduleConsultation');
     expect(toolNames).toContain('generateSummary');
     expect(toolNames).toContain('generateTransferSummary');
     expect(toolNames).toContain('checkAttorneyAvailability');
-    expect(assistant.model.tools).toHaveLength(7); // 6 function tools + endCall
+    expect(assistant.model.tools).toHaveLength(9); // 8 function tools + endCall
   });
 
   it('each function tool has type, function.name, function.description, function.parameters', async () => {
@@ -150,8 +235,14 @@ describe('VAPI Assistant Config (thorough)', () => {
     const res = await POST(req);
     const { assistant } = await res.json();
     expect(assistant.transcriber.provider).toBe('deepgram');
-    expect(assistant.transcriber.model).toBe('nova-2');
+    expect(assistant.transcriber.model).toBe('flux-general-en');
     expect(assistant.transcriber.language).toBe('en');
+    expect(assistant.transcriber.smartFormat).toBe(true);
+    expect(assistant.transcriber.eotThreshold).toBe(0.7);
+    expect(assistant.transcriber.eotTimeoutMs).toBe(5000);
+    expect(assistant.backgroundSpeechDenoisingPlan).toEqual({
+      smartDenoisingPlan: { enabled: true },
+    });
   });
 
   it('assistant has server URL pointing to webhook', async () => {
@@ -180,7 +271,15 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(assistant.voicemailMessage).toBeDefined();
   });
 
-  it('assistant has forwarding phone number when configured', async () => {
+  it('assistant omits forwarding number by default even when a transfer number exists', async () => {
+    const req = makeRequest({ message: { type: 'assistant-request' } });
+    const res = await POST(req);
+    const { assistant } = await res.json();
+    expect(assistant.forwardingPhoneNumber).toBeUndefined();
+  });
+
+  it('assistant includes forwarding number when live transfers are enabled', async () => {
+    vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', 'true');
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();
@@ -189,6 +288,7 @@ describe('VAPI Assistant Config (thorough)', () => {
 
   it('assistant omits forwarding number when not configured', async () => {
     vi.stubEnv('TRANSFER_PHONE_NUMBER', '');
+    vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', 'true');
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();

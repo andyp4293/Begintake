@@ -7,7 +7,7 @@
  * - identify current vs new callers
  * - let new callers describe the issue
  * - route across all 13 practice areas at a high level
- * - either schedule, send for attorney review, or transfer to the team
+ * - either schedule or send the matter to the right lawyer or team member for follow-up
  */
 
 let nc = 0;
@@ -46,18 +46,20 @@ export function createDefaultIntakeTemplate() {
 
   const transferCurrentClient = addNode('transfer', 'Current Client Team Transfer', {
     transferTarget: 'paralegal',
-    message: 'Welcome back. Please hold while I connect you with our team.',
+    handoffMode: 'live_transfer',
+    callbackMessage: "Welcome back. I've sent this to our team, and the right lawyer will reach out to you shortly.",
   });
 
   const transferUrgent = addNode('transfer', 'Urgent Attorney Review', {
     transferTarget: 'attorney',
-    message: 'I am marking this as urgent and sending it to the right attorney now. Our team will reach out as soon as possible.',
+    handoffMode: 'summary_only',
+    callbackMessage: 'I am marking this as urgent and sending it to the right lawyer now. Our team will reach out as soon as possible.',
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'email', 'issue_summary', 'practice_area', 'urgency_flag'],
   });
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: 'Thank you for calling {firm}. My name is {name}. I will ask a few quick questions so I can get you to the right person right away.',
+    greeting: 'Thank you for calling {firm}. My name is {name}. I\'m going to ask a few quick questions so we can collect your information for attorney review. After that, the right lawyer will review it and reach out to you about next steps.',
   });
 
   const q1 = addNode('question', 'Q1. Caller Name', {
@@ -176,14 +178,14 @@ export function createDefaultIntakeTemplate() {
     addEdge(areaResponse, practiceAreaFlag);
 
     const nextStep = addNode('question', `${practiceArea} - Preferred Next Step`, {
-      question: 'Would you like to schedule a consultation now, have an attorney review this and call you back, or talk to someone on our team now?',
+      question: 'Would you like to schedule a consultation now, have the right lawyer review this and call you back, or have our team follow up with you?',
       note: 'Only choose the scheduling path if the caller explicitly asks to schedule.',
     });
     addEdge(practiceAreaFlag, nextStep);
 
     const scheduleNow = response('Schedule a consultation now');
-    const callback = response('Attorney review and callback');
-    const talkNow = response('Talk to someone now');
+    const callback = response('Have the right lawyer review this and call me');
+    const talkNow = response('Have your team follow up with me');
     addEdge(nextStep, scheduleNow);
     addEdge(nextStep, callback);
     addEdge(nextStep, talkNow);
@@ -217,7 +219,8 @@ export function createDefaultIntakeTemplate() {
 
     const reviewTransfer = addNode('transfer', `${practiceArea} - Attorney Review`, {
       transferTarget: 'attorney',
-      message: 'I appreciate you sharing that. I am sending it to the right attorney now, and they will reach out to you directly about next steps.',
+      handoffMode: 'summary_only',
+      callbackMessage: 'I appreciate you sharing that. I am sending it to the right lawyer now, and they will reach out to you directly about next steps.',
       includeNotes: true,
       transferData: ['caller_name', 'phone', 'email', 'issue_summary', 'practice_area'],
     });
@@ -225,7 +228,8 @@ export function createDefaultIntakeTemplate() {
 
     const teamTransfer = addNode('transfer', `${practiceArea} - Team Transfer`, {
       transferTarget: 'paralegal',
-      message: 'Please hold while I connect you with our team.',
+      handoffMode: 'summary_only',
+      callbackMessage: "I've sent this to our team, and the right lawyer will reach out to you shortly.",
     });
     addEdge(talkNow, teamTransfer);
   }
@@ -250,7 +254,7 @@ export function createDefaultIntakeTemplate() {
 
   return {
     name: 'Default Reception Intake - All Practice Areas',
-    description: 'Simple visual intake template for all 13 practice areas. Collects contact details, checks for existing clients, screens for urgent matters, routes to a broad practice area, and then either schedules, transfers, or sends the matter for attorney review.',
+    description: 'Simple visual intake template for all 13 practice areas. Collects contact details, checks for existing clients, screens for urgent matters, routes to a broad practice area, and then either schedules or sends the matter for lawyer follow-up.',
     isTemplate: true,
     nodes,
     edges,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from '@/app/api/webhooks/vapi/route';
 import { NextRequest } from 'next/server';
+import { createGeneralIntakeTemplate } from '@/lib/templates/general-intake';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,15 @@ vi.mock('@/lib/prisma', () => ({
       updateMany: vi.fn(),
       upsert: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    intakeFlow: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    intakeData: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
     },
     appointment: {
       create: vi.fn(),
@@ -45,6 +55,11 @@ import { prisma } from '@/lib/prisma';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { sendCallSummaryEmail } from '@/lib/email';
 
+const generalFlow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
+
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeRequest(body: any, secret?: string) {
@@ -67,6 +82,7 @@ const mockLawyers = [
 
 describe('VAPI Webhook', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(prisma.lawyer.findMany).mockResolvedValue(mockLawyers as any);
     vi.mocked(prisma.lawyer.findUnique).mockResolvedValue(mockLawyers[0] as any);
     vi.mocked(prisma.client.findUnique).mockResolvedValue(null);
@@ -76,8 +92,17 @@ describe('VAPI Webhook', () => {
     vi.mocked(prisma.callSession.updateMany).mockResolvedValue({ count: 1 } as any);
     vi.mocked(prisma.callSession.upsert).mockResolvedValue({ id: 'cs-1' } as any);
     vi.mocked(prisma.callSession.findFirst).mockResolvedValue({ id: 'cs-1', callerPhone: '+15559990001' } as any);
+    vi.mocked(prisma.callSession.findUnique).mockResolvedValue(null as any);
+    vi.mocked(prisma.intakeData.findMany).mockResolvedValue([] as any);
+    vi.mocked(prisma.intakeData.createMany).mockResolvedValue({ count: 0 } as any);
+    vi.mocked(prisma.intakeFlow.findFirst).mockResolvedValue(null as any);
+    vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(null as any);
     vi.mocked(prisma.appointment.create).mockResolvedValue({ id: 'apt-1' } as any);
+    vi.mocked(sendCallSummaryEmail).mockResolvedValue({ success: true });
     vi.unstubAllEnvs();
+    vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', '');
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(new Response(null, { status: 200 }));
   });
 
   // ─── Secret verification ───────────────────────────────────────────────
@@ -121,6 +146,8 @@ describe('VAPI Webhook', () => {
       const res = await POST(req);
       const data = await res.json();
       const toolNames = data.assistant.model.tools.filter((t: any) => t.function).map((t: any) => t.function.name);
+      expect(toolNames).toContain('captureIntakeState');
+      expect(toolNames).toContain('advanceActiveFlow');
       expect(toolNames).toContain('checkClient');
       expect(toolNames).toContain('identifyLawyer');
       expect(toolNames).toContain('scheduleConsultation');
@@ -208,6 +235,98 @@ describe('VAPI Webhook', () => {
       const data = await res.json();
       const result = JSON.parse(data.results[0].result);
       expect(result.isCurrentClient).toBe(false);
+    });
+  });
+
+  describe('tool-calls: captureIntakeState', () => {
+    it('persists captured slots and returns the remaining common fields', async () => {
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({ id: 'cs-1', callId: 'call-1', callerPhone: '+15559990001', clientType: null } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: 'callerName', fieldValue: 'Andy Pham' },
+        { fieldName: 'callerPhone', fieldValue: '+15559990001' },
+        { fieldName: 'clientStatus', fieldValue: 'new' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-capture-1',
+            function: {
+              name: 'captureIntakeState',
+              arguments: {
+                callerName: 'Andy Pham',
+                clientStatus: 'new',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(prisma.intakeData.createMany).toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(result.capturedFields.callerName).toBe('Andy Pham');
+      expect(result.capturedFields.clientStatus).toBe('new');
+      expect(result.missingCommonFields).toContain('callingFor');
+      expect(result.missingCommonFields).toContain('issueSummary');
+    });
+  });
+
+  describe('tool-calls: advanceActiveFlow', () => {
+    it('skips already captured opening answers and asks the next real branch question', async () => {
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: 'callerName', fieldValue: 'Andy Pham' },
+        { fieldName: 'caller_name', fieldValue: 'Andy Pham' },
+        { fieldName: 'clientStatus', fieldValue: 'new' },
+        { fieldName: 'callerPhone', fieldValue: '+15559990001' },
+        { fieldName: 'callback_phone', fieldValue: '+15559990001' },
+        { fieldName: 'callingFor', fieldValue: 'self' },
+        { fieldName: 'issueSummary', fieldValue: 'I got in a car accident and broke my arm.' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'Yes',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('ask');
+      expect(result.currentNodeLabel).toBe('Personal Injury - Incident Type');
+      expect(result.assistantMessage).toBe('What type of accident or injury occurred?');
     });
   });
 
@@ -407,7 +526,7 @@ describe('VAPI Webhook', () => {
   // ─── tool-calls: transferCall ──────────────────────────────────────────
 
   describe('tool-calls: transferCall', () => {
-    it('returns transfer destination', async () => {
+    it('returns a callback message when live transfers are disabled', async () => {
       const req = makeRequest({
         message: {
           type: 'tool-calls',
@@ -424,11 +543,13 @@ describe('VAPI Webhook', () => {
       const res = await POST(req);
       const data = await res.json();
       const result = JSON.parse(data.results[0].result);
-      expect(result.type).toBe('transfer');
-      expect(result.destination.number).toBe('+15551001001');
+      expect(result.type).toBeUndefined();
+      expect(result.liveTransfer).toBe(false);
+      expect(result.message).toContain('right lawyer will reach out');
     });
 
-    it('uses default transfer number when none provided', async () => {
+    it('uses default transfer number when live transfers are enabled', async () => {
+      vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', 'true');
       vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
       vi.mocked(prisma.user.findFirst).mockResolvedValue(null);
 
@@ -445,17 +566,271 @@ describe('VAPI Webhook', () => {
       const res = await POST(req);
       const data = await res.json();
       const result = JSON.parse(data.results[0].result);
+      expect(result.type).toBe('transfer');
       expect(result.destination.number).toBe('+15559999999');
+    });
+
+    it('posts a live transfer control request when a controlUrl is present', async () => {
+      vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', 'true');
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            monitor: { controlUrl: 'https://api.vapi.test/call/mock-call' },
+          },
+          toolCallList: [{
+            id: 'tc-13-control',
+            function: { name: 'transferCall', arguments: { phoneNumber: '+15559999999' } },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+      expect(result.transferred).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.vapi.test/call/mock-call/control',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(fetchBody).toEqual({
+        type: 'transfer',
+        destination: { type: 'number', number: '+15559999999' },
+      });
+    });
+  });
+
+  describe('tool-calls: generateTransferSummary', () => {
+    it('returns summary-only follow-up by default', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-queue-1' },
+          toolCallList: [{
+            id: 'tc-13a',
+            function: {
+              name: 'generateTransferSummary',
+              arguments: {
+                transferTarget: 'attorney',
+                callerName: 'Jane Doe',
+                callerPhone: '5559990001',
+                issue: 'I need help with my divorce',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+      expect(result.type).toBeUndefined();
+      expect(result.liveTransfer).toBe(false);
+      expect(result.deliveryStatus).toBe('queued_until_call_end');
+      expect(result.message).toContain('recorded');
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('uses the live call id when queuing a summary-only follow-up', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-queue-2' },
+          toolCallList: [{
+            id: 'tc-13a-fail',
+            function: {
+              name: 'generateTransferSummary',
+              arguments: {
+                transferTarget: 'attorney',
+                callerName: 'Jane Doe',
+                callerPhone: '5559990001',
+                issue: 'I need help with my divorce',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.liveTransfer).toBe(false);
+      expect(result.emailDelivered).toBe(false);
+      expect(result.deliveryStatus).toBe('queued_until_call_end');
+      expect(prisma.callSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cs-1' },
+          data: expect.objectContaining({ callOutcome: 'summary_queued' }),
+        })
+      );
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('live-transfers to the paralegal without emailing a lawyer', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(sendCallSummaryEmail).mockClear();
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            monitor: { controlUrl: 'https://api.vapi.test/call/mock-paralegal' },
+          },
+          toolCallList: [{
+            id: 'tc-13-paralegal',
+            function: {
+              name: 'generateTransferSummary',
+              arguments: {
+                transferTarget: 'paralegal',
+                handoffMode: 'live_transfer',
+                callerName: 'Jane Doe',
+                callerPhone: '5559990001',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+      expect(result.liveTransfer).toBe(true);
+      expect(result.transferred).toBe(true);
+      expect(result.destination.number).toBe('+15559999999');
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.vapi.test/call/mock-paralegal/control',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(fetchBody).toEqual({
+        type: 'transfer',
+        destination: { type: 'number', number: '+15559999999' },
+        content: "Welcome back. We'll transfer you to our team right away.",
+      });
+    });
+
+    it('returns a live transfer only when explicitly enabled', async () => {
+      vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', 'true');
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          toolCallList: [{
+            id: 'tc-13b',
+            function: {
+              name: 'generateTransferSummary',
+              arguments: {
+                transferTarget: 'attorney',
+                handoffMode: 'live_transfer',
+                callerName: 'Jane Doe',
+                callerPhone: '5559990001',
+                issue: 'I need help with my divorce',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+      expect(result.type).toBe('transfer');
+      expect(result.destination.number).toBe('+15551001001');
     });
   });
 
   // ─── tool-calls: generateSummary ───────────────────────────────────────
 
   describe('tool-calls: generateSummary', () => {
-    it('creates call session and sends email', async () => {
+    it('rejects an incomplete divorce branch when the active flow still has unanswered divorce questions', async () => {
+      vi.mocked(prisma.intakeFlow.findFirst).mockResolvedValue(generalFlow);
+
       const req = makeRequest({
         message: {
           type: 'tool-calls',
+          call: { id: 'call-divorce-incomplete' },
+          toolCallList: [{
+            id: 'tc-divorce-incomplete',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Divorce Caller',
+                callerPhone: '5559990001',
+                issue: 'I need help with my divorce',
+                notes: 'Divorce or legal separation. Contested - we disagree on key issues. Child custody and support.',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(false);
+      expect(result.continueIntake).toBe(true);
+      expect(result.deliveryStatus).toBe('incomplete_branch');
+      expect(result.missingRequirements).toContain('Has anything already been filed, and is there any court date or deadline coming up?');
+      expect(result.missingRequirements).toContain('Does your spouse or partner already have a lawyer?');
+      expect(prisma.callSession.update).not.toHaveBeenCalled();
+      expect(prisma.callSession.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a divorce summary after the full divorce branch is covered in the active flow', async () => {
+      vi.mocked(prisma.intakeFlow.findFirst).mockResolvedValue(generalFlow);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-divorce-complete' },
+          toolCallList: [{
+            id: 'tc-divorce-complete',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Divorce Caller',
+                callerPhone: '5559990001',
+                issue: 'I need help with my divorce',
+                notes: [
+                  'Divorce or legal separation.',
+                  'Contested - we disagree on key issues.',
+                  'Child custody and support.',
+                  'Filed already - no court date yet.',
+                  'Yes - minor children are involved.',
+                  'No - the other side does not have a lawyer.',
+                  'No - no immediate urgency.',
+                ].join(' '),
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.deliveryStatus).toBe('queued_until_call_end');
+    });
+
+    it('creates call session and queues email delivery until the call ends', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-14' },
           toolCallList: [{
             id: 'tc-14',
             function: {
@@ -476,15 +851,16 @@ describe('VAPI Webhook', () => {
       const result = JSON.parse(data.results[0].result);
 
       expect(result.success).toBe(true);
-      // Updates existing session or creates new one
+      expect(result.deliveryStatus).toBe('queued_until_call_end');
       expect(prisma.callSession.update).toHaveBeenCalled();
-      expect(sendCallSummaryEmail).toHaveBeenCalled();
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
     });
 
-    it('sends email to matched lawyer', async () => {
+    it('stores the matched lawyer and legal area on the queued summary', async () => {
       const req = makeRequest({
         message: {
           type: 'tool-calls',
+          call: { id: 'call-15' },
           toolCallList: [{
             id: 'tc-15',
             function: {
@@ -500,13 +876,17 @@ describe('VAPI Webhook', () => {
       });
 
       await POST(req);
-      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+      expect(prisma.callSession.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          lawyerEmail: 'sarah@test.com',
-          callerName: 'Test Person',
-          legalArea: 'family',
+          where: { id: 'cs-1' },
+          data: expect.objectContaining({
+            callOutcome: 'summary_queued',
+            legalArea: 'family',
+            lawyerId: 'law-1',
+          }),
         })
       );
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
     });
 
     it('creates client record if not existing', async () => {
@@ -535,6 +915,103 @@ describe('VAPI Webhook', () => {
           data: expect.objectContaining({ isCurrentClient: false }),
         })
       );
+    });
+
+    it('marks summary delivery as unassigned when no lawyer matches the case', async () => {
+      vi.mocked(prisma.lawyer.findMany).mockResolvedValueOnce([]);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          toolCallList: [{
+            id: 'tc-18',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'No Lawyer Match',
+                callerPhone: '5559990001',
+                issue: 'I need help with a maritime dispute',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.emailDelivered).toBe(false);
+      expect(result.deliveryStatus).toBe('no_lawyer_assigned');
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
+      expect(prisma.callSession.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { id: 'cs-1' },
+          data: { callOutcome: 'summary_unassigned' },
+        })
+      );
+    });
+
+    it('rejects a premature personal injury summary before insurance status is collected', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          toolCallList: [{
+            id: 'tc-19',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Premature PI',
+                callerPhone: '5559990001',
+                issue: 'I got in a car accident',
+                notes: 'It happened a week ago and I have a broken arm. I am still receiving treatment.',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(false);
+      expect(result.continueIntake).toBe(true);
+      expect(result.deliveryStatus).toBe('incomplete_branch');
+      expect(result.missingRequirements).toContain('insurance claim or existing representation status');
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
+      expect(prisma.callSession.update).not.toHaveBeenCalled();
+      expect(prisma.callSession.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a personal injury summary after insurance status is collected', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-20' },
+          toolCallList: [{
+            id: 'tc-20',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Complete PI',
+                callerPhone: '5559990001',
+                issue: 'I got in a car accident',
+                notes: 'It happened a week ago, I broke my arm, I am still in treatment, and no insurance claim has been filed yet.',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.deliveryStatus).toBe('queued_until_call_end');
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
     });
   });
 
@@ -593,6 +1070,146 @@ describe('VAPI Webhook', () => {
       );
     });
 
+    it('sends the queued summary email with the real transcript and recording after the call ends', async () => {
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued',
+          callId: 'call-queued',
+          notes: 'Caller said they were rear-ended and have ER records.',
+          summary: 'Car accident intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued',
+          callId: 'call-queued',
+          callerPhone: '+15559990001',
+          summary: 'Car accident intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued',
+          callId: 'call-queued',
+          callerPhone: '+15559990001',
+          summary: 'Car accident intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued' },
+          summary: 'Car accident intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I was rear-ended yesterday.' },
+            ],
+            recording: { stereoUrl: 'https://api.vapi.ai/recordings/call-queued.mp3' },
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lawyerEmail: 'sarah@test.com',
+          callerName: 'Jane Doe',
+          summary: 'Car accident intake',
+          notes: 'Caller said they were rear-ended and have ER records.',
+          transcript: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          recordingUrl: 'https://api.vapi.ai/recordings/call-queued.mp3',
+        })
+      );
+      expect(prisma.callSession.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { id: 'cs-queued' },
+          data: { callOutcome: 'summary_sent' },
+        })
+      );
+    });
+
+    it('picks up artifact.recordingUrl when the recording object is not present', async () => {
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued',
+          callId: 'call-queued-2',
+          notes: 'Caller said they were rear-ended and have ER records.',
+          summary: 'Car accident intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued',
+          callId: 'call-queued-2',
+          callerPhone: '+15559990001',
+          summary: 'Car accident intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued',
+          callId: 'call-queued-2',
+          callerPhone: '+15559990001',
+          summary: 'Car accident intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued-2' },
+          summary: 'Car accident intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I was rear-ended yesterday.' },
+            ],
+            recordingUrl: 'https://storage.vapi.ai/call-queued-2-mono.wav',
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callId: 'call-queued-2',
+          recordingUrl: 'https://storage.vapi.ai/call-queued-2-mono.wav',
+        })
+      );
+    });
+
     it('handles string transcript', async () => {
       const req = makeRequest({
         message: {
@@ -607,6 +1224,104 @@ describe('VAPI Webhook', () => {
       expect(prisma.callSession.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { callId: 'call-789' },
+        })
+      );
+    });
+
+    it('recovers a missed summary email from the end-of-call report when the branch is complete', async () => {
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-missed',
+          callId: 'call-missed',
+          callOutcome: 'general_inquiry',
+          intakeFlowId: 'flow-general',
+          notes: null,
+          summary: null,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-missed',
+          callId: 'call-missed',
+          callOutcome: 'general_inquiry',
+          intakeFlowId: 'flow-general',
+          notes: null,
+          summary: null,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-missed',
+          callId: 'call-missed',
+          callerPhone: '+15559990001',
+          summary: 'Caller needs help with a contested divorce focused on child custody.',
+          notes: 'assistant: Thanks for calling.\nuser: I need help with a contested divorce focused on child custody.',
+          legalArea: 'family',
+          callOutcome: 'general_inquiry',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          intakeFlowId: 'flow-general',
+          client: null,
+          lawyer: null,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-missed',
+          callId: 'call-missed',
+          callerPhone: '+15559990001',
+          summary: 'Caller needs help with a contested divorce focused on child custody.',
+          notes: 'assistant: Thanks for calling.\nuser: I need help with a contested divorce focused on child custody.',
+          legalArea: 'family',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: null,
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-missed' },
+          summary: 'Caller needs help with a contested divorce focused on child custody.',
+          transcript: [
+            'assistant: Thanks for calling.',
+            'user: First time calling.',
+            'assistant: Is the number you are calling from the best number to reach you if we get disconnected?',
+            'user: Yes, this number is fine.',
+            'assistant: Are you calling for yourself or on behalf of someone else?',
+            'user: For myself.',
+            'assistant: Divorce or legal separation.',
+            'user: Contested - we disagree on key issues.',
+            'assistant: Child custody and support.',
+            'user: Nothing filed yet.',
+            'assistant: Are there minor children involved in this matter?',
+            'user: Yes - minor children are involved.',
+            'assistant: Does your spouse or partner already have a lawyer?',
+            'user: No - the other side does not have a lawyer.',
+            'assistant: Is there anything urgent right now?',
+            'user: No - no immediate urgency.',
+          ].join('\n'),
+        },
+      });
+
+      await POST(req);
+
+      expect(prisma.callSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cs-missed' },
+          data: expect.objectContaining({
+            callOutcome: 'summary_queued',
+            legalArea: 'family',
+            lawyerId: 'law-1',
+          }),
+        })
+      );
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lawyerEmail: 'sarah@test.com',
+          summary: 'Caller needs help with a contested divorce focused on child custody.',
+          transcript: expect.stringContaining('Divorce or legal separation.'),
         })
       );
     });

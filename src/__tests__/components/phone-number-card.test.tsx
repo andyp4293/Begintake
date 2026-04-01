@@ -18,14 +18,14 @@ function renderWithProviders(component: React.ReactElement) {
 }
 
 describe('PhoneNumberCard', () => {
-  it('renders the AI Paralegal Line label', () => {
+  it('renders the Begintake Number label', () => {
     renderWithProviders(<PhoneNumberCard />);
-    expect(screen.getByText('AI Paralegal Line')).toBeInTheDocument();
+    expect(screen.getByText('Begintake Number')).toBeInTheDocument();
   });
 
-  it('displays VAPI-powered label', () => {
+  it('displays the updated intake-line subtitle', () => {
     renderWithProviders(<PhoneNumberCard />);
-    expect(screen.getByText(/Available 24\/7/)).toBeInTheDocument();
+    expect(screen.getByText('Your always-on intake line')).toBeInTheDocument();
   });
 
   it('shows loading state initially', () => {

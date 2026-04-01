@@ -104,7 +104,7 @@ export function UpcomingAppointments() {
             onChange={(e) => setFilterLawyer(e.target.value)}
             className="px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300"
           >
-            <option value="">All attorneys</option>
+            <option value="">All team members</option>
             {lawyers.map((l) => (
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}

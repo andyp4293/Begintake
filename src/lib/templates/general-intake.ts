@@ -11,6 +11,15 @@ function nodeId() { return `gi-node-${++nc}`; }
 let ec = 0;
 function edgeId() { return `gi-edge-${++ec}`; }
 
+const GENERAL_INTAKE_ALWAYS_EXPANDED_QUESTION_LABELS = new Set([
+  'Q1. Shall we get started?',
+  'Q1b. New or Existing Client?',
+  'Q2. Caller Name',
+  'Q3. Best Phone Number',
+  'Q4. Self or On Behalf Of',
+  "Q5. Tell Me What's Going On",
+]);
+
 export function createGeneralIntakeTemplate() {
   nc = 0; ec = 0;
   const nodes: any[] = [];
@@ -18,7 +27,10 @@ export function createGeneralIntakeTemplate() {
 
   function addNode(type: string, label: string, config: any) {
     const id = nodeId();
-    nodes.push({ id, type, label, config, positionX: 0, positionY: nodes.length * 120, sortOrder: nodes.length });
+    const resolvedConfig = type === 'question' && !GENERAL_INTAKE_ALWAYS_EXPANDED_QUESTION_LABELS.has(label)
+      ? { ...config, defaultCollapsed: config?.defaultCollapsed ?? true }
+      : config;
+    nodes.push({ id, type, label, config: resolvedConfig, positionX: 0, positionY: nodes.length * 120, sortOrder: nodes.length });
     return id;
   }
   function addEdge(src: string, tgt: string) {
@@ -38,6 +50,8 @@ export function createGeneralIntakeTemplate() {
 
   const transferId = addNode('transfer', 'Transfer to Attorney', {
     transferTarget: 'attorney',
+    handoffMode: 'summary_only',
+    callbackMessage: "Thank you for sharing all of that. I've sent everything over to the right lawyer. They'll review your case and reach out to you as soon as possible.",
     message: "Thank you for sharing all of that. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.",
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'practice_area', 'matter_type', 'urgency_flag', 'all_collected_fields'],
@@ -46,7 +60,8 @@ export function createGeneralIntakeTemplate() {
   // Separate paralegal transfer for existing clients (bypasses full intake)
   const transferParalegalId = addNode('transfer', 'Transfer to Paralegal', {
     transferTarget: 'paralegal',
-    message: "Welcome back! Please hold one moment while I connect you with our team.",
+    handoffMode: 'live_transfer',
+    callbackMessage: "Welcome back. I've sent this to our team, and the right lawyer will reach out to you shortly.",
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -54,7 +69,7 @@ export function createGeneralIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'll ask you a few questions so our attorneys have everything they need to help you right away. Everything you share is confidential. Shall we get started?",
+    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'll ask you a few questions so we can collect the information the right lawyer needs to review your situation. After that, the right lawyer will review it and reach out to you about next steps. Everything you share is confidential.",
   });
 
   const q1 = addNode('question', 'Q1. Shall we get started?', { question: 'Shall we get started?' });
@@ -67,12 +82,12 @@ export function createGeneralIntakeTemplate() {
   });
 
   const q1_yes  = resp("Yes, let's begin");
-  const q1_what = resp('What is this for?', "Briefly explain: \"I'll collect some basic information about your situation, then connect you with an attorney who can help. It only takes a few minutes.\"");
+  const q1_what = resp('What is this for?', "Briefly explain: \"I'll collect some basic information about your situation so the right lawyer can review it. After that, they'll reach out to you about next steps. It only takes a few minutes.\"");
   addEdge(q1, q1_yes);  addEdge(q1_yes, q1b);
   addEdge(q1, q1_what); addEdge(q1_what, q1b);
 
   // Q1b responses
-  const q1b_existing = resp('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with our team right away.\"");
+  const q1b_existing = resp('Existing client - worked with firm before');
   const q1b_new      = resp('New client - first time calling');
   addEdge(q1b, q1b_existing); addEdge(q1b_existing, transferParalegalId);
   addEdge(q1b, q1b_new);
@@ -108,7 +123,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 1 — FAMILY LAW
   // ═══════════════════════════════════════════════════════════════
 
-  const famTriage = addNode('question', 'Family Law - Matter Triage', { defaultCollapsed: true,
+  const famTriage = addNode('question', 'Family Law - Matter Triage', {
     note: 'What brings you to us today regarding your family matter?',
   });
   // AI routes here when caller describes: custody, divorce, child support, alimony,
@@ -170,7 +185,7 @@ export function createGeneralIntakeTemplate() {
     note: 'CRITICAL - determines whether emergency application is needed',
   });
   addEdge(famA3, famA4);
-  const famA4_urgent  = resp('Yes - immediate safety concern', 'FLAG URGENT. Say: "Your safety is the priority - let me connect you with an attorney right away." Proceed immediately to transfer.');
+  const famA4_urgent  = resp('Yes - immediate safety concern', 'FLAG URGENT. Say: "Your safety is the priority. I am sending this to the right lawyer for immediate review now." Proceed immediately to the follow-up step.');
   const famA4_routine = resp('No - routine matter');
   addEdge(famA4, famA4_urgent);  addEdge(famA4_urgent,  transferId);
   addEdge(famA4, famA4_routine); addEdge(famA4_routine, transferId);
@@ -226,11 +241,11 @@ export function createGeneralIntakeTemplate() {
   const famCEmergency = addNode('action', 'EMERGENCY - Advise 911', {
     actionType: 'set_flag', flagName: 'urgencyFlag', flagValue: 'safety_first',
     petitionType: 'O-Petition - emergency order of protection',
-    note: 'EMERGENCY: Advise caller to call 911. Offer immediate attorney transfer.',
+    note: 'EMERGENCY: Advise caller to call 911. Let them know you are flagging this for immediate lawyer review.',
   });
   const famC1 = addNode('question', 'FC1. Nature of Conduct', { question: 'Can you tell me a little about what has been happening?' });
 
-  const famCS_unsafe = resp("No, or I'm not sure", 'EMERGENCY: Advise 911 immediately. Offer immediate attorney transfer.');
+  const famCS_unsafe = resp("No, or I'm not sure", 'EMERGENCY: Advise 911 immediately. Let them know you are flagging this for immediate lawyer review.');
   const famCS_safe   = resp('Yes, I am safe');
   addEdge(famCSafety, famCS_unsafe); addEdge(famCS_unsafe, famCEmergency); addEdge(famCEmergency, transferId);
   addEdge(famCSafety, famCS_safe);   addEdge(famCS_safe,   famC1);
@@ -324,11 +339,58 @@ export function createGeneralIntakeTemplate() {
   addEdge(famDivRouting, famDivR_con);   addEdge(famDivR_con,   famDiv1);
   addEdge(famDivRouting, famDivR_sep);   addEdge(famDivR_sep,   famDiv1);
 
-  const famDiv1_prop = resp('Property division and assets'); const famDiv1_sup = resp('Spousal support / alimony'); const famDiv1_child = resp('Child custody and support'); const famDiv1_all = resp('All of the above');
-  addEdge(famDiv1, famDiv1_prop); addEdge(famDiv1_prop, transferId);
-  addEdge(famDiv1, famDiv1_sup);  addEdge(famDiv1_sup,  transferId);
-  addEdge(famDiv1, famDiv1_child);addEdge(famDiv1_child,transferId);
-  addEdge(famDiv1, famDiv1_all);  addEdge(famDiv1_all,  transferId);
+  const famDiv2 = addNode('question', 'FH2. Filing Status / Court Dates', {
+    question: 'Has anything already been filed, and is there any court date or deadline coming up?',
+    note: 'If there is already a case or a court date, capture that clearly for the lawyer review.',
+  });
+  const famDiv1_prop = resp('Property division and assets');
+  const famDiv1_sup = resp('Spousal support / alimony');
+  const famDiv1_child = resp('Child custody and support');
+  const famDiv1_all = resp('All of the above');
+  addEdge(famDiv1, famDiv1_prop);  addEdge(famDiv1_prop,  famDiv2);
+  addEdge(famDiv1, famDiv1_sup);   addEdge(famDiv1_sup,   famDiv2);
+  addEdge(famDiv1, famDiv1_child); addEdge(famDiv1_child, famDiv2);
+  addEdge(famDiv1, famDiv1_all);   addEdge(famDiv1_all,   famDiv2);
+
+  const famDiv3 = addNode('question', 'FH3. Children Involved', {
+    question: 'Are there minor children involved in this matter?',
+  });
+  const famDiv2_notFiled = resp('Nothing filed yet');
+  const famDiv2_filed = resp('Filed already - no court date yet');
+  const famDiv2_court = resp('Filed already - court date or deadline coming up', 'FLAG URGENT. Make sure the notes clearly mention the upcoming date or deadline.');
+  addEdge(famDiv2, famDiv2_notFiled); addEdge(famDiv2_notFiled, famDiv3);
+  addEdge(famDiv2, famDiv2_filed);    addEdge(famDiv2_filed,    famDiv3);
+  addEdge(famDiv2, famDiv2_court);    addEdge(famDiv2_court,    famDiv3);
+
+  const famDiv4 = addNode('question', 'FH4. Other Side Representation', {
+    question: 'Does your spouse or partner already have a lawyer?',
+  });
+  const famDiv3_yes = resp('Yes - minor children are involved');
+  const famDiv3_no = resp('No - no minor children involved');
+  addEdge(famDiv3, famDiv3_yes); addEdge(famDiv3_yes, famDiv4);
+  addEdge(famDiv3, famDiv3_no);  addEdge(famDiv3_no,  famDiv4);
+
+  const famDiv5 = addNode('question', 'FH5. Immediate Divorce Urgency', {
+    question: 'Is there anything urgent right now, like a safety issue, being locked out of finances or the home, or a deadline coming up?',
+  });
+  const famDiv4_yes = resp('Yes - the other side already has a lawyer');
+  const famDiv4_no = resp('No - the other side does not have a lawyer');
+  const famDiv4_unsure = resp('I am not sure if they have a lawyer');
+  addEdge(famDiv4, famDiv4_yes);    addEdge(famDiv4_yes,    famDiv5);
+  addEdge(famDiv4, famDiv4_no);     addEdge(famDiv4_no,     famDiv5);
+  addEdge(famDiv4, famDiv4_unsure); addEdge(famDiv4_unsure, famDiv5);
+
+  const famDivUrgent = addNode('action', 'Flag: Divorce - Urgent', {
+    actionType: 'set_flag',
+    flagName: 'urgencyFlag',
+    flagValue: 'divorce_urgent',
+    note: 'Caller reported an urgent divorce issue like safety, access to finances, or an imminent deadline.',
+  });
+  const famDiv5_urgent = resp('Yes - there is an urgent divorce issue', 'FLAG URGENT. Capture the urgency details before handoff.');
+  const famDiv5_routine = resp('No - no immediate urgency');
+  addEdge(famDiv5, famDiv5_urgent);  addEdge(famDiv5_urgent,  famDivUrgent);
+  addEdge(famDivUrgent, transferId);
+  addEdge(famDiv5, famDiv5_routine); addEdge(famDiv5_routine, transferId);
 
   // --- Other Family ---
   const famOther_q5 = resp('Other family law matter');
@@ -338,7 +400,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 2 — CRIMINAL DEFENSE
   // ═══════════════════════════════════════════════════════════════
 
-  const crimRouting = addNode('question', 'Criminal - Matter Type', { defaultCollapsed: true,
+  const crimRouting = addNode('question', 'Criminal - Matter Type', {
     note: 'What type of criminal charge or matter are you facing?',
   });
   const q5_crim = q5r('Criminal Defense', "Caller's situation involves criminal defense", 'Route here when the caller describes: being arrested, facing criminal charges, a DUI, drug offense, assault, theft, domestic violence charge, sex offense, weapons charge, probation violation, warrant, or any criminal investigation or prosecution.');
@@ -422,7 +484,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 3 — IMMIGRATION
   // ═══════════════════════════════════════════════════════════════
 
-  const immRouting = addNode('question', 'Immigration - Matter Type', { defaultCollapsed: true,
+  const immRouting = addNode('question', 'Immigration - Matter Type', {
     note: 'What type of immigration matter do you need help with?',
   });
   const q5_imm = q5r('Immigration', "Caller's situation involves immigration", 'Route here when the caller describes: visa issues, deportation or removal, citizenship or naturalization, asylum, green card, work permits, sponsoring a family member, DACA, or any immigration status concern.');
@@ -500,7 +562,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 4 — PERSONAL INJURY
   // ═══════════════════════════════════════════════════════════════
 
-  const piRouting = addNode('question', 'Personal Injury - Incident Type', { defaultCollapsed: true,
+  const piRouting = addNode('question', 'Personal Injury - Incident Type', {
     note: 'What type of accident or injury occurred?',
   });
   const q5_pi = q5r('Personal Injury', "Caller's situation involves personal injury or accident", 'Route here when the caller describes: being hurt in a car accident, slip and fall, medical malpractice, workplace injury, a defective product causing harm, a dog bite, or the wrongful death of a family member due to someone else\'s negligence.');
@@ -568,7 +630,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 5 — CORPORATE / BUSINESS
   // ═══════════════════════════════════════════════════════════════
 
-  const corpRouting = addNode('question', 'Corporate - Matter Type', { defaultCollapsed: true,
+  const corpRouting = addNode('question', 'Corporate - Matter Type', {
     note: 'What type of business or corporate matter do you need help with?',
   });
   const q5_corp = q5r('Corporate / Business', "Caller's situation involves business or corporate law", 'Route here when the caller describes: a contract dispute, starting or dissolving a business, a business partnership conflict, merger or acquisition, corporate compliance, or a commercial dispute.');
@@ -629,7 +691,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 6 — REAL ESTATE
   // ═══════════════════════════════════════════════════════════════
 
-  const reRouting = addNode('question', 'Real Estate - Matter Type', { defaultCollapsed: true,
+  const reRouting = addNode('question', 'Real Estate - Matter Type', {
     note: 'What type of real estate matter do you need help with?',
   });
   const q5_re = q5r('Real Estate', "Caller's situation involves real estate", 'Route here when the caller describes: buying or selling property, a landlord-tenant dispute, eviction, foreclosure, a title dispute, zoning issues, a construction defect, or a real estate contract problem.');
@@ -690,7 +752,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 7 — EMPLOYMENT
   // ═══════════════════════════════════════════════════════════════
 
-  const empRouting = addNode('question', 'Employment - Matter Type', { defaultCollapsed: true,
+  const empRouting = addNode('question', 'Employment - Matter Type', {
     note: 'What type of employment or labor matter do you need help with?',
   });
   const q5_emp = q5r('Employment', "Caller's situation involves employment or labor law", 'Route here when the caller describes: being fired unfairly, workplace discrimination or harassment, unpaid wages, a non-compete or severance agreement, retaliation for whistleblowing, FMLA denial, or any employer-employee dispute.');
@@ -762,7 +824,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 8 — BANKRUPTCY
   // ═══════════════════════════════════════════════════════════════
 
-  const bankRouting = addNode('question', 'Bankruptcy - Type', { defaultCollapsed: true,
+  const bankRouting = addNode('question', 'Bankruptcy - Type', {
     note: 'What type of bankruptcy are you considering or currently involved in?',
   });
   const q5_bank = q5r('Bankruptcy', "Caller's situation involves bankruptcy or debt", 'Route here when the caller describes: overwhelming debt, wage garnishment, creditor harassment, potential foreclosure due to inability to pay, or asking about Chapter 7, 11, or 13 bankruptcy.');
@@ -818,7 +880,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 9 — TAX LAW
   // ═══════════════════════════════════════════════════════════════
 
-  const taxRouting = addNode('question', 'Tax Law - Matter Type', { defaultCollapsed: true,
+  const taxRouting = addNode('question', 'Tax Law - Matter Type', {
     note: 'What type of tax matter do you need legal help with?',
   });
   const q5_tax = q5r('Tax Law', "Caller's situation involves tax law or the IRS", 'Route here when the caller describes: an IRS audit, back taxes owed, a tax lien or levy on wages or bank account, a tax court appeal, suspected tax fraud, or needing help with tax planning or an IRS notice.');
@@ -884,7 +946,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 10 — ESTATE PLANNING
   // ═══════════════════════════════════════════════════════════════
 
-  const estRouting = addNode('question', 'Estate Planning - Matter Type', { defaultCollapsed: true,
+  const estRouting = addNode('question', 'Estate Planning - Matter Type', {
     note: 'What type of estate planning or probate matter do you need help with?',
   });
   const q5_est = q5r('Estate Planning', "Caller's situation involves estate planning or probate", 'Route here when the caller describes: wanting to write or update a will, setting up a trust, handling a deceased family member\'s estate, needing a power of attorney or healthcare directive, or contesting a will.');
@@ -942,7 +1004,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 11 — INTELLECTUAL PROPERTY
   // ═══════════════════════════════════════════════════════════════
 
-  const ipRouting = addNode('question', 'IP - Matter Type', { defaultCollapsed: true,
+  const ipRouting = addNode('question', 'IP - Matter Type', {
     note: 'What type of intellectual property matter do you need help with?',
   });
   const q5_ip = q5r('Intellectual Property', "Caller's situation involves intellectual property", 'Route here when the caller describes: someone copying their brand name or logo, protecting an invention, a copyright infringement, a stolen trade secret, or needing a licensing agreement for creative or technical work.');
@@ -997,7 +1059,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 12 — CIVIL RIGHTS
   // ═══════════════════════════════════════════════════════════════
 
-  const crRouting = addNode('question', 'Civil Rights - Matter Type', { defaultCollapsed: true,
+  const crRouting = addNode('question', 'Civil Rights - Matter Type', {
     note: 'What type of civil rights matter do you need help with?',
   });
   const q5_cr = q5r('Civil Rights', "Caller's situation involves a civil rights violation", 'Route here when the caller describes: police brutality or misconduct, an unlawful arrest or search, discrimination by a government agency, their free speech or religion being suppressed, or their rights being violated by a public institution.');
@@ -1060,7 +1122,7 @@ export function createGeneralIntakeTemplate() {
   // BRANCH 13 — ENVIRONMENTAL
   // ═══════════════════════════════════════════════════════════════
 
-  const envRouting = addNode('question', 'Environmental - Matter Type', { defaultCollapsed: true,
+  const envRouting = addNode('question', 'Environmental - Matter Type', {
     note: 'What type of environmental or natural resources matter do you need legal help with?',
   });
   const q5_env = q5r('Environmental', "Caller's situation involves environmental law", 'Route here when the caller describes: contaminated water or soil near their property, an EPA or state agency enforcement action, a permit dispute, natural resource rights (water, minerals), illness from toxic exposure, or a Superfund cleanup liability.');
@@ -1125,7 +1187,7 @@ export function createGeneralIntakeTemplate() {
     actionType: 'set_flag', flagName: 'practice_area', flagValue: 'General inquiry - attorney consultation required',
     note: 'Catch-all: attorney consultation needed to determine correct practice area',
   });
-  const q5_other = q5r('Other', "Caller's situation does not clearly match a specific area", 'Route here only if the caller\'s situation genuinely does not fit any of the above categories after careful listening. Say: "That\'s helpful - let me make sure I connect you with someone who can assess exactly what type of help you need."');
+  const q5_other = q5r('Other', "Caller's situation does not clearly match a specific area", 'Route here only if the caller\'s situation genuinely does not fit any of the above categories after careful listening. Say: "That\'s helpful - I\'ll make sure this gets to the right lawyer so they can assess exactly what type of help you need."');
   addEdge(q5, q5_other); addEdge(q5_other, otherFlag); addEdge(otherFlag, transferId);
 
   return {

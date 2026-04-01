@@ -40,6 +40,10 @@ export function createFamilyIntakeTemplate() {
   function mkTransfer(label: string, urgent = false) {
     return addNode('transfer', label, {
       transferTarget: 'attorney',
+      handoffMode: 'summary_only',
+      callbackMessage: urgent
+        ? "I've flagged your case as urgent and sent everything over to the right lawyer immediately. They'll reach out to you as soon as possible."
+        : TRANSFER_MSG,
       message: urgent
         ? "I've flagged your case as urgent and sent everything over to our team immediately. They'll reach out to you as soon as possible."
         : TRANSFER_MSG,
@@ -51,7 +55,8 @@ export function createFamilyIntakeTemplate() {
   // Paralegal transfer for existing clients (bypasses full intake)
   const transferParalegalId = addNode('transfer', 'Transfer to Paralegal', {
     transferTarget: 'paralegal',
-    message: "Welcome back! Please hold one moment while I connect you with our team.",
+    handoffMode: 'live_transfer',
+    callbackMessage: "Welcome back. I've sent this to our team, and the right lawyer will reach out to you shortly.",
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -59,7 +64,7 @@ export function createFamilyIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'm going to ask you a few questions so that when I connect you with one of our attorneys, they'll already have everything they need to help you right away. Everything you share is confidential. Shall we get started?",
+    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'm going to ask you a few questions so we can collect the information the right lawyer needs to review your situation. After that, the right lawyer will review it and reach out to you about next steps. Everything you share is confidential.",
   });
 
   // Q1. Shall we get started?
@@ -74,14 +79,14 @@ export function createFamilyIntakeTemplate() {
 
   // Q1 responses - both lead to Q1b
   const q1_yes = response("Yes, let's begin");
-  const q1_explain = response("What is this for?", "Briefly explain: \"Of course - I'm going to collect some basic information about you and your situation, then connect you with one of our attorneys who can help. It only takes a few minutes.\"");
+  const q1_explain = response("What is this for?", "Briefly explain: \"Of course. I'm going to collect some basic information about you and your situation so the right lawyer can review it. After that, they'll reach out to you about next steps. It only takes a few minutes.\"");
   addEdge(q1, q1_yes);
   addEdge(q1_yes, q1b);
   addEdge(q1, q1_explain);
   addEdge(q1_explain, q1b);
 
   // Q1b responses
-  const q1b_existing = response('Existing client - worked with firm before', "Say: \"Welcome back! Let me get you connected with our team right away.\"");
+  const q1b_existing = response('Existing client - worked with firm before');
   const q1b_new      = response('New client - first time calling');
   addEdge(q1b, q1b_existing);
   addEdge(q1b_existing, transferParalegalId);   // existing clients → paralegal/reception, not attorney
@@ -254,13 +259,13 @@ export function createFamilyIntakeTemplate() {
   const cEmergency = addNode('action', 'EMERGENCY - Advise 911', {
     actionType: 'set_flag', flagName: 'urgencyFlag', flagValue: 'safety_first',
     petitionType: 'O-Petition - emergency order of protection',
-    note: 'EMERGENCY PROTOCOL: Advise caller to call 911 immediately. Offer immediate attorney transfer.',
+    note: 'EMERGENCY PROTOCOL: Advise caller to call 911 immediately. Let them know you are flagging this for immediate lawyer review.',
   });
   const c1 = addNode('question', 'C1. Nature of Conduct', {
     question: 'Can you tell me a little about what has been happening?',
   });
 
-  const cSafety_unsafe = response("No, or I'm not sure", 'EMERGENCY: Advise caller to call 911 immediately. Offer immediate attorney transfer.');
+  const cSafety_unsafe = response("No, or I'm not sure", 'EMERGENCY: Advise caller to call 911 immediately. Let them know you are flagging this for immediate lawyer review.');
   const cSafety_safe   = response('Yes, I am safe');
   addEdge(cSafety, cSafety_unsafe); addEdge(cSafety_unsafe, cEmergency);
   addEdge(cSafety, cSafety_safe);   addEdge(cSafety_safe, c1);
@@ -370,7 +375,7 @@ export function createFamilyIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // A4 urgency
-  const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. Let me get you connected with an attorney right away."');
+  const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. I am sending this to the right lawyer for immediate review now."');
   const a4_routine = response('No - routine matter');
   addEdge(a4, a4_urgent);  addEdge(a4_urgent,  mkTransfer('A - Custody: Urgent Transfer', true));
   addEdge(a4, a4_routine); addEdge(a4_routine, mkTransfer('A - Custody: Transfer to Attorney'));

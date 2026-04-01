@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { redirect } from 'next/navigation';
-import { Scale, LogOut, Workflow } from 'lucide-react';
+import { LogOut, Workflow } from 'lucide-react';
 import Link from 'next/link';
 import { PhoneNumberCard } from '@/components/dashboard/PhoneNumberCard';
 import { RecentCallsList } from '@/components/dashboard/RecentCallsList';
@@ -35,11 +35,11 @@ export default function Dashboard() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-              <Scale className="w-5 h-5 text-white" />
+              <Workflow className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-white">AI Paralegal</h1>
-              <p className="text-xs text-zinc-500">Legal intake dashboard</p>
+              <h1 className="text-lg font-semibold text-white">Begintake</h1>
+              <p className="text-xs text-zinc-500">AI intake workspace</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

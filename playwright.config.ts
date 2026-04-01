@@ -1,4 +1,9 @@
+import fs from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
+
+const macChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH
+  || (fs.existsSync(macChromePath) ? macChromePath : undefined);
 
 export default defineConfig({
   testDir: './e2e',
@@ -14,7 +19,10 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: executablePath ? { executablePath } : undefined,
+      },
     },
   ],
   webServer: {

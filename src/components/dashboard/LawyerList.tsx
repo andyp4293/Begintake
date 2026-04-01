@@ -68,7 +68,7 @@ function LawyerFormModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lawyers'] });
-      toast.success(isEditing ? 'Attorney updated' : 'Attorney added');
+      toast.success(isEditing ? 'Team member updated' : 'Team member added');
       onClose();
     },
     onError: (err: Error) => {
@@ -88,7 +88,7 @@ function LawyerFormModal({
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-zinc-800">
           <h2 className="text-base font-semibold text-white">
-            {isEditing ? 'Edit Attorney' : 'Add Attorney'}
+            {isEditing ? 'Edit Team Member' : 'Add Team Member'}
           </h2>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-800 transition-colors">
             <X className="w-4 h-4 text-zinc-400" />
@@ -116,7 +116,7 @@ function LawyerFormModal({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="sarah@lawfirm.com"
+              placeholder="sarah@example.com"
               className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors"
             />
           </div>
@@ -135,7 +135,7 @@ function LawyerFormModal({
 
           {/* Specialties */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-2">Specialties</label>
+            <label className="block text-xs font-medium text-zinc-400 mb-2">Routing specialties</label>
             <div className="flex flex-wrap gap-1.5">
               {SPECIALTY_OPTIONS.map((s) => (
                 <button
@@ -156,7 +156,7 @@ function LawyerFormModal({
 
           {/* Available */}
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-zinc-400">Available for calls</label>
+            <label className="text-xs font-medium text-zinc-400">Available for live handoffs</label>
             <button
               type="button"
               onClick={() => setAvailable(!available)}
@@ -190,7 +190,7 @@ function LawyerFormModal({
                 className="flex-1"
               />
             </div>
-            <p className="text-[10px] text-zinc-600 mt-1">Calls will only be transferred to this attorney during these hours.</p>
+            <p className="text-[10px] text-zinc-600 mt-1">Begintake will only send live handoffs to this person during these hours.</p>
           </div>
         </div>
 
@@ -207,7 +207,7 @@ function LawyerFormModal({
             disabled={!name || !email || saveMutation.isPending}
             className="flex-1 px-4 py-2 bg-white rounded-lg text-sm text-black font-medium hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {saveMutation.isPending ? 'Saving...' : isEditing ? 'Update' : 'Add Attorney'}
+            {saveMutation.isPending ? 'Saving...' : isEditing ? 'Update' : 'Add Team Member'}
           </button>
         </div>
       </div>
@@ -256,10 +256,10 @@ export function LawyerList() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lawyers'] });
-      toast.success('Attorney removed');
+      toast.success('Team member removed');
     },
     onError: () => {
-      toast.error('Failed to remove attorney');
+      toast.error('Failed to remove team member');
     },
   });
 
@@ -269,7 +269,7 @@ export function LawyerList() {
   };
 
   const handleDelete = async (lawyer: Lawyer) => {
-    const ok = await confirmDialog({ title: 'Remove Attorney', message: `Remove ${lawyer.name} from the team? This cannot be undone.`, confirmLabel: 'Remove', destructive: true });
+    const ok = await confirmDialog({ title: 'Remove Team Member', message: `Remove ${lawyer.name} from the routing team? This cannot be undone.`, confirmLabel: 'Remove', destructive: true });
     if (ok) deleteMutation.mutate(lawyer.id);
   };
 
@@ -282,7 +282,7 @@ export function LawyerList() {
     <>
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-zinc-300">Attorneys</h3>
+          <h3 className="text-sm font-medium text-zinc-300">Routing Team</h3>
           <button
             onClick={() => { setEditingLawyer(null); setShowForm(true); }}
             className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-600 transition-colors"
@@ -298,7 +298,7 @@ export function LawyerList() {
               <CalendarDays className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
               <p className="text-[11px] font-medium text-zinc-300">Google Calendar sharing</p>
             </div>
-            <p className="text-[10px] text-zinc-500 mb-2">Each attorney must share their Google Calendar with this address to enable live availability checking.</p>
+            <p className="text-[10px] text-zinc-500 mb-2">Each team member who should receive live handoffs must share their Google Calendar with this address.</p>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-[10px] text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 truncate select-all">
                 {calendarEmail}
@@ -331,12 +331,12 @@ export function LawyerList() {
         ) : !lawyers?.length ? (
           <div className="text-center py-8">
             <Briefcase className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-            <p className="text-zinc-500 text-sm">No attorneys yet</p>
+            <p className="text-zinc-500 text-sm">No team members yet</p>
             <button
               onClick={() => setShowForm(true)}
               className="mt-3 text-xs text-white hover:text-zinc-300"
             >
-              Add your first attorney
+              Add your first team member
             </button>
           </div>
         ) : (

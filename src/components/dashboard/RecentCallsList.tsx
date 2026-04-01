@@ -31,6 +31,23 @@ interface PagedResponse {
   totalCount: number;
 }
 
+function getOutcomeLabel(callOutcome: string) {
+  switch (callOutcome) {
+    case 'consultation_scheduled':
+      return 'Scheduled';
+    case 'summary_sent':
+      return 'Summary Sent';
+    case 'summary_delivery_failed':
+      return 'Email Delivery Failed';
+    case 'summary_unassigned':
+      return 'Needs Assignment';
+    case 'transferred':
+      return 'Transferred';
+    default:
+      return callOutcome;
+  }
+}
+
 function TranscriptView({ notes }: { notes: string }) {
   const [showFull, setShowFull] = useState(false);
   const lines = notes.split('\n').filter(Boolean);
@@ -158,6 +175,8 @@ export function RecentCallsList() {
             <option value="">All outcomes</option>
             <option value="consultation_scheduled">Scheduled</option>
             <option value="summary_sent">Summary sent</option>
+            <option value="summary_delivery_failed">Email delivery failed</option>
+            <option value="summary_unassigned">Needs assignment</option>
             <option value="transferred">Transferred</option>
             <option value="general_inquiry">General inquiry</option>
           </select>
@@ -211,10 +230,7 @@ export function RecentCallsList() {
                         )}
                         {call.callOutcome && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-medium">
-                            {call.callOutcome === 'consultation_scheduled' ? 'Scheduled'
-                              : call.callOutcome === 'summary_sent' ? 'Summary Sent'
-                              : call.callOutcome === 'transferred' ? 'Transferred'
-                              : call.callOutcome}
+                            {getOutcomeLabel(call.callOutcome)}
                           </span>
                         )}
                         {call.legalArea && (

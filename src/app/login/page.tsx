@@ -1,7 +1,7 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import { Scale } from 'lucide-react';
+import { Workflow } from 'lucide-react';
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
@@ -27,10 +27,10 @@ function LoginContent() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 mb-6">
-            <Scale className="w-8 h-8 text-white" />
+            <Workflow className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-semibold text-white">AI Paralegal</h1>
-          <p className="text-zinc-400 mt-2 text-sm">Sign in to access your dashboard</p>
+          <h1 className="text-2xl font-semibold text-white">Begintake</h1>
+          <p className="text-zinc-400 mt-2 text-sm">Sign in to access your intake workspace</p>
         </div>
 
         {/* Error */}

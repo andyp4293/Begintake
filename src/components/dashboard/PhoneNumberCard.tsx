@@ -33,7 +33,7 @@ export function PhoneNumberCard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['phone-number'] });
-      toast.success('Phone number provisioned!');
+      toast.success('Intake number provisioned!');
     },
     onError: (err: Error) => {
       toast.error(err.message);
@@ -62,8 +62,8 @@ export function PhoneNumberCard() {
           <Phone className="w-5 h-5 text-white" />
         </div>
         <div>
-          <h3 className="text-sm font-medium text-zinc-300">AI Paralegal Line</h3>
-          <p className="text-xs text-zinc-500">Available 24/7</p>
+          <h3 className="text-sm font-medium text-zinc-300">Begintake Number</h3>
+          <p className="text-xs text-zinc-500">Your always-on intake line</p>
         </div>
       </div>
 

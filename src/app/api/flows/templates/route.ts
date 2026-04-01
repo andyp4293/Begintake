@@ -14,17 +14,17 @@ export async function GET() {
     {
       id: 'default-intake',
       name: 'Default Reception Intake',
-      description: 'Simple visual template for the default all-practice-areas receptionist flow. Covers all 13 practice areas at a broad level and routes callers to scheduling, attorney review, or a live team transfer.',
+      description: 'Broad front-desk intake template that collects core details, screens for urgency, and routes callers toward scheduling, follow-up review, or a live team handoff.',
     },
     {
       id: 'family-court-intake',
       name: 'Family Court Intake',
-      description: 'Deep intake script for family law: custody, divorce, support, family offense, child welfare, paternity, adoption, and juvenile matters. Built for a dedicated family law firm.',
+      description: 'Deep family-law intake template that also works well as a model for building more structured vertical-specific intake paths.',
     },
     {
       id: 'general-intake',
       name: 'General Legal Intake',
-      description: 'Comprehensive intake covering all 13 practice areas: Family, Criminal, Immigration, Personal Injury, Corporate, Real Estate, Employment, Bankruptcy, Tax, Estate Planning, Intellectual Property, Civil Rights, and Environmental.',
+      description: 'Comprehensive multi-branch intake template for firms with many matter types and deeper routing requirements.',
     },
   ]);
 }

@@ -1,10 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { compileFlowToPrompt, extractToolsFromFlow } from './flow-compiler';
 import { createFamilyIntakeTemplate as createAndersonBowmanTemplate } from './templates/family-intake';
 
 // ─── compileFlowToPrompt ──────────────────────────────────────────────────────
 
 describe('compileFlowToPrompt', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('compiles a simple linear flow', () => {
     const flow = {
       id: 'test-1',
@@ -50,7 +54,7 @@ describe('compileFlowToPrompt', () => {
     expect(prompt).toContain('What do you need?');
     expect(prompt).toContain('If they say "A"');
     expect(prompt).toContain('If they say "B"');
-    expect(prompt).toContain('TRANSFER TO ATTORNEY');
+    expect(prompt).toContain('LAWYER FOLLOW-UP');
   });
 
   it('compiles the Anderson Bowman template', () => {
@@ -63,7 +67,7 @@ describe('compileFlowToPrompt', () => {
     expect(prompt).toContain('What brings you to the firm today');
     expect(prompt).toContain('custody');
     expect(prompt).toContain('safe');
-    expect(prompt).toContain('TRANSFER TO ATTORNEY');
+    expect(prompt).toContain('LAWYER FOLLOW-UP');
     expect(prompt).toContain('petition_type');
     expect(prompt).toContain('generateTransferSummary');
   });
@@ -97,6 +101,132 @@ describe('compileFlowToPrompt', () => {
     expect(prompt).toContain('Welcome to Smith Law. I am Jordan.');
     expect(prompt).not.toContain('{firm}');
     expect(prompt).not.toContain('{name}');
+  });
+
+  it('uses the resolved firm name in the universal goodbye rule', () => {
+    const flow = {
+      id: 'firm-goodbye-flow',
+      name: 'Firm Goodbye Flow',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: { greeting: 'Welcome to {firm}. I am {name}.' } },
+        { id: 'n2', type: 'end', label: 'End', config: {} },
+      ],
+      edges: [{ id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 }],
+    };
+
+    const prompt = compileFlowToPrompt(flow, 'Jordan', 'Test Intake');
+    expect(prompt).toContain('Thank you for calling Test Intake. Have a wonderful day. Goodbye!');
+    expect(prompt).not.toContain('Anderson Bowman');
+  });
+
+  it('forbids filler and early transfer before the branch is complete', () => {
+    const flow = {
+      id: 'no-shortcut-flow',
+      name: 'No Shortcut Flow',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: { greeting: 'Welcome to {firm}.' } },
+        { id: 'n2', type: 'question', label: 'Q1', config: { question: 'What happened?' } },
+        { id: 'n3', type: 'response', label: 'Car accident', config: { response: 'Car accident' } },
+        { id: 'n4', type: 'question', label: 'Q2', config: { question: 'Has an insurance claim been filed?' } },
+        { id: 'n5', type: 'transfer', label: 'Transfer', config: { callbackMessage: 'We will follow up.' } },
+      ],
+      edges: [
+        { id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 },
+        { id: 'e2', sourceNodeId: 'n2', targetNodeId: 'n3', label: null, condition: null, sortOrder: 0 },
+        { id: 'e3', sourceNodeId: 'n3', targetNodeId: 'n4', label: null, condition: null, sortOrder: 0 },
+        { id: 'e4', sourceNodeId: 'n4', targetNodeId: 'n5', label: null, condition: null, sortOrder: 0 },
+      ],
+    };
+
+    const prompt = compileFlowToPrompt(flow, 'Bobby', 'Test');
+    expect(prompt).toContain('Never say filler like "give me a moment", "give me a second", "one sec", or similar before a tool call.');
+    expect(prompt).toContain('Do NOT skip ahead to a summary, transfer, or goodbye. Only do that when you reach an explicit TRANSFER or END CALL section.');
+    expect(prompt).toContain('Do NOT end the call early while there are still unanswered scripted sections on the caller\'s current branch.');
+    expect(prompt).toContain('Do NOT ask the same callback number, email, name, or "for yourself / on behalf of someone else" question again');
+    expect(prompt).toContain('If the caller volunteers answers to later scripted questions early, capture those facts immediately and skip those later questions instead of re-asking them just to preserve the original order.');
+    expect(prompt).toContain('If one caller response answers multiple scripted questions at once, treat every clearly answered slot as captured and move to the first still-unanswered scripted question.');
+    expect(prompt).toContain('If the caller says "hello?", asks if you are still there, or there is a brief pause, reassure them briefly and resume the current unanswered question.');
+  });
+
+  it('treats the first question as already asked in the opening message', () => {
+    const flow = {
+      id: 'opening-question-flow',
+      name: 'Opening Question Flow',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: { greeting: 'Hello and welcome.' } },
+        { id: 'n2', type: 'question', label: 'Q1', config: { question: 'Shall we get started?' } },
+        { id: 'n3', type: 'response', label: 'Yes', config: { response: "Yes, let's begin" } },
+        { id: 'n4', type: 'question', label: 'Q2', config: { question: 'Could I get your name?' } },
+      ],
+      edges: [
+        { id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 },
+        { id: 'e2', sourceNodeId: 'n2', targetNodeId: 'n3', label: null, condition: null, sortOrder: 0 },
+        { id: 'e3', sourceNodeId: 'n3', targetNodeId: 'n4', label: null, condition: null, sortOrder: 0 },
+      ],
+    };
+
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('Do not stop after the greeting. In the first spoken message, immediately continue into the next question.');
+    expect(prompt).toContain('This question is already included in the first spoken message.');
+    expect(prompt).toContain('If the caller already answered it immediately after the opening, do NOT ask it again.');
+    expect(prompt).toContain('Only if they did not answer or you need clarification, ask the caller: "Shall we get started?"');
+  });
+
+  it('uses response labels for branch routing when edge labels are empty', () => {
+    const flow = {
+      id: 'response-routing-flow',
+      name: 'Response Routing Flow',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: { greeting: 'Hello.' } },
+        { id: 'n2', type: 'question', label: 'Q3', config: { question: 'Is this the best callback number?' } },
+        { id: 'n3', type: 'response', label: 'Yes node', config: { response: 'Yes, this number is fine' } },
+        { id: 'n4', type: 'response', label: 'No node', config: { response: 'No, use a different number' } },
+        { id: 'n5', type: 'end', label: 'Done', config: {} },
+      ],
+      edges: [
+        { id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 },
+        { id: 'e2', sourceNodeId: 'n2', targetNodeId: 'n3', label: null, condition: null, sortOrder: 0 },
+        { id: 'e3', sourceNodeId: 'n2', targetNodeId: 'n4', label: null, condition: null, sortOrder: 1 },
+        { id: 'e4', sourceNodeId: 'n3', targetNodeId: 'n5', label: null, condition: null, sortOrder: 0 },
+        { id: 'e5', sourceNodeId: 'n4', targetNodeId: 'n5', label: null, condition: null, sortOrder: 0 },
+      ],
+    };
+
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('If they say "Yes, this number is fine": go to SECTION');
+    expect(prompt).toContain('If they say "No, use a different number": go to SECTION');
+    expect(prompt).not.toContain('If they say "Continue": go to SECTION');
+  });
+
+  it('adds slot-skip guidance for common repeated intake questions', () => {
+    const flow = {
+      id: 'skip-guidance-flow',
+      name: 'Skip Guidance Flow',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: { greeting: 'Hello.' } },
+        { id: 'n2', type: 'question', label: 'Q2. Caller Name', config: { question: 'Could I start with your first and last name?' } },
+        { id: 'n3', type: 'question', label: 'Q3. Best Phone Number', config: { question: "Is the number you're calling from the best number to reach you if we get disconnected?" } },
+        { id: 'n4', type: 'question', label: 'Q4. Self or On Behalf Of', config: { question: 'Are you calling for yourself, or on behalf of someone else?' } },
+        { id: 'n5', type: 'question', label: 'Q5. Tell Me What\'s Going On', config: { question: 'Can you tell me a little about what has been going on?' } },
+      ],
+      edges: [
+        { id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 },
+        { id: 'e2', sourceNodeId: 'n2', targetNodeId: 'n3', label: null, condition: null, sortOrder: 0 },
+        { id: 'e3', sourceNodeId: 'n3', targetNodeId: 'n4', label: null, condition: null, sortOrder: 0 },
+        { id: 'e4', sourceNodeId: 'n4', targetNodeId: 'n5', label: null, condition: null, sortOrder: 0 },
+      ],
+    };
+
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('If the caller already clearly gave their name earlier in the conversation, treat it as captured and continue without re-asking this question.');
+    expect(prompt).toContain('If the caller already confirmed the callback number or gave a replacement number earlier, treat that phone number as captured and continue without re-asking this question.');
+    expect(prompt).toContain('If the caller already made clear whether they are calling for themselves or someone else, treat that as captured and continue without re-asking this question.');
+    expect(prompt).toContain('If the caller already clearly explained their core issue earlier in the conversation, treat that issue summary as captured and continue without re-asking this question.');
   });
 });
 
@@ -442,41 +572,34 @@ describe('Anderson Bowman template', () => {
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('FOLLOW THIS SCRIPT EXACTLY');
+    expect(prompt).toContain('silently call advanceActiveFlow');
+    expect(prompt).toContain('Call tools silently');
+    expect(prompt).toContain('Never say tool names out loud');
   });
 
-  it('compiled prompt includes transfer protocol with availability check and generateTransferSummary', () => {
+  it('compiled prompt uses summary-only follow-up by default', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
-    expect(prompt).toContain('TRANSFER TO ATTORNEY');
-    expect(prompt).toContain('checkAttorneyAvailability');
+    expect(prompt).toContain('LAWYER FOLLOW-UP');
     expect(prompt).toContain('generateTransferSummary');
+    expect(prompt).toContain('handoffMode="summary_only"');
   });
 
-  it('compiled prompt includes no-answer fallback when transfer fails', () => {
+  it('compiled prompt does not promise a live handoff by default', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
-    // Must have explicit instruction for when transfer attempt fails / no one answers
-    expect(prompt).toContain('TRANSFER FAILS OR NO ONE ANSWERS');
-    expect(prompt).toContain('wasn\'t able to take the call');
-    expect(prompt).toContain('information has already been sent');
+    expect(prompt).toContain('Do NOT promise a live handoff');
+    expect(prompt).not.toContain('IF ATTORNEY IS AVAILABLE');
+    expect(prompt).not.toContain('checkAttorneyAvailability');
   });
 
-  it('compiled prompt handles both available and unavailable attorney paths', () => {
+  it('compiled prompt always instructs endCall after follow-up handoff', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
-    expect(prompt).toContain('IF ATTORNEY IS AVAILABLE');
-    expect(prompt).toContain('IF ATTORNEY IS NOT AVAILABLE');
-  });
-
-  it('compiled prompt always instructs endCall after no-answer fallback', () => {
-    const template = createAndersonBowmanTemplate();
-    const flow = { id: 'test', ...template };
-    const prompt = compileFlowToPrompt(flow);
-    // endCall must be mentioned in the transfer section for the unavailable path
-    const transferIdx = prompt.indexOf('TRANSFER TO ATTORNEY');
+    const transferIdx = prompt.indexOf('LAWYER FOLLOW-UP');
     const endCallIdx = prompt.indexOf('endCall', transferIdx);
     expect(endCallIdx).toBeGreaterThan(transferIdx);
   });
@@ -508,11 +631,14 @@ describe('Anderson Bowman template', () => {
   it('emergency and urgent paths go directly to the attorney transfer node', () => {
     const template = createAndersonBowmanTemplate();
     const emergency = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
-    const transfer = template.nodes.find((n: any) => n.type === 'transfer' && n.config?.transferTarget === 'attorney');
 
     // cEmergency -> transfer directly
     const emergencyEdge = template.edges.find((e: any) => e.sourceNodeId === emergency!.id);
-    expect(emergencyEdge!.targetNodeId).toBe(transfer!.id);
+    const emergencyTransfer = template.nodes.find((n: any) => n.id === emergencyEdge!.targetNodeId);
+
+    expect(emergencyTransfer?.type).toBe('transfer');
+    expect(emergencyTransfer?.config?.transferTarget).toBe('attorney');
+    expect(emergencyTransfer?.label).toContain('Emergency Transfer');
   });
 
   // ── Dead-end / orphan audit ──────────────────────────────────────────────
@@ -544,12 +670,78 @@ describe('Anderson Bowman template', () => {
     expect(tools).toContain('endCall');
   });
 
-  it('compiled prompt includes checkAttorneyAvailability and generateTransferSummary instructions', () => {
+  it('compiled prompt includes generateTransferSummary instructions for follow-up mode', () => {
     const template = createAndersonBowmanTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('generateTransferSummary');
+    expect(prompt).not.toContain('checkAttorneyAvailability');
+  });
+
+  it('supports live transfer instructions when explicitly enabled', () => {
+    vi.stubEnv('ENABLE_LIVE_CALL_TRANSFERS', 'true');
+    const flow = {
+      id: 'live-transfer-test',
+      name: 'Live Transfer Test',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: {} },
+        { id: 'n2', type: 'transfer', label: 'Transfer', config: { handoffMode: 'live_transfer', transferTarget: 'attorney' } },
+      ],
+      edges: [{ id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 }],
+    };
+
+    const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('checkAttorneyAvailability');
+    expect(prompt).toContain('handoffMode="live_transfer"');
+  });
+
+  it('supports paralegal live transfer instructions without the attorney transfer env flag', () => {
+    const flow = {
+      id: 'paralegal-live-transfer-test',
+      name: 'Paralegal Live Transfer Test',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: {} },
+        { id: 'n2', type: 'transfer', label: 'Transfer', config: { handoffMode: 'live_transfer', transferTarget: 'paralegal' } },
+      ],
+      edges: [{ id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 }],
+    };
+
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).toContain('transferTarget="paralegal", handoffMode="live_transfer"');
+    expect(prompt).not.toContain('Welcome back! Let me connect you');
+    expect(prompt).toContain('The live transfer itself will say exactly: "Welcome back. We\'ll transfer you to our team right away."');
+    expect(prompt).toContain('Do NOT say anything before the tool call unless the caller asks a new question.');
+    expect(prompt).toContain('Do NOT add filler before the tool call.');
+    expect(prompt).toContain('Do NOT call endCall after a successful live transfer.');
+  });
+
+  it('keeps new-client responses on the normal intake path', () => {
+    const flow = {
+      id: 'new-client-short-circuit',
+      name: 'New Client Short Circuit',
+      description: null,
+      nodes: [
+        { id: 'n1', type: 'start', label: 'Start', config: {} },
+        { id: 'n2', type: 'question', label: 'Client Status', config: { question: 'Are you new or existing?' } },
+        { id: 'n3', type: 'response', label: 'New client - first time calling', config: { response: 'New client - first time calling' } },
+        { id: 'n4', type: 'question', label: 'Deeper Intake', config: { question: 'Tell me more.' } },
+        { id: 'n5', type: 'response', label: 'Existing client - worked with firm before', config: { response: 'Existing client - worked with firm before' } },
+        { id: 'n6', type: 'transfer', label: 'Paralegal Handoff', config: { transferTarget: 'paralegal', handoffMode: 'live_transfer' } },
+      ],
+      edges: [
+        { id: 'e1', sourceNodeId: 'n1', targetNodeId: 'n2', label: null, condition: null, sortOrder: 0 },
+        { id: 'e2', sourceNodeId: 'n2', targetNodeId: 'n3', label: null, condition: null, sortOrder: 0 },
+        { id: 'e3', sourceNodeId: 'n2', targetNodeId: 'n5', label: null, condition: null, sortOrder: 1 },
+        { id: 'e4', sourceNodeId: 'n3', targetNodeId: 'n4', label: null, condition: null, sortOrder: 0 },
+        { id: 'e5', sourceNodeId: 'n5', targetNodeId: 'n6', label: null, condition: null, sortOrder: 0 },
+      ],
+    };
+
+    const prompt = compileFlowToPrompt(flow);
+    expect(prompt).not.toContain('Do not continue with the rest of intake first.');
+    expect(prompt).toContain('Then proceed to SECTION 2.');
   });
 
   it('compiled prompt includes Q2 collect field label "First and last name"', () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   clampZoom,
   clampCameraToBoard,
+  getCameraForPointFocus,
   getCameraForZoom,
   getCameraForNodeFocus,
   getCanvasMetrics,
@@ -50,6 +51,22 @@ describe('flow tree canvas', () => {
 
     expect(camera.x).toBe(-520);
     expect((metrics.contentOffsetX + 280) + camera.x).toBe(800);
+  });
+
+  it('can focus a point against a custom viewport anchor so large reveals open into view', () => {
+    const camera = getCameraForPointFocus({
+      viewportWidth: 1600,
+      viewportHeight: 900,
+      pointX: 1200,
+      pointY: 640,
+      boardWidth: 4280,
+      boardHeight: 2722,
+      anchorX: 480,
+      anchorY: 220,
+    });
+
+    expect(camera.x).toBe(-720);
+    expect(camera.y).toBe(-420);
   });
 
   it('keeps camera movement finite while still allowing large pans in both directions', () => {
