@@ -34,7 +34,7 @@ export function createFamilyIntakeTemplate() {
   }
 
   // Helper: create a dedicated transfer node for each branch endpoint
-  const TRANSFER_MSG = "Thank you so much for sharing all of that with me. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.";
+  const TRANSFER_MSG = 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.';
   const TRANSFER_DATA = ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'];
 
   function mkTransfer(label: string, urgent = false) {
@@ -42,10 +42,10 @@ export function createFamilyIntakeTemplate() {
       transferTarget: 'attorney',
       handoffMode: 'summary_only',
       callbackMessage: urgent
-        ? "I've flagged your case as urgent and sent everything over to the right lawyer immediately. They'll reach out to you as soon as possible."
+        ? 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case, and I am marking it as urgent. They will review it and call you back at the best callback number I have for you.'
         : TRANSFER_MSG,
       message: urgent
-        ? "I've flagged your case as urgent and sent everything over to our team immediately. They'll reach out to you as soon as possible."
+        ? 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case, and I am marking it as urgent. They will review it and call you back at the best callback number I have for you.'
         : TRANSFER_MSG,
       includeNotes: true,
       transferData: TRANSFER_DATA,
@@ -64,7 +64,7 @@ export function createFamilyIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'm going to ask you a few questions so we can collect the information the right lawyer needs to review your situation. After that, the right lawyer will review it and reach out to you about next steps. Everything you share is confidential.",
+    greeting: "Thank you for calling {firm}. I am the AI assistant, {name}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.",
   });
 
   // Q1. Shall we get started?

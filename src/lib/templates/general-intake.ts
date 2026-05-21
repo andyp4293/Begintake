@@ -51,8 +51,8 @@ export function createGeneralIntakeTemplate() {
   const transferId = addNode('transfer', 'Transfer to Attorney', {
     transferTarget: 'attorney',
     handoffMode: 'summary_only',
-    callbackMessage: "Thank you for sharing all of that. I've sent everything over to the right lawyer. They'll review your case and reach out to you as soon as possible.",
-    message: "Thank you for sharing all of that. I've sent everything over to our legal team. They'll review your case and reach out to you as soon as possible.",
+    callbackMessage: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.',
+    message: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.',
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'party_role', 'practice_area', 'matter_type', 'urgency_flag', 'all_collected_fields'],
   });
@@ -69,7 +69,7 @@ export function createGeneralIntakeTemplate() {
   // ═══════════════════════════════════════════════════════════════
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: "Good afternoon. Thank you for calling {firm}. My name is {name}, and I'm the firm's intake assistant. I'll ask you a few questions so we can collect the information the right lawyer needs to review your situation. After that, the right lawyer will review it and reach out to you about next steps. Everything you share is confidential.",
+    greeting: "Thank you for calling {firm}. I am the AI assistant, {name}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.",
   });
 
   const q1 = addNode('question', 'Q1. Shall we get started?', { question: 'Shall we get started?' });

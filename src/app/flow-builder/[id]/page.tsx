@@ -1286,7 +1286,7 @@ export default function FlowEditorPage() {
       transfer: {
         transferTarget: 'attorney',
         handoffMode: 'summary_only',
-        callbackMessage: "Thank you for sharing all of that with me. I've sent everything to the right team member, and they will reach out to you directly about next steps.",
+        callbackMessage: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.',
       },
       end: { closingMessage: 'Thank you for calling! Have a wonderful day. Goodbye!' },
     };

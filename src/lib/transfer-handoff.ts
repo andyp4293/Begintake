@@ -44,10 +44,10 @@ export function isLiveTransferEnabled(requestedMode: unknown, transferTarget?: u
 
 export function getDefaultTransferCallbackMessage(target: TransferTarget): string {
   if (target === 'paralegal') {
-    return "I've sent all of this information to our team, and the right lawyer will reach out to you shortly.";
+    return 'Thank you. I wrote down everything you shared with me today so I can pass this to our team for your case. They will call you back at the best callback number I have for you.';
   }
 
-  return "I've sent all of this information to the right lawyer, and they will reach out to you directly about next steps.";
+  return 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.';
 }
 
 export function getLiveTransferAnnouncement(target: TransferTarget): string {

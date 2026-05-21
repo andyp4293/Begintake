@@ -129,7 +129,7 @@ describe('VAPI Assistant Config (thorough)', () => {
           label: 'Opening Greeting',
           sortOrder: 0,
           config: {
-            greeting: 'Good afternoon. Thank you for calling {firm}. My name is {name}. Everything you share is confidential. Shall we get started?',
+            greeting: "Thank you for calling {firm}. I am the AI assistant, {name}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time. Shall we get started?",
           },
         },
         {
@@ -150,7 +150,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();
-    expect(assistant.firstMessage).toBe('Good afternoon. Thank you for calling our law firm. My name is Aria. Everything you share is confidential. Shall we get started?');
+    expect(assistant.firstMessage).toBe("Thank you for calling our law firm. I am the AI assistant, Aria, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time. Shall we get started?");
   });
 
   it('includes the next question in the first spoken message for active flows', async () => {
@@ -165,7 +165,7 @@ describe('VAPI Assistant Config (thorough)', () => {
           label: 'Opening Greeting',
           sortOrder: 0,
           config: {
-            greeting: 'Thank you for calling {firm}. My name is {name}.',
+            greeting: "Thank you for calling {firm}. I am the AI assistant, {name}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.",
           },
         },
         {
@@ -186,7 +186,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     const req = makeRequest({ message: { type: 'assistant-request' } });
     const res = await POST(req);
     const { assistant } = await res.json();
-    expect(assistant.firstMessage).toBe('Thank you for calling our law firm. My name is Aria. Could I start with your first and last name?');
+    expect(assistant.firstMessage).toBe("Thank you for calling our law firm. I am the AI assistant, Aria, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time. Could I start with your first and last name?");
   });
 
   it('assistant has all tool definitions', async () => {

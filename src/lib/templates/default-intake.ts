@@ -53,13 +53,13 @@ export function createDefaultIntakeTemplate() {
   const transferUrgent = addNode('transfer', 'Urgent Attorney Review', {
     transferTarget: 'attorney',
     handoffMode: 'summary_only',
-    callbackMessage: 'I am marking this as urgent and sending it to the right lawyer now. Our team will reach out as soon as possible.',
+    callbackMessage: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case, and I am marking it as urgent. They will review it and call you back at the best callback number I have for you.',
     includeNotes: true,
     transferData: ['caller_name', 'phone', 'email', 'issue_summary', 'practice_area', 'urgency_flag'],
   });
 
   const startId = addNode('start', 'Opening Greeting', {
-    greeting: 'Thank you for calling {firm}. My name is {name}. I\'m going to ask a few quick questions so we can collect your information for attorney review. After that, the right lawyer will review it and reach out to you about next steps.',
+    greeting: 'Thank you for calling {firm}. I am the AI assistant, {name}, and I\'ll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.',
   });
 
   const q1 = addNode('question', 'Q1. Caller Name', {
@@ -220,7 +220,7 @@ export function createDefaultIntakeTemplate() {
     const reviewTransfer = addNode('transfer', `${practiceArea} - Attorney Review`, {
       transferTarget: 'attorney',
       handoffMode: 'summary_only',
-      callbackMessage: 'I appreciate you sharing that. I am sending it to the right lawyer now, and they will reach out to you directly about next steps.',
+      callbackMessage: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.',
       includeNotes: true,
       transferData: ['caller_name', 'phone', 'email', 'issue_summary', 'practice_area'],
     });

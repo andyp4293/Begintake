@@ -2053,8 +2053,8 @@ export async function POST(req: NextRequest) {
 
       // Use the flow's greeting as firstMessage if available, otherwise use default
       const defaultFirstMessage = assistantName
-        ? `Thank you for calling our law firm. My name is ${assistantName}, how can I help you today?`
-        : 'Thank you for calling our law firm. How can I help you today?';
+        ? `Thank you for calling our law firm. I am the AI assistant, ${assistantName}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.`
+        : "Thank you for calling our law firm. I am the AI assistant, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.";
 
       const assistant: any = {
         name: assistantName ? `${assistantName} - Begintake` : 'Begintake Intake Assistant',
