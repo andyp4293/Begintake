@@ -2594,6 +2594,22 @@ describe('VAPI Webhook', () => {
       const data = await res.json();
       expect(data.received).toBe(true);
     });
+
+    it('accepts assistant speech lifecycle events for startup diagnostics', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'assistant.speechStarted',
+          call: { id: 'call-speech-start-1' },
+          text: 'Thank you for calling our law firm.',
+          turn: 0,
+          source: 'force-say',
+        },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.received).toBe(true);
+    });
   });
 
   // ─── error handling ────────────────────────────────────────────────────

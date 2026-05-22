@@ -2858,6 +2858,20 @@ export async function POST(req: NextRequest) {
       const assistant: any = {
         name: assistantName ? `${assistantName} - Begintake` : 'Begintake Intake Assistant',
         firstMessage: flowFirstMessage || defaultFirstMessage,
+        firstMessageMode: 'assistant-speaks-first',
+        serverMessages: [
+          'assistant.started',
+          'assistant.speechStarted',
+          'end-of-call-report',
+          'hang',
+          'speech-update',
+          'status-update',
+          'tool-calls',
+          'transfer-destination-request',
+          'handoff-destination-request',
+          'user-interrupted',
+          'transcript',
+        ],
         hooks: [
           {
             on: 'customer.speech.timeout',
@@ -2922,13 +2936,41 @@ export async function POST(req: NextRequest) {
           language: 'en',
           smartFormat: true,
           eotThreshold: 0.7,
-          eotTimeoutMs: 5000,
+          eotTimeoutMs: 3000,
+          fallbackPlan: {
+            autoFallback: {
+              enabled: true,
+            },
+            transcribers: [
+              {
+                provider: 'assembly-ai',
+                speechModel: 'universal-streaming-english',
+                language: 'en',
+              },
+              {
+                provider: 'azure',
+                language: 'en-US',
+              },
+            ],
+          },
         },
         voice: {
           provider: '11labs',
           voiceId: 'NDjuUGBKZhdOwAYMSat7',
           stability: 0.62,
           similarityBoost: 0.68,
+          fallbackPlan: {
+            voices: [
+              {
+                provider: 'openai',
+                voiceId: 'shimmer',
+              },
+              {
+                provider: 'cartesia',
+                voiceId: '248be419-c632-4f23-adf1-5324ed7dbf1d',
+              },
+            ],
+          },
         },
         backgroundSound: 'office',
         startSpeakingPlan: {

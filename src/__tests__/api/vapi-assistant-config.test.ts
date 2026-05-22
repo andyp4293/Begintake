@@ -88,6 +88,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     const assistant = await getAssistant({ message: { type: 'assistant-request' } });
     expect(assistant.firstMessage).toBeDefined();
     expect(assistant.firstMessage.length).toBeGreaterThan(0);
+    expect(assistant.firstMessageMode).toBe('assistant-speaks-first');
   });
 
   it('assistant has model with provider and model name', async () => {
@@ -373,9 +374,39 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(assistant.transcriber.language).toBe('en');
     expect(assistant.transcriber.smartFormat).toBe(true);
     expect(assistant.transcriber.eotThreshold).toBe(0.7);
-    expect(assistant.transcriber.eotTimeoutMs).toBe(5000);
+    expect(assistant.transcriber.eotTimeoutMs).toBe(3000);
+    expect(assistant.transcriber.fallbackPlan).toEqual({
+      autoFallback: { enabled: true },
+      transcribers: [
+        {
+          provider: 'assembly-ai',
+          speechModel: 'universal-streaming-english',
+          language: 'en',
+        },
+        {
+          provider: 'azure',
+          language: 'en-US',
+        },
+      ],
+    });
     expect(assistant.backgroundSpeechDenoisingPlan).toEqual({
       smartDenoisingPlan: { enabled: true },
+    });
+  });
+
+  it('assistant has voice fallback providers configured for resilience', async () => {
+    const assistant = await getAssistant({ message: { type: 'assistant-request' } });
+    expect(assistant.voice.fallbackPlan).toEqual({
+      voices: [
+        {
+          provider: 'openai',
+          voiceId: 'shimmer',
+        },
+        {
+          provider: 'cartesia',
+          voiceId: '248be419-c632-4f23-adf1-5324ed7dbf1d',
+        },
+      ],
     });
   });
 
@@ -383,6 +414,20 @@ describe('VAPI Assistant Config (thorough)', () => {
     const assistant = await getAssistant({ message: { type: 'assistant-request' } });
     expect(assistant.server.url).toBe(
       'https://ai-paralegal-andyp4293s-projects.vercel.app/api/webhooks/vapi'
+    );
+  });
+
+  it('assistant opts into speech-start lifecycle messages for call-start diagnostics', async () => {
+    const assistant = await getAssistant({ message: { type: 'assistant-request' } });
+    expect(assistant.serverMessages).toEqual(
+      expect.arrayContaining([
+        'assistant.started',
+        'assistant.speechStarted',
+        'status-update',
+        'end-of-call-report',
+        'tool-calls',
+        'transcript',
+      ])
     );
   });
 
