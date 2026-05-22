@@ -213,6 +213,7 @@ ACTIVE FLOW CONTROL: after EVERY caller answer, silently call advanceActiveFlow 
 Do NOT choose the next scripted question, branch, transfer, or scheduling step yourself. The server-owned flow runner decides that for you.
 When the caller answered the current question in natural language, include matchedChoiceLabel in advanceActiveFlow with a short semantic summary of the branch they most likely meant.
 When the caller clearly reveals or corrects a core fact like new versus existing client, for themselves versus someone else, their name, callback number, email, issue summary, or post-summary intent, include those in semanticFacts even if they came out of order.
+If the caller clearly wants a real human or someone on the team instead of continuing with the AI, include semanticFacts.requestHuman as true even if they phrase it indirectly.
 If the caller is correcting something they said earlier, set semanticFacts.answerIntent to "correction". If the same turn both answers the current question and corrects earlier info, set it to "both".
 If the caller clearly sounds like they are not trying to reach a law firm at all, include semanticFacts.conversationFit as "wrong_number". If they clearly are describing a real legal problem, include semanticFacts.conversationFit as "legal_intake".
 After the summary or handoff stage, if the caller clearly sounds done, is asking a follow-up timing question, or urgently wants a real person now, include semanticFacts.postCallIntent with the closest intent.
@@ -372,7 +373,7 @@ IF PROSPECTIVE CLIENT (not in our system):
 - Continue the normal intake flow. Do NOT transfer them to the paralegal just because they are new.
 
 REQUESTS FOR A REAL PERSON:
-- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar during the intake, immediately call generateTransferSummary with transferTarget="paralegal" and handoffMode="live_transfer".
+- If the caller clearly wants a real person, live staff member, or someone on the team during the intake, immediately call generateTransferSummary with transferTarget="paralegal" and handoffMode="live_transfer", even if they do not use those exact words.
 - The live transfer itself will say exactly: "Of course. I'll transfer you to our team right away."
 - If the live transfer fails, let the caller know our team will call them back at the best callback number you have for them, then end the call.
 - After the summary stage, do NOT offer or attempt a live paralegal transfer. If they still want a person then, let them know their information has been flagged for team follow-up and end the call.
@@ -533,7 +534,7 @@ function getToolDefinitions(options?: { activeFlow?: boolean }) {
       })] : []),
     buildFunctionTool({
         name: 'advanceActiveFlow',
-        description: 'Server-owned intake flow runner. After each caller answer on an active flow, call this silently with the latest caller response so the server can decide the next step, skip already-answered questions, and complete handoff or scheduling actions. Do not say any filler before or after this tool call. If the caller answered the current question in natural language, include a short semantic summary of the branch they most likely meant. If the caller also revealed or corrected core facts like new versus existing client, self versus someone else, name, callback number, email, or issue summary, include those in semanticFacts. If the caller clearly has no idea, needs a plain-English explanation, wants to skip or move on from the current question, or has gone off-topic for the current question, include semanticFacts.questionState. If the caller clearly sounds like they are not trying to reach a law firm at all, include semanticFacts.conversationFit as wrong_number. After the summary or handoff stage, if the caller clearly sounds done, is asking a follow-up timing question, or urgently wants a real person now, include semanticFacts.postCallIntent.',
+        description: 'Server-owned intake flow runner. After each caller answer on an active flow, call this silently with the latest caller response so the server can decide the next step, skip already-answered questions, and complete handoff or scheduling actions. Do not say any filler before or after this tool call. If the caller answered the current question in natural language, include a short semantic summary of the branch they most likely meant. If the caller also revealed or corrected core facts like new versus existing client, self versus someone else, name, callback number, email, or issue summary, include those in semanticFacts. If the caller clearly has no idea, needs a plain-English explanation, wants to skip or move on from the current question, or has gone off-topic for the current question, include semanticFacts.questionState. If the caller clearly sounds like they are not trying to reach a law firm at all, include semanticFacts.conversationFit as wrong_number. If the caller clearly wants a real human or someone on the team instead of continuing with the AI, include semanticFacts.requestHuman as true. After the summary or handoff stage, if the caller clearly sounds done, is asking a follow-up timing question, or urgently wants a real person now, include semanticFacts.postCallIntent.',
         parameters: {
           type: 'object',
           properties: {
@@ -546,6 +547,7 @@ function getToolDefinitions(options?: { activeFlow?: boolean }) {
                 answerIntent: { type: 'string', enum: ['current_question', 'correction', 'both', 'unclear'], description: 'Whether this caller response mainly answered the current question, corrected earlier info, did both, or was unclear.' },
                 questionState: { type: 'string', enum: ['answered', 'uncertain', 'needs_explanation', 'wants_to_skip', 'off_topic', 'unclear'], description: 'Whether the caller clearly answered the current question, is unsure, needs a plain-English explanation, wants to skip or move on, has gone off-topic for the current question, or is still unclear.' },
                 conversationFit: { type: 'string', enum: ['legal_intake', 'wrong_number', 'unclear'], description: 'Whether this sounds like a genuine legal intake call, a wrong-number or non-legal business call, or is still unclear.' },
+                requestHuman: { type: 'boolean', description: 'True when the caller clearly wants a real person, live staff member, or someone on the team instead of continuing with the AI, even if phrased indirectly.' },
                 postCallIntent: { type: 'string', enum: ['done', 'follow_up_question', 'urgent_transfer', 'continue', 'unclear'], description: 'After the summary stage, whether the caller sounds done, is asking a follow-up question, urgently wants a real person now, wants to continue the conversation, or is still unclear.' },
                 callerName: { type: 'string', description: 'Caller full name if clear from the latest response.' },
                 callerPhone: { type: 'string', description: 'Best callback phone number if clear from the latest response.' },
@@ -922,6 +924,7 @@ function normalizeSemanticFactsArg(raw: unknown): SemanticCallerFacts | null {
     && ['legal_intake', 'wrong_number', 'unclear'].includes(value.conversationFit)
       ? value.conversationFit as SemanticConversationFit
       : null;
+  const requestHuman = value.requestHuman === true ? true : null;
   const postCallIntent: SemanticPostCallIntent | null = typeof value.postCallIntent === 'string'
     && ['done', 'follow_up_question', 'urgent_transfer', 'continue', 'unclear'].includes(value.postCallIntent)
       ? value.postCallIntent as SemanticPostCallIntent
@@ -945,7 +948,7 @@ function normalizeSemanticFactsArg(raw: unknown): SemanticCallerFacts | null {
     ? value.issueSummary.trim()
     : null;
 
-  if (!answerIntent && !questionState && !conversationFit && !postCallIntent && !clientStatus && !callingFor && !callerName && !callerPhone && !callerEmail && !issueSummary) {
+  if (!answerIntent && !questionState && !conversationFit && !requestHuman && !postCallIntent && !clientStatus && !callingFor && !callerName && !callerPhone && !callerEmail && !issueSummary) {
     return null;
   }
 
@@ -953,6 +956,7 @@ function normalizeSemanticFactsArg(raw: unknown): SemanticCallerFacts | null {
     ...(answerIntent ? { answerIntent } : {}),
     ...(questionState ? { questionState } : {}),
     ...(conversationFit ? { conversationFit } : {}),
+    ...(requestHuman ? { requestHuman } : {}),
     ...(postCallIntent ? { postCallIntent } : {}),
     ...(clientStatus ? { clientStatus } : {}),
     ...(callingFor ? { callingFor } : {}),
@@ -1001,6 +1005,10 @@ function isCallerRequestingImmediateParalegalTransfer(value: string): boolean {
     || /\b(?:transfer(?: me)?|connect me|connect us)\b/.test(normalized)
     || /\b(?:talk to (?:a |the )?(?:person|human|paralegal|someone))\b/.test(normalized)
   );
+}
+
+function isSemanticHumanTransferRequest(semanticFacts: SemanticCallerFacts | null | undefined): boolean {
+  return semanticFacts?.requestHuman === true;
 }
 
 function isSemanticPostCallIntent(semanticFacts: SemanticCallerFacts | null | undefined, intent: SemanticPostCallIntent): boolean {
@@ -1381,7 +1389,7 @@ async function handlePostFlowState(
     };
   }
 
-  if (isSemanticPostCallIntent(semanticFacts, 'urgent_transfer') || isCallerRequestingImmediateParalegalTransfer(callerResponse)) {
+  if (isSemanticPostCallIntent(semanticFacts, 'urgent_transfer') || isSemanticHumanTransferRequest(semanticFacts) || isCallerRequestingImmediateParalegalTransfer(callerResponse)) {
     const transferResult: any = await handleGenerateTransferSummary(
       {
         transferTarget: 'paralegal',
@@ -2400,7 +2408,7 @@ async function handleAdvanceActiveFlow(
     return handlePostFlowState(callerResponse, session, flow.id, runtimeState, semanticFacts, controlUrl);
   }
 
-  if (isCallerRequestingImmediateParalegalTransfer(callerResponse)) {
+  if (isSemanticHumanTransferRequest(semanticFacts) || isCallerRequestingImmediateParalegalTransfer(callerResponse)) {
     return handleImmediateParalegalTransferRequest(
       session,
       flow.id,

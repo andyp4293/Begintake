@@ -1054,6 +1054,62 @@ describe('VAPI Webhook', () => {
       );
     });
 
+    it('immediately live-transfers when semantic understanding says the caller wants a human without relying on an exact phrase', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: generalFlow.nodes.find((node: any) => node.label === 'Q2. Caller Name')?.id },
+        { fieldName: 'callerName', fieldValue: 'Jane Doe' },
+        { fieldName: 'issueSummary', fieldValue: 'I need help with a divorce' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+            monitor: { controlUrl: 'https://api.vapi.test/call/in-progress-semantic-human' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-semantic-human-mid-intake',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'Can somebody on your team take this from here?',
+                semanticFacts: {
+                  answerIntent: 'unclear',
+                  requestHuman: true,
+                },
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('live_transfer');
+      expect(result.transferred).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.vapi.test/call/in-progress-semantic-human/control',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
+
     it('ends the call for natural done phrases after the anything-else prompt', async () => {
       vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
       vi.mocked(prisma.callSession.findUnique).mockResolvedValue({

@@ -131,6 +131,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(prompt).toContain('Continue the normal intake flow. Do NOT transfer them to the paralegal just because they are new.');
     expect(prompt).toContain('immediately call generateTransferSummary with transferTarget="paralegal" and handoffMode="live_transfer"');
     expect(prompt).toContain('After the summary stage, do NOT offer or attempt a live paralegal transfer.');
+    expect(prompt).toContain('If the caller clearly wants a real person, live staff member, or someone on the team during the intake');
     expect(prompt).toContain('If the caller volunteers answers to later intake questions early, capture those facts immediately and skip the later duplicate questions instead of re-asking them.');
     expect(prompt).toContain('If one caller response answers multiple intake slots at once, treat every clearly answered slot as captured and move to the first still-unanswered question.');
     expect(prompt).toContain('If the caller gives a plausible direct answer to the current question');
@@ -297,6 +298,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(prompt).toContain('semanticFacts.answerIntent');
     expect(prompt).toContain('semanticFacts.questionState');
     expect(prompt).toContain('semanticFacts.conversationFit');
+    expect(prompt).toContain('semanticFacts.requestHuman');
     expect(prompt).toContain('semanticFacts.postCallIntent');
     expect(prompt).toContain('If the caller gives a vague, noisy, or non-routable answer to the open-ended issue question');
     expect(toolNames).not.toContain('captureIntakeState');
@@ -306,6 +308,7 @@ describe('VAPI Assistant Config (thorough)', () => {
     expect(advanceTool.function.parameters.properties.semanticFacts.properties.answerIntent).toBeDefined();
     expect(advanceTool.function.parameters.properties.semanticFacts.properties.questionState).toBeDefined();
     expect(advanceTool.function.parameters.properties.semanticFacts.properties.conversationFit).toBeDefined();
+    expect(advanceTool.function.parameters.properties.semanticFacts.properties.requestHuman).toBeDefined();
     expect(advanceTool.function.parameters.properties.semanticFacts.properties.postCallIntent).toBeDefined();
   });
 

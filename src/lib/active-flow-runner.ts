@@ -70,6 +70,7 @@ export interface SemanticCallerFacts extends InferredCallerFacts {
   conversationFit?: SemanticConversationFit | null;
   postCallIntent?: SemanticPostCallIntent | null;
   questionState?: SemanticQuestionState | null;
+  requestHuman?: boolean | null;
 }
 
 type QuestionKind =
