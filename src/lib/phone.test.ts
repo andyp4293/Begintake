@@ -38,6 +38,14 @@ describe('normalizePhoneNumber', () => {
   it('handles number with country code prefix', () => {
     expect(normalizePhoneNumber('+1 (555) 123-4567')).toBe('+15551234567');
   });
+
+  it('normalizes spoken-out digits', () => {
+    expect(normalizePhoneNumber('one two three seven two seven two four three seven')).toBe('+11237272437');
+  });
+
+  it('normalizes repeated spoken digits', () => {
+    expect(normalizePhoneNumber('double five five one two three four five six seven')).toBe('+15551234567');
+  });
 });
 
 describe('isE164PhoneNumber', () => {
@@ -111,5 +119,9 @@ describe('normalizeOptionalPhoneNumber', () => {
 
   it('returns null for invalid number', () => {
     expect(normalizeOptionalPhoneNumber('abc')).toBeNull();
+  });
+
+  it('returns normalized number for spoken digits', () => {
+    expect(normalizeOptionalPhoneNumber('one two three seven two seven two four three seven')).toBe('+11237272437');
   });
 });

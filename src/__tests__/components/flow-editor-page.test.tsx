@@ -461,6 +461,46 @@ describe('FlowEditorPage', () => {
     });
   });
 
+  it('keeps a collapsed node highlighted so it stays easy to track after closing', async () => {
+    mockUseQuery.mockReturnValue({
+      data: mockCollapsedBranchingFlow,
+      isLoading: false,
+    });
+
+    render(<FlowEditorPage />);
+
+    const questionNode = await waitFor(() => {
+      const el = document.getElementById('flow-node-question-node');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    const expandButton = questionNode.querySelector('button');
+    expect(expandButton).toBeTruthy();
+
+    fireEvent.click(expandButton!);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('response-node-title-response-yes')).toBeInTheDocument();
+      expect(questionNode.getAttribute('data-highlighted')).toBe('true');
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    fireEvent.click(document.body);
+
+    await waitFor(() => {
+      expect(questionNode.getAttribute('data-highlighted')).toBeNull();
+    });
+
+    fireEvent.click(expandButton!);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('response-node-title-response-yes')).not.toBeInTheDocument();
+      expect(questionNode.getAttribute('data-highlighted')).toBe('true');
+      expect(questionNode.style.outline).toContain('2px solid');
+    });
+  });
+
   it('keeps general intake routing branches collapsed by default on first load', async () => {
     mockUseQuery.mockReturnValue({
       data: mockGeneralTemplateFlow,

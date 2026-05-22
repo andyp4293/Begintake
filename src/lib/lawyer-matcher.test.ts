@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { identifyLegalArea, findBestLawyer } from './lawyer-matcher';
+import { identifyLegalArea, identifyLegalAreaMatch, findBestLawyer } from './lawyer-matcher';
 
 // Mock prisma
 vi.mock('@/lib/prisma', () => ({
@@ -37,6 +37,10 @@ describe('identifyLegalArea', () => {
     expect(identifyLegalArea('I have a felony charge')).toBe('criminal');
   });
 
+  it('identifies criminal law from natural phrases like pressing charges after a fight', () => {
+    expect(identifyLegalArea('I got into a bar fight and now I think he is pressing charges')).toBe('criminal');
+  });
+
   it('identifies immigration from visa', () => {
     expect(identifyLegalArea('I need help with my visa application')).toBe('immigration');
   });
@@ -69,6 +73,11 @@ describe('identifyLegalArea', () => {
     expect(identifyLegalArea('I need workers comp for my injury at work')).toBe('personal_injury');
   });
 
+  it('identifies tax law from audited phrasing', () => {
+    expect(identifyLegalArea('I got audited by the IRS')).toBe('tax');
+    expect(identifyLegalArea('My business is being audited')).toBe('tax');
+  });
+
   it('identifies corporate from business dispute', () => {
     expect(identifyLegalArea('I have a business contract dispute')).toBe('corporate');
   });
@@ -91,6 +100,17 @@ describe('identifyLegalArea', () => {
 
   it('returns other for empty string', () => {
     expect(identifyLegalArea('')).toBe('other');
+  });
+
+  it('does not false-match tax from the word first', () => {
+    expect(identifyLegalArea('First time.')).toBe('other');
+    expect(identifyLegalArea('This is my first time reaching out.')).toBe('other');
+  });
+
+  it('returns a non-zero score only for real keyword matches', () => {
+    expect(identifyLegalAreaMatch('First time.')).toEqual({ area: 'other', score: 0 });
+    expect(identifyLegalAreaMatch('I need help with my divorce').area).toBe('family');
+    expect(identifyLegalAreaMatch('I need help with my divorce').score).toBeGreaterThan(0);
   });
 
   it('handles mixed signals by picking highest score', () => {

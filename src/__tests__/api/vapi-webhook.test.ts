@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from '@/app/api/webhooks/vapi/route';
 import { NextRequest } from 'next/server';
 import { createGeneralIntakeTemplate } from '@/lib/templates/general-intake';
+import { FLOW_CURRENT_NODE_KEY, FLOW_POST_STATE_KEY } from '@/lib/active-flow-runner';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,33 @@ function makeRequest(body: any, secret?: string) {
   });
 }
 
+function getAssistantRequestCacheKey(body: any) {
+  return body?.message?.call?.phoneNumberId || body?.message?.call?.phoneNumber?.id || '__default__';
+}
+
+async function waitForAssistantRequestCache(body: any) {
+  const key = getAssistantRequestCacheKey(body);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const cache = (globalThis as any).assistantRequestContextCache as Map<string, unknown> | undefined;
+    if (cache?.has(key)) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`assistant request cache did not warm for key ${key}`);
+}
+
+async function getAssistant(body: any, secret?: string) {
+  const req = makeRequest(body, secret);
+  const res = await POST(req);
+  const data = await res.json();
+  return { res, data };
+}
+
+async function getWarmedAssistant(body: any, secret?: string) {
+  await getAssistant(body, secret);
+  await waitForAssistantRequestCache(body);
+  return getAssistant(body, secret);
+}
+
 const mockLawyers = [
   { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com', phone: '+15551001001', specialties: ['family', 'divorce', 'custody'], available: true, googleCalendarId: null, availabilityStart: 9, availabilityEnd: 17 },
   { id: 'law-2', name: 'Marcus Johnson', email: 'marcus@test.com', phone: '+15551001002', specialties: ['criminal', 'dui', 'defense'], available: true, googleCalendarId: null, availabilityStart: 9, availabilityEnd: 17 },
@@ -82,6 +110,7 @@ const mockLawyers = [
 
 describe('VAPI Webhook', () => {
   beforeEach(() => {
+    ((globalThis as any).assistantRequestContextCache as Map<string, unknown> | undefined)?.clear();
     vi.clearAllMocks();
     vi.mocked(prisma.lawyer.findMany).mockResolvedValue(mockLawyers as any);
     vi.mocked(prisma.lawyer.findUnique).mockResolvedValue(mockLawyers[0] as any);
@@ -134,17 +163,13 @@ describe('VAPI Webhook', () => {
 
   describe('assistant-request', () => {
     it('returns assistant config with system prompt', async () => {
-      const req = makeRequest({ message: { type: 'assistant-request' } });
-      const res = await POST(req);
-      const data = await res.json();
+      const { data } = await getAssistant({ message: { type: 'assistant-request' } });
       expect(data.assistant).toBeDefined();
-      expect(data.assistant.model.messages[0].content).toContain('AI paralegal');
+      expect(data.assistant.model.messages[0].content).toContain('CURRENT CLIENT');
     });
 
     it('includes tool definitions', async () => {
-      const req = makeRequest({ message: { type: 'assistant-request' } });
-      const res = await POST(req);
-      const data = await res.json();
+      const { data } = await getWarmedAssistant({ message: { type: 'assistant-request' } });
       const toolNames = data.assistant.model.tools.filter((t: any) => t.function).map((t: any) => t.function.name);
       expect(toolNames).toContain('captureIntakeState');
       expect(toolNames).toContain('advanceActiveFlow');
@@ -157,18 +182,33 @@ describe('VAPI Webhook', () => {
     });
 
     it('includes lawyer list in system prompt', async () => {
-      const req = makeRequest({ message: { type: 'assistant-request' } });
-      const res = await POST(req);
-      const data = await res.json();
+      const { data } = await getWarmedAssistant({ message: { type: 'assistant-request' } });
       expect(data.assistant.model.messages[0].content).toContain('Sarah Chen');
       expect(data.assistant.model.messages[0].content).toContain('Marcus Johnson');
     });
 
     it('includes first message', async () => {
-      const req = makeRequest({ message: { type: 'assistant-request' } });
-      const res = await POST(req);
-      const data = await res.json();
+      const { data } = await getAssistant({ message: { type: 'assistant-request' } });
       expect(data.assistant.firstMessage).toContain('law firm');
+    });
+
+    it('does not write a call session during assistant-request bootstrap', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'assistant-request',
+          call: {
+            id: 'call-warmup-1',
+            phoneNumberId: 'pn-warmup-1',
+            customer: { number: '+15559990001' },
+          },
+        },
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      expect(prisma.callSession.upsert).not.toHaveBeenCalled();
+      expect(prisma.callSession.create).not.toHaveBeenCalled();
+      expect(prisma.callSession.update).not.toHaveBeenCalled();
     });
   });
 
@@ -243,7 +283,6 @@ describe('VAPI Webhook', () => {
       vi.mocked(prisma.callSession.findUnique).mockResolvedValue({ id: 'cs-1', callId: 'call-1', callerPhone: '+15559990001', clientType: null } as any);
       vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
         { fieldName: 'callerName', fieldValue: 'Andy Pham' },
-        { fieldName: 'callerPhone', fieldValue: '+15559990001' },
         { fieldName: 'clientStatus', fieldValue: 'new' },
       ] as any);
 
@@ -277,6 +316,43 @@ describe('VAPI Webhook', () => {
       expect(result.capturedFields.clientStatus).toBe('new');
       expect(result.missingCommonFields).toContain('callingFor');
       expect(result.missingCommonFields).toContain('issueSummary');
+    });
+
+    it('ignores weak issue summaries and same-number auto-confirmations', async () => {
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({ id: 'cs-1', callId: 'call-1', callerPhone: '+15559990001', clientType: null } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-capture-2',
+            function: {
+              name: 'captureIntakeState',
+              arguments: {
+                callerPhone: '+15559990001',
+                issueSummary: 'First time.',
+                clientStatus: 'new',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+      const createManyArgs = vi.mocked(prisma.intakeData.createMany).mock.calls.at(-1)?.[0];
+
+      expect(createManyArgs?.data).toEqual([
+        expect.objectContaining({ fieldName: 'clientStatus', fieldValue: 'new' }),
+      ]);
+      expect(result.capturedFields.issueSummary).toBeUndefined();
+      expect(result.capturedFields.callerPhone).toBe('+15559990001');
     });
   });
 
@@ -325,8 +401,704 @@ describe('VAPI Webhook', () => {
 
       expect(result.success).toBe(true);
       expect(result.step).toBe('ask');
-      expect(result.currentNodeLabel).toBe('Personal Injury - Incident Type');
-      expect(result.assistantMessage).toBe('What type of accident or injury occurred?');
+      expect(result.currentNodeLabel).toBe('PI D1. Date of Incident');
+      expect(result.spokenByTool).toBe(true);
+      expect(result.assistantMessage).toBeUndefined();
+      expect(data.results[0].name).toBe('advanceActiveFlow');
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+        content: 'Approximately when did the incident occur?',
+      });
+    });
+
+    it('uses the assistant semantic branch hint to advance natural divorce answers without looping', async () => {
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: generalFlow.nodes.find((node: any) => node.label === 'FH2. Filing Status / Court Dates')?.id },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-semantic-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'No. None.',
+                matchedChoiceLabel: 'nothing filed yet',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('ask');
+      expect(result.currentNodeLabel).toBe('FH3. Children Involved');
+      expect(result.spokenByTool).toBe(true);
+      expect(result.assistantMessage).toBeUndefined();
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+        content: 'Are there minor children involved in this matter?',
+      });
+    });
+
+    it('uses semantic correction facts to reroute an out-of-order existing-client correction into the paralegal transfer path', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: 'user-1', transferPhoneNumber: '+15559999999' } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: generalFlow.nodes.find((node: any) => node.label === 'Q2. Caller Name')?.id },
+        { fieldName: 'clientStatus', fieldValue: 'new' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+            monitor: { controlUrl: 'https://api.vapi.test/call/semantic-correction' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-semantic-correction-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: "Actually, it's not my first time.",
+                semanticFacts: {
+                  answerIntent: 'correction',
+                  clientStatus: 'existing',
+                },
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('live_transfer');
+      expect(result.transferred).toBe(true);
+    });
+
+    it('does not repeat the client-status question when the caller answers it with a greeting plus a clear first-time answer', async () => {
+      const clientStatusQuestion = generalFlow.nodes.find((node: any) => node.label === 'Q1b. New or Existing Client?');
+      const nameQuestion = generalFlow.nodes.find((node: any) => node.label === 'Q2. Caller Name');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: clientStatusQuestion?.id },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-first-time-with-greeting-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: "Hello. It's, uh, my first time.",
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('ask');
+      expect(result.currentNodeLabel).toBe(nameQuestion?.label);
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+        content: 'Could I start with your first and last name?',
+      });
+    });
+
+    it('ends a clear wrong-number call from the opener when semantic understanding marks it as non-legal', async () => {
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: generalFlow.nodes.find((node: any) => node.label === 'Q1. Shall We Get Started?')?.id },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-wrong-number-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: "I'm trying to buy concert tickets.",
+                semanticFacts: {
+                  answerIntent: 'unclear',
+                  conversationFit: 'wrong_number',
+                  issueSummary: 'Caller is trying to buy concert tickets and is not seeking legal help.',
+                },
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('end');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+      });
+      expect(data.results[0].message.content).toContain('wrong number');
+    });
+
+    it('ends an obvious scam or wrong-number turn even after the intake has already moved deeper into the legal flow', async () => {
+      const childrenQuestion = generalFlow.nodes.find((node: any) => node.label === 'FH3. Children Involved?'
+        || node.label === 'FH3. Children Involved');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: childrenQuestion?.id },
+        { fieldName: 'issue_summary', fieldValue: 'I need help with a divorce.' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-scam-caller-deep-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: "Actually, I'm a scam caller.",
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('end');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message.content).toContain('wrong number');
+    });
+
+    it('does not reject a real fraud story as a wrong-number call just because it mentions a ticketing agency', async () => {
+      const issueQuestion = generalFlow.nodes.find((node: any) => node.label === "Q5. Tell Me What's Going On");
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: issueQuestion?.id },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-ticketing-fraud-legal-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'Someone pretending to be a ticketing agency scammed me out of money and I need legal help.',
+                semanticFacts: {
+                  answerIntent: 'answered',
+                  conversationFit: 'legal_intake',
+                  issueSummary: 'Caller says an impersonator posing as a ticketing agency scammed them out of money.',
+                },
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).not.toBe('end');
+      expect(result.currentNodeLabel).toBeTruthy();
+      expect(data.results[0].message.content).not.toContain('wrong number');
+    });
+
+    it('can move past a blocked non-core question when semantic understanding says the caller wants to move on', async () => {
+      const childrenQuestion = generalFlow.nodes.find((node: any) => node.label === 'FH3. Children Involved?'
+        || node.label === 'FH3. Children Involved');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: childrenQuestion?.id },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-skip-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: "I don't know. Can we move on?",
+                semanticFacts: {
+                  questionState: 'wants_to_skip',
+                },
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('ask');
+      expect(result.currentNodeLabel).toBe('FH4. Other Side Representation');
+      expect(result.spokenByTool).toBe(true);
+      expect(result.assistantMessage).toBeUndefined();
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+        content: 'Does your spouse or partner already have a lawyer?',
+      });
+    });
+
+    it('answers a short in-context follow-up question without drifting off-topic', async () => {
+      const childrenQuestion = generalFlow.nodes.find((node: any) => node.label === 'FH3. Children Involved?'
+        || node.label === 'FH3. Children Involved');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: '__flow_current_node_id', fieldValue: childrenQuestion?.id },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-define-minor-1',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'What is a minor?',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('clarify');
+      expect(result.currentNodeLabel).toBe('FH3. Children Involved');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+        content: 'A minor means a child under 18. Are there any children under 18 involved in this matter?',
+      });
+    });
+
+    it('answers natural post-summary follow-up questions instead of looping the anything-else prompt', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'awaiting_anything_else' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-post-follow-up',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'How long would it take for a lawyer to reach out?',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('say');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+      });
+      expect(data.results[0].message.content).toContain('Thank you. I wrote down everything you shared with me today');
+      expect(data.results[0].message.content).toContain("I can't promise an exact timeline over the phone");
+      expect(data.results[0].message.content).not.toContain('flag it for immediate review');
+      expect(data.results[0].message.content).not.toContain('transfer this call to our paralegal team now');
+      expect(data.results[0].message.content).toContain('Is there anything else I can help you with today?');
+    });
+
+    it('does not offer a live paralegal transfer in post-summary follow-up copy', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'awaiting_anything_else' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+            monitor: { controlUrl: 'https://api.vapi.test/call/post-summary-follow-up' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-post-follow-up-transfer',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'How long would it take for a lawyer to reach out?',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+
+      expect(data.results[0].message.content).not.toContain('transfer this call to our paralegal team now');
+      expect(data.results[0].message.content).not.toContain('flag it for immediate review');
+    });
+
+    it('ends the intake instead of live-transferring when the caller asks for a person after summary', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+        summary: 'I need help with a divorce',
+        notes: 'Caller said this feels urgent.',
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'awaiting_anything_else' },
+        { fieldName: 'callerName', fieldValue: 'Jane Doe' },
+        { fieldName: 'issueSummary', fieldValue: 'I need help with a divorce' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+            monitor: { controlUrl: 'https://api.vapi.test/call/post-summary-urgent' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-post-urgent-transfer',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'Yes, this is urgent. Please transfer me to the paralegal.',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('end');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message.content).toContain('flagged it for urgent review');
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        'https://api.vapi.test/call/post-summary-urgent/control',
+        expect.anything(),
+      );
+      expect(prisma.callSession.findUnique).toHaveBeenCalledWith({ where: { callId: 'call-1' } });
+    });
+
+    it('uses semantic post-call intent to end with urgent team follow-up instead of a live transfer', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+        summary: 'I need help with a divorce',
+        notes: 'Caller sounded desperate and needed a person right away.',
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'awaiting_anything_else' },
+        { fieldName: 'callerName', fieldValue: 'Jane Doe' },
+        { fieldName: 'issueSummary', fieldValue: 'I need help with a divorce' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+            monitor: { controlUrl: 'https://api.vapi.test/call/post-summary-semantic-urgent' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-post-semantic-urgent-transfer',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'We desperately need to talk to someone.',
+                semanticFacts: {
+                  postCallIntent: 'urgent_transfer',
+                },
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('end');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message.content).toContain('flagged it for urgent review');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('immediately live-transfers to the paralegal when the caller asks for a real person during intake', async () => {
+      vi.stubEnv('TRANSFER_PHONE_NUMBER', '+15559999999');
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: generalFlow.nodes.find((node: any) => node.label === 'Q2. Caller Name')?.id },
+        { fieldName: 'callerName', fieldValue: 'Jane Doe' },
+        { fieldName: 'issueSummary', fieldValue: 'I need help with a divorce' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+            monitor: { controlUrl: 'https://api.vapi.test/call/in-progress-real-person' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-real-person-mid-intake',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: 'I want to talk to a real person.',
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('live_transfer');
+      expect(result.transferred).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.vapi.test/call/in-progress-real-person/control',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
+
+    it('ends the call for natural done phrases after the anything-else prompt', async () => {
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValue(generalFlow);
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-1',
+        callId: 'call-1',
+        callerPhone: '+15559990001',
+        clientType: 'prospective',
+        intakeFlowId: generalFlow.id,
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'awaiting_anything_else' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-1',
+            customer: { number: '+15559990001' },
+          },
+          toolCallList: [{
+            id: 'tc-advance-post-done',
+            function: {
+              name: 'advanceActiveFlow',
+              arguments: {
+                callerResponse: "Uh, I think I'm good, actually. I don't need any more help.",
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.step).toBe('end');
+      expect(result.spokenByTool).toBe(true);
+      expect(data.results[0].message).toMatchObject({
+        type: 'request-complete',
+        role: 'assistant',
+        content: 'Thank you for calling. Have a wonderful day. Goodbye!',
+        endCallAfterSpokenEnabled: true,
+      });
     });
   });
 
@@ -632,7 +1404,10 @@ describe('VAPI Webhook', () => {
       expect(result.type).toBeUndefined();
       expect(result.liveTransfer).toBe(false);
       expect(result.deliveryStatus).toBe('queued_until_call_end');
-      expect(result.message).toContain('recorded');
+      expect(result.message).toContain('Thank you. I wrote down everything you shared with me today');
+      expect(result.message).toContain('callback number I have for you');
+      expect(result.message).not.toContain('flag it for immediate review');
+      expect(result.message).not.toContain('recorded');
       expect(sendCallSummaryEmail).not.toHaveBeenCalled();
     });
 
@@ -716,7 +1491,7 @@ describe('VAPI Webhook', () => {
       expect(fetchBody).toEqual({
         type: 'transfer',
         destination: { type: 'number', number: '+15559999999' },
-        content: "Welcome back. We'll transfer you to our team right away.",
+        content: "Of course. I'll transfer you to our team right away.",
       });
     });
 
@@ -889,6 +1664,104 @@ describe('VAPI Webhook', () => {
       expect(sendCallSummaryEmail).not.toHaveBeenCalled();
     });
 
+    it('prefers the verbally provided callback number over the inbound call number on queued summaries', async () => {
+      vi.mocked(prisma.callSession.findUnique).mockResolvedValue({
+        id: 'cs-callback',
+        callId: 'call-callback',
+        callerPhone: '+19087272437',
+        status: 'active',
+      } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValue([
+        { fieldName: 'callerPhone', fieldValue: '+11237272437' },
+      ] as any);
+      vi.mocked(prisma.client.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.client.create).mockResolvedValue({
+        id: 'cli-callback',
+        name: 'Sammy Smith',
+        phone: '+11237272437',
+        isCurrentClient: false,
+      } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: {
+            id: 'call-callback',
+            customer: { number: '+19087272437' },
+          },
+          toolCallList: [{
+            id: 'tc-callback',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Sammy Smith',
+                issue: 'I need help with an audit',
+              },
+            },
+          }],
+        },
+      });
+
+      await POST(req);
+
+      expect(prisma.client.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            phone: '+11237272437',
+          }),
+        }),
+      );
+    });
+
+    it('uses shared classification context to save the right legal area when the summary itself is vague', async () => {
+      vi.mocked(prisma.lawyer.findMany).mockResolvedValueOnce([
+        ...mockLawyers,
+        {
+          id: 'law-tax',
+          name: 'Taylor Tax',
+          email: 'tax@test.com',
+          phone: '+15551001003',
+          specialties: ['tax', 'irs', 'audit'],
+          available: true,
+          googleCalendarId: null,
+          availabilityStart: 9,
+          availabilityEnd: 17,
+        },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-tax-context' },
+          toolCallList: [{
+            id: 'tc-tax-context',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Tax Caller',
+                callerPhone: '5559990001',
+                issue: 'I need help',
+                classificationContext: 'IRS or state tax audit. Active lien or levy on bank/wages.',
+              },
+            },
+          }],
+        },
+      });
+
+      await POST(req);
+
+      expect(prisma.callSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cs-1' },
+          data: expect.objectContaining({
+            callOutcome: 'summary_queued',
+            legalArea: 'tax',
+            lawyerId: 'law-tax',
+          }),
+        }),
+      );
+    });
+
     it('creates client record if not existing', async () => {
       vi.mocked(prisma.client.findUnique).mockResolvedValue(null);
 
@@ -914,6 +1787,47 @@ describe('VAPI Webhook', () => {
         expect.objectContaining({
           data: expect.objectContaining({ isCurrentClient: false }),
         })
+      );
+    });
+
+    it('does not attach a queued summary to a mismatched existing client just because the callback number matches', async () => {
+      vi.mocked(prisma.client.findUnique).mockResolvedValue({
+        id: 'cli-existing',
+        name: 'Sammy Smith',
+        phone: '+15559990001',
+        email: null,
+        isCurrentClient: false,
+      } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-name-mismatch' },
+          toolCallList: [{
+            id: 'tc-name-mismatch',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Andy Pham',
+                callerPhone: '5559990001',
+                issue: 'I am being audited by the IRS',
+              },
+            },
+          }],
+        },
+      });
+
+      await POST(req);
+
+      expect(prisma.client.create).not.toHaveBeenCalled();
+      expect(prisma.callSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cs-1' },
+          data: expect.objectContaining({
+            clientId: null,
+            callOutcome: 'summary_queued',
+          }),
+        }),
       );
     });
 
@@ -1013,6 +1927,36 @@ describe('VAPI Webhook', () => {
       expect(result.deliveryStatus).toBe('queued_until_call_end');
       expect(sendCallSummaryEmail).not.toHaveBeenCalled();
     });
+
+    it('allows an active-flow transfer summary to bypass text-only readiness fallback once the runner reached handoff', async () => {
+      const req = makeRequest({
+        message: {
+          type: 'tool-calls',
+          call: { id: 'call-20b' },
+          toolCallList: [{
+            id: 'tc-20b',
+            function: {
+              name: 'generateSummary',
+              arguments: {
+                callerName: 'Complete PI',
+                callerPhone: '5559990001',
+                issue: 'I got injured at work',
+                notes: 'Injury Type: Workplace injury / workers comp',
+                flowGuaranteedComplete: true,
+              },
+            },
+          }],
+        },
+      });
+
+      const res = await POST(req);
+      const data = await res.json();
+      const result = JSON.parse(data.results[0].result);
+
+      expect(result.success).toBe(true);
+      expect(result.deliveryStatus).toBe('queued_until_call_end');
+      expect(sendCallSummaryEmail).not.toHaveBeenCalled();
+    });
   });
 
   // ─── status-update ─────────────────────────────────────────────────────
@@ -1071,6 +2015,9 @@ describe('VAPI Webhook', () => {
     });
 
     it('sends the queued summary email with the real transcript and recording after the call ends', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+        assistantName: 'Bobby',
+      } as any);
       vi.mocked(prisma.callSession.findUnique)
         .mockResolvedValueOnce({
           id: 'cs-queued',
@@ -1130,10 +2077,11 @@ describe('VAPI Webhook', () => {
       expect(sendCallSummaryEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           lawyerEmail: 'sarah@test.com',
+          assistantName: 'Bobby',
           callerName: 'Jane Doe',
           summary: 'Car accident intake',
           notes: 'Caller said they were rear-ended and have ER records.',
-          transcript: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          transcript: 'Bobby: Thanks for calling.\nCaller: I was rear-ended yesterday.',
           recordingUrl: 'https://api.vapi.ai/recordings/call-queued.mp3',
         })
       );
@@ -1141,6 +2089,239 @@ describe('VAPI Webhook', () => {
         expect.objectContaining({
           where: { id: 'cs-queued' },
           data: { callOutcome: 'summary_sent' },
+        })
+      );
+    });
+
+    it('uses captured intake state for caller identity when the queued summary has no linked client record', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+        assistantName: 'Bobby',
+      } as any);
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-fallback',
+          callId: 'call-queued-fallback',
+          notes: 'Caller said they were injured at work.',
+          summary: 'Work injury intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-fallback',
+          callId: 'call-queued-fallback',
+          callerPhone: '+15559990001',
+          summary: 'Work injury intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was injured at work.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: null,
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-fallback',
+          callId: 'call-queued-fallback',
+          callerPhone: '+15559990001',
+          summary: 'Work injury intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was injured at work.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: null,
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-fallback',
+          callId: 'call-queued-fallback',
+          callerPhone: '+15559990001',
+          summary: 'Work injury intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was injured at work.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: null,
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValueOnce([
+        { fieldName: 'callerName', fieldValue: 'John Smith' },
+        { fieldName: 'callerEmail', fieldValue: 'john@test.com' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued-fallback', customer: { number: '+15559990001' } },
+          summary: 'Work injury intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I was injured at work.' },
+            ],
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assistantName: 'Bobby',
+          callerName: 'John Smith',
+          callerEmail: 'john@test.com',
+        })
+      );
+    });
+
+    it('prefers the latest flow-captured name and callback number in the summary email while still including the call-origin number', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+        assistantName: 'Bobby',
+      } as any);
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-latest',
+          callId: 'call-queued-latest',
+          notes: 'Caller is going through a divorce.',
+          summary: 'Divorce intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-latest',
+          callId: 'call-queued-latest',
+          callerPhone: '+19087272437',
+          summary: 'Divorce intake',
+          notes: 'assistant: Thanks for calling.\nuser: I am going through a divorce.',
+          legalArea: 'family',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Old Client Name', phone: '+19087272437', email: null },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-latest',
+          callId: 'call-queued-latest',
+          callerPhone: '+19087272437',
+          summary: 'Divorce intake',
+          notes: 'assistant: Thanks for calling.\nuser: I am going through a divorce.',
+          legalArea: 'family',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Old Client Name', phone: '+19087272437', email: null },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+      vi.mocked(prisma.intakeData.findMany).mockResolvedValueOnce([
+        { fieldName: 'caller_name', fieldValue: 'Ten Sam' },
+        { fieldName: 'callback_phone', fieldValue: '+11237272437' },
+        { fieldName: 'call_origin_phone', fieldValue: '+19087272437' },
+      ] as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued-latest', customer: { number: '+19087272437' } },
+          summary: 'Divorce intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I am going through a divorce.' },
+            ],
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assistantName: 'Bobby',
+          callerName: 'Ten Sam',
+          callerPhone: '+11237272437',
+          callOriginPhone: '+19087272437',
+        }),
+      );
+    });
+
+    it('includes the configured backup summary recipient when sending queued summaries', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+        assistantName: 'Bobby',
+      } as any);
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValueOnce({
+        user: { backupSummaryEmail: 'backup@test.com' },
+      } as any);
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-backup',
+          callId: 'call-queued-backup',
+          notes: 'Caller needs help with probate.',
+          summary: 'Probate intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-backup',
+          callId: 'call-queued-backup',
+          callerPhone: '+15559990001',
+          summary: 'Probate intake',
+          notes: 'assistant: Thanks for calling.\nuser: I need help with probate.',
+          legalArea: 'estate',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          intakeFlowId: 'flow-backup',
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-backup',
+          callId: 'call-queued-backup',
+          callerPhone: '+15559990001',
+          summary: 'Probate intake',
+          notes: 'assistant: Thanks for calling.\nuser: I need help with probate.',
+          legalArea: 'estate',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          intakeFlowId: 'flow-backup',
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued-backup' },
+          summary: 'Probate intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I need help with probate.' },
+            ],
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lawyerEmail: 'sarah@test.com',
+          backupEmail: 'backup@test.com',
         })
       );
     });

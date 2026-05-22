@@ -500,6 +500,32 @@ test.describe('Flow Builder overlap audit', () => {
     }
   });
 
+  test('general intake stays separated when every visible branch is expanded', async ({ page, request }) => {
+    test.setTimeout(120_000);
+
+    await cleanupTestUser();
+    await ensureUser(request);
+    await signIn(page, request);
+
+    const flow = await createGeneralIntakeFlow(request);
+
+    try {
+      await page.setViewportSize({ width: 2048, height: 976 });
+      await page.goto(`/flow-builder/${flow.id}`);
+      await page.waitForSelector('[data-testid="flow-canvas-viewport"]');
+      await page.waitForTimeout(1200);
+
+      await expandEveryVisibleBranch(page);
+      await page.waitForTimeout(1200);
+
+      const overlaps = await collectAuditedOverlaps(page);
+      expect(overlaps, JSON.stringify(overlaps, null, 2)).toEqual([]);
+    } finally {
+      await request.delete(`/api/flows/${flow.id}`);
+      await cleanupTestUser();
+    }
+  });
+
   test('default reception intake starts without overlapping audited elements', async ({ page, request }) => {
     test.setTimeout(90_000);
 

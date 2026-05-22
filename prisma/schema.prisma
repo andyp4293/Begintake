@@ -21,6 +21,7 @@ model User {
   vapiPhoneNumber     String?
   twilioNumberSid     String?
   transferPhoneNumber String?
+  backupSummaryEmail  String?
   googleRefreshToken  String?
   assistantName       String?
   firmName            String?

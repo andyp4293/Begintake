@@ -3,6 +3,7 @@
 import { PhoneIncoming, PhoneForwarded, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Filter } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { parseTranscriptLine } from '@/lib/transcript-speakers';
 
 interface CallSession {
   id: string;
@@ -20,6 +21,7 @@ interface CallSession {
   petitionType: string | null;
   matterCategory: string | null;
   partyRole: string | null;
+  assistantName?: string | null;
   lawyer: { name: string } | null;
   client: { name: string } | null;
 }
@@ -48,7 +50,7 @@ function getOutcomeLabel(callOutcome: string) {
   }
 }
 
-function TranscriptView({ notes }: { notes: string }) {
+function TranscriptView({ notes, assistantName }: { notes: string; assistantName?: string | null }) {
   const [showFull, setShowFull] = useState(false);
   const lines = notes.split('\n').filter(Boolean);
   const preview = lines.slice(0, 4);
@@ -59,17 +61,14 @@ function TranscriptView({ notes }: { notes: string }) {
       <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Transcript</p>
       <div className="bg-zinc-800/50 rounded-lg p-3 space-y-1.5 max-h-64 overflow-y-auto">
         {(showFull ? lines : preview).map((line, i) => {
-          const colonIdx = line.indexOf(':');
-          if (colonIdx === -1) return <p key={i} className="text-xs text-zinc-400">{line}</p>;
-          const role = line.slice(0, colonIdx).trim().toLowerCase();
-          const content = line.slice(colonIdx + 1).trim();
-          const isAi = role === 'assistant' || role === 'bot' || role === 'ai';
+          const entry = parseTranscriptLine(line, assistantName || undefined);
+          if (entry.label === 'Note') return <p key={i} className="text-xs text-zinc-400">{entry.content}</p>;
           return (
             <div key={i} className="flex gap-2">
-              <span className={`text-[10px] font-medium mt-0.5 shrink-0 w-12 ${isAi ? 'text-blue-400' : 'text-green-400'}`}>
-                {isAi ? 'AI' : 'Caller'}
+              <span className={`text-[10px] font-medium mt-0.5 shrink-0 w-12 ${entry.isAi ? 'text-blue-400' : 'text-green-400'}`}>
+                {entry.label}
               </span>
-              <p className="text-xs text-zinc-300">{content}</p>
+              <p className="text-xs text-zinc-300">{entry.content}</p>
             </div>
           );
         })}
@@ -304,7 +303,7 @@ export function RecentCallsList() {
                     )}
 
                     {call.notes && (
-                      <TranscriptView notes={call.notes} />
+                      <TranscriptView notes={call.notes} assistantName={call.assistantName} />
                     )}
                   </div>
                 )}

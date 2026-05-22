@@ -42,6 +42,7 @@ describe('Settings API', () => {
         transferPhoneNumber: '+15551234567',
         assistantName: 'Alex',
         firmName: 'Smith & Jones',
+        backupSummaryEmail: 'backup@test.com',
       } as any);
 
       const res = await GET();
@@ -49,6 +50,7 @@ describe('Settings API', () => {
       expect(data.transferPhoneNumber).toBe('+15551234567');
       expect(data.assistantName).toBe('Alex');
       expect(data.firmName).toBe('Smith & Jones');
+      expect(data.backupSummaryEmail).toBe('backup@test.com');
     });
 
     it('returns empty strings when no settings saved', async () => {
@@ -57,6 +59,7 @@ describe('Settings API', () => {
         transferPhoneNumber: null,
         assistantName: null,
         firmName: null,
+        backupSummaryEmail: null,
       } as any);
 
       const res = await GET();
@@ -64,6 +67,7 @@ describe('Settings API', () => {
       expect(data.transferPhoneNumber).toBe('');
       expect(data.assistantName).toBe('');
       expect(data.firmName).toBe('');
+      expect(data.backupSummaryEmail).toBe('');
     });
 
     it('queries the correct user id', async () => {
@@ -182,6 +186,60 @@ describe('Settings API', () => {
         headers: { 'content-type': 'application/json' },
       });
       await PUT(req);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('saves backup summary email', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({} as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ backupSummaryEmail: 'backup@test.com' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await PUT(req);
+      const data = await res.json();
+
+      expect(data.success).toBe(true);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { backupSummaryEmail: 'backup@test.com' },
+        })
+      );
+    });
+
+    it('trims and clears backup summary email when empty string is sent', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({} as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ backupSummaryEmail: '   ' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      await PUT(req);
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { backupSummaryEmail: null },
+        })
+      );
+    });
+
+    it('rejects invalid backup summary email addresses', async () => {
+      vi.mocked(getServerSession).mockResolvedValue({ user: { id: 'u1' } } as any);
+
+      const req = new NextRequest('http://localhost/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ backupSummaryEmail: 'not-an-email' }),
+        headers: { 'content-type': 'application/json' },
+      });
+      const res = await PUT(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(data.error).toContain('valid backup email');
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });

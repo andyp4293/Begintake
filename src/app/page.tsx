@@ -12,6 +12,7 @@ import { LawyerList } from '@/components/dashboard/LawyerList';
 import { TransferNumberCard } from '@/components/dashboard/TransferNumberCard';
 import { FirmNameCard } from '@/components/dashboard/FirmNameCard';
 import { AssistantNameCard } from '@/components/dashboard/AssistantNameCard';
+import { BackupSummaryEmailCard } from '@/components/dashboard/BackupSummaryEmailCard';
 
 export default function Dashboard() {
   const { data: session, status } = useSession();
@@ -71,6 +72,7 @@ export default function Dashboard() {
             <FirmNameCard />
             <AssistantNameCard />
             <TransferNumberCard />
+            <BackupSummaryEmailCard />
             <RecentCallsList />
             <UpcomingAppointments />
           </div>

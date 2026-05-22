@@ -110,13 +110,19 @@ export function createFamilyIntakeTemplate() {
     question: 'Are you calling for yourself, or on behalf of someone else?',
   });
 
+  const q3a = addNode('question', 'Q3A. Callback Number', {
+    question: 'What is the best callback number for you?',
+    collectFields: [{ name: 'callback_phone', label: 'Best callback number', type: 'text', required: true }],
+  });
+
   // Q3 responses - both lead to Q4
   const q3_yes = response('Yes, this number is fine', "Note the caller's phone number from the call.");
   const q3_no = response('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note the number.");
   addEdge(q3, q3_yes);
   addEdge(q3_yes, q4);
   addEdge(q3, q3_no);
-  addEdge(q3_no, q4);
+  addEdge(q3_no, q3a);
+  addEdge(q3a, q4);
 
   // Q5. Primary matter triage
   const q5 = addNode('question', 'Q5. What brings you to the firm today?', {
@@ -226,26 +232,26 @@ export function createFamilyIntakeTemplate() {
   addEdge(bNew, b1); addEdge(bMod, b1); addEdge(bEnforce, b1);
 
   const b2 = addNode('question', 'B2. Arrears Period (if enforcement)', {
-    question: "How long has it been since you last received the support payments you're owed?",
-    note: 'Over 1 year = flag significant arrears, possible CSEA referral / income execution',
+    question: 'If someone owes you support, how long has it been since you last received a payment?',
+    note: 'Ask this only when the caller is the one receiving support. Over 1 year = flag significant arrears, possible CSEA referral / income execution.',
   });
   const b1_child   = response('Child support only');
   const b1_spousal = response('Spousal maintenance only');
   const b1_both    = response('Both');
-  addEdge(b1, b1_child);   addEdge(b1_child, b2);
-  addEdge(b1, b1_spousal); addEdge(b1_spousal, b2);
-  addEdge(b1, b1_both);    addEdge(b1_both, b2);
 
   const b3 = addNode('question', 'B3. Party Role', {
     question: 'Are you the one receiving support, or being asked to pay?',
     note: 'Respondent = respondent-side representation',
   });
+  addEdge(b1, b1_child);   addEdge(b1_child, b3);
+  addEdge(b1, b1_spousal); addEdge(b1_spousal, b3);
+  addEdge(b1, b1_both);    addEdge(b1_both, b3);
   const b2_lt3  = response('Less than 3 months');
   const b2_3to12 = response('3 to 12 months');
   const b2_gt1  = response('Over 1 year', 'Flag significant arrears - possible CSEA referral / income execution.');
-  addEdge(b2, b2_lt3);   addEdge(b2_lt3, b3);
-  addEdge(b2, b2_3to12); addEdge(b2_3to12, b3);
-  addEdge(b2, b2_gt1);   addEdge(b2_gt1, b3);
+  addEdge(b2, b2_lt3);
+  addEdge(b2, b2_3to12);
+  addEdge(b2, b2_gt1);
 
   // ── BRANCH C - FAMILY OFFENSE / ORDER OF PROTECTION ─────────────────────
   const cSafety = addNode('question', 'Branch C - Safety Check', {
@@ -396,8 +402,11 @@ export function createFamilyIntakeTemplate() {
   // B3 responses
   const b3_petitioner  = response('Receiving support (Petitioner)');
   const b3_respondent  = response('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
-  addEdge(b3, b3_petitioner); addEdge(b3_petitioner, mkTransfer('B - Support: Transfer (Petitioner)'));
+  addEdge(b3, b3_petitioner); addEdge(b3_petitioner, b2);
   addEdge(b3, b3_respondent); addEdge(b3_respondent, mkTransfer('B - Support: Transfer (Respondent)'));
+  addEdge(b2_lt3,   mkTransfer('B - Support: Transfer (Less than 3 months)'));
+  addEdge(b2_3to12, mkTransfer('B - Support: Transfer (3 to 12 months)'));
+  addEdge(b2_gt1,   mkTransfer('B - Support: Transfer (Over 1 year)'));
 
   // D1 responses
   addEdge(d1_investigation, mkTransfer('D - ACS: Transfer (Investigation)'));

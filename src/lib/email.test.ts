@@ -47,7 +47,29 @@ describe('sendCallSummaryEmail', () => {
     await sendCallSummaryEmail(baseParams);
     expect(mockSend).toHaveBeenCalledTimes(1);
     const callArgs = mockSend.mock.calls[0][0];
-    expect(callArgs.to).toBe('lawyer@test.com');
+    expect(callArgs.to).toEqual(['lawyer@test.com']);
+  });
+
+  it('includes the backup recipient when configured', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+    await sendCallSummaryEmail({
+      ...baseParams,
+      backupEmail: 'backup@test.com',
+    });
+
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.to).toEqual(['lawyer@test.com', 'backup@test.com']);
+  });
+
+  it('dedupes the backup recipient when it matches the primary lawyer email', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+    await sendCallSummaryEmail({
+      ...baseParams,
+      backupEmail: ' lawyer@test.com ',
+    });
+
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.to).toEqual(['lawyer@test.com']);
   });
 
   it('includes caller name in subject', async () => {
@@ -85,6 +107,20 @@ describe('sendCallSummaryEmail', () => {
     expect(callArgs.html).toContain('+15551234567');
   });
 
+  it('renders both the phone used for the call and the best callback number when they differ', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+    await sendCallSummaryEmail({
+      ...baseParams,
+      callerPhone: '+11237272437',
+      callOriginPhone: '+19087272437',
+    });
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.html).toContain('Phone Used for Call');
+    expect(callArgs.html).toContain('+19087272437');
+    expect(callArgs.html).toContain('Best Callback Number');
+    expect(callArgs.html).toContain('+11237272437');
+  });
+
   it('does not render the availability button in the summary email', async () => {
     mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
     await sendCallSummaryEmail(baseParams);
@@ -106,6 +142,7 @@ describe('sendCallSummaryEmail', () => {
     mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
     await sendCallSummaryEmail({
       ...baseParams,
+      assistantName: 'Bobby',
       notes: 'Condensed intake notes',
       transcript: 'assistant: How can I help?\nuser: I was in a car accident.',
     });
@@ -113,20 +150,20 @@ describe('sendCallSummaryEmail', () => {
     expect(callArgs.html).toContain('Intake Notes');
     expect(callArgs.html).toContain('Condensed intake notes');
     expect(callArgs.html).toContain('Call Transcript');
-    expect(callArgs.html).toContain('AI');
+    expect(callArgs.html).toContain('Bobby');
     expect(callArgs.html).toContain('Caller');
     expect(callArgs.html).toContain('margin: 0 0 14px');
     expect(callArgs.html).toContain('I was in a car accident.');
   });
 
-  it('treats custom assistant speaker names as AI in the transcript', async () => {
+  it('preserves custom assistant speaker names in the transcript', async () => {
     mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
     await sendCallSummaryEmail({
       ...baseParams,
       transcript: 'Bobby: Thanks for calling.\nCaller: I need help with my divorce.',
     });
     const callArgs = mockSend.mock.calls[0][0];
-    expect(callArgs.html).toContain('AI');
+    expect(callArgs.html).toContain('Bobby');
     expect(callArgs.html).toContain('Caller');
     expect(callArgs.html).not.toContain('Bobby:');
   });
@@ -160,6 +197,8 @@ describe('sendCallSummaryEmail', () => {
 
     await sendCallSummaryEmail({
       ...baseParams,
+      assistantName: 'Bobby',
+      callOriginPhone: '+19087272437',
       transcript: 'Bobby: Thanks for calling.\nCaller: I need help with my divorce.',
       recordingUrl: 'https://api.vapi.ai/recordings/test-call.mp3',
     });
@@ -168,6 +207,8 @@ describe('sendCallSummaryEmail', () => {
     const pdfAttachment = callArgs.attachments.find((attachment: { filename: string }) => attachment.filename.endsWith('.pdf'));
     expect(pdfAttachment).toBeDefined();
     const pdfText = Buffer.from(pdfAttachment.content).toString('latin1');
+    expect(pdfText).toContain('Phone Used for Call');
+    expect(pdfText).toContain('Best Callback Number');
     expect(pdfText).toContain('The call recording is attached separately to the email.');
     expect(pdfText).not.toContain('https://api.vapi.ai/recordings/test-call.mp3');
     expect(callArgs.attachments).toEqual(

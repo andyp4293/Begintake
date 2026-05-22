@@ -2,6 +2,7 @@ export type TransferTarget = 'attorney' | 'paralegal';
 export type TransferHandoffMode = 'summary_only' | 'live_transfer';
 
 const LIVE_TRANSFER_MESSAGE_RE = /\b(?:please hold|connect(?:ing)? you|connecting|transfer(?:ring)?|forward(?:ing)? the call|call will be forwarded)\b/i;
+const URGENT_REVIEW_RE = /\b(?:urgent|immediate|right away|priority|safety|emergency)\b/i;
 const LEGACY_TRANSFER_REPLACEMENTS: Array<[RegExp, string]> = [
   [/when I connect you with one of our attorneys, they'll already have everything they need to help you right away/gi, 'so the right lawyer has everything they need to follow up with you'],
   [/then connect you with one of our attorneys who can help/gi, 'then send it to the right lawyer who can help'],
@@ -18,8 +19,21 @@ const LEGACY_TRANSFER_REPLACEMENTS: Array<[RegExp, string]> = [
   [/please hold - I'm connecting you now/gi, "I've sent everything to the right lawyer, and they will reach out to you directly about next steps"],
 ];
 
+const ATTORNEY_CALLBACK_BASE_MESSAGE = 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.';
+const ATTORNEY_URGENT_CALLBACK_BASE_MESSAGE = 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case, and I am marking it as urgent. They will review it and call you back at the best callback number I have for you.';
+const PARALEGAL_CALLBACK_BASE_MESSAGE = 'Thank you. I wrote down everything you shared with me today so I can pass this to our team for your case. They will call you back at the best callback number I have for you.';
+const PARALEGAL_URGENT_CALLBACK_BASE_MESSAGE = 'Thank you. I wrote down everything you shared with me today so I can pass this to our team for your case, and I flagged it for urgent review. They will call you back at the best callback number I have for you.';
+
 function asNonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+export function getUrgentParalegalFollowUpSentence(offerImmediateTransfer = true): string {
+  if (offerImmediateTransfer) {
+    return 'If you think this is urgent, I can transfer this call to our paralegal team now.';
+  }
+
+  return 'If this feels urgent, I will flag it for immediate review so our team can call you back as quickly as possible.';
 }
 
 export function getTransferTarget(value: unknown): TransferTarget {
@@ -42,17 +56,44 @@ export function isLiveTransferEnabled(requestedMode: unknown, transferTarget?: u
   return process.env.ENABLE_LIVE_CALL_TRANSFERS === 'true';
 }
 
-export function getDefaultTransferCallbackMessage(target: TransferTarget): string {
-  if (target === 'paralegal') {
-    return 'Thank you. I wrote down everything you shared with me today so I can pass this to our team for your case. They will call you back at the best callback number I have for you.';
+function buildAttorneyCallbackMessage(urgent = false, offerImmediateParalegalTransfer = true): string {
+  if (urgent) {
+    return ATTORNEY_URGENT_CALLBACK_BASE_MESSAGE;
   }
 
-  return 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.';
+  void offerImmediateParalegalTransfer;
+  return ATTORNEY_CALLBACK_BASE_MESSAGE;
 }
 
-export function getLiveTransferAnnouncement(target: TransferTarget): string {
+function buildParalegalCallbackMessage(urgent = false): string {
+  if (urgent) {
+    return PARALEGAL_URGENT_CALLBACK_BASE_MESSAGE;
+  }
+
+  return PARALEGAL_CALLBACK_BASE_MESSAGE;
+}
+
+export function getDefaultTransferCallbackMessage(
+  target: TransferTarget,
+  options?: { urgent?: boolean; offerImmediateParalegalTransfer?: boolean },
+): string {
+  const urgent = options?.urgent === true;
   if (target === 'paralegal') {
-    return "Welcome back. We'll transfer you to our team right away.";
+    return buildParalegalCallbackMessage(urgent);
+  }
+
+  return buildAttorneyCallbackMessage(urgent, options?.offerImmediateParalegalTransfer !== false);
+}
+
+export function getLiveTransferAnnouncement(
+  target: TransferTarget,
+  options?: { correctionContext?: string | null },
+): string {
+  if (target === 'paralegal') {
+    if (options?.correctionContext === 'existing_client') {
+      return "Of course. Since you've worked with us before, we'll transfer you to our team right away.";
+    }
+    return "Of course. I'll transfer you to our team right away.";
   }
 
   return "I'm connecting you to the right lawyer now.";
@@ -72,16 +113,21 @@ export function resolveTransferCallbackMessage(config: {
   transferTarget?: unknown;
   callbackMessage?: unknown;
   message?: unknown;
+  urgencyFlag?: unknown;
+  offerImmediateParalegalTransfer?: unknown;
 }): string {
   const explicitCallbackMessage = asNonEmptyString(config.callbackMessage);
-  if (explicitCallbackMessage) {
-    return explicitCallbackMessage;
-  }
-
   const message = asNonEmptyString(config.message);
-  if (message && !LIVE_TRANSFER_MESSAGE_RE.test(message)) {
-    return message;
-  }
+  const urgencyFlag = asNonEmptyString(config.urgencyFlag);
+  const offerImmediateParalegalTransfer = config.offerImmediateParalegalTransfer !== false;
+  const inferredUrgent = Boolean(
+    urgencyFlag
+    || (explicitCallbackMessage && URGENT_REVIEW_RE.test(explicitCallbackMessage))
+    || (message && !LIVE_TRANSFER_MESSAGE_RE.test(message) && URGENT_REVIEW_RE.test(message)),
+  );
 
-  return getDefaultTransferCallbackMessage(getTransferTarget(config.transferTarget));
+  return getDefaultTransferCallbackMessage(getTransferTarget(config.transferTarget), {
+    urgent: inferredUrgent,
+    offerImmediateParalegalTransfer,
+  });
 }

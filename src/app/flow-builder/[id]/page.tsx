@@ -128,7 +128,7 @@ function getNodeStackTop(branchLabel: string | null) {
 function NodeCard({
   node, edges, allNodes, branchLabel, primaryParents, confirm,
   mergedLinkedTargetIds,
-  expandedNodeIds, expandedOverrides, showIncomingStem, showOutgoingStem, onToggleExpanded, onExpandPath, onFocusNode, onRevealExpandedNode,
+  expandedNodeIds, expandedOverrides, showIncomingStem, showOutgoingStem, onToggleExpanded, onExpandPath, onFocusNode, onRevealToggledNode,
   onUpdateNode, onDeleteNode, onAddChild, onLinkExisting, onDeleteEdge,
 }: {
   node: FNode; edges: FEdge[]; allNodes: FNode[];
@@ -142,7 +142,7 @@ function NodeCard({
   onToggleExpanded: (nodeId: string) => void;
   onExpandPath: (targetId: string) => void;
   onFocusNode: (targetId: string, behavior?: ScrollBehavior) => void;
-  onRevealExpandedNode: (targetId: string) => void;
+  onRevealToggledNode: (targetId: string, expandedAfterToggle: boolean) => void;
   onUpdateNode: (id: string, updates: Partial<FNode>) => void;
   onDeleteNode: (id: string) => void;
   onAddChild: (parentId: string, type: string) => void;
@@ -261,12 +261,11 @@ function NodeCard({
         >
           <div className="flex items-center gap-2 px-3 py-2">
             <button onClick={() => {
-              const shouldRevealExpandedNode = childEdges.length > 0 && !displayExpanded;
+              if (childEdges.length === 0) return;
+              const expandedAfterToggle = !displayExpanded;
               onToggleExpanded(node.id);
-              if (shouldRevealExpandedNode) {
-                highlightNode(node.id);
-                onRevealExpandedNode(node.id);
-              }
+              highlightNode(node.id);
+              onRevealToggledNode(node.id, expandedAfterToggle);
             }} className="text-zinc-500 hover:text-white flex-shrink-0">
               {childEdges.length > 0 ? (displayExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3" />}
             </button>
@@ -1083,6 +1082,36 @@ export default function FlowEditorPage() {
     }));
   }, [contentOffsetX, contentOffsetY, scaledBoardHeight, scaledBoardWidth, viewportSize.height, viewportSize.width, zoom]);
 
+  const focusNodeAtCurrentMetrics = useCallback((targetId: string) => {
+    const contentEl = boardContentRef.current;
+    const nodeEl = document.getElementById(`flow-node-${targetId}`);
+    const {
+      viewportWidth,
+      viewportHeight,
+      contentOffsetX: latestContentOffsetX,
+      contentOffsetY: latestContentOffsetY,
+      scaledBoardWidth: latestScaledBoardWidth,
+      scaledBoardHeight: latestScaledBoardHeight,
+      zoom: latestZoom,
+    } = canvasGeometryRef.current;
+
+    if (!contentEl || !nodeEl || !viewportWidth || !viewportHeight) return;
+
+    const contentRect = contentEl.getBoundingClientRect();
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const nodeCenterX = (latestContentOffsetX * latestZoom) + (nodeRect.left - contentRect.left) + (nodeRect.width / 2);
+    const nodeCenterY = (latestContentOffsetY * latestZoom) + (nodeRect.top - contentRect.top) + (nodeRect.height / 2);
+
+    setCamera(getCameraForNodeFocus({
+      viewportWidth,
+      viewportHeight,
+      nodeCenterX,
+      nodeCenterY,
+      boardWidth: latestScaledBoardWidth,
+      boardHeight: latestScaledBoardHeight,
+    }));
+  }, []);
+
   const revealExpandedNodeAtCurrentMetrics = useCallback((targetId: string) => {
     const contentEl = boardContentRef.current;
     const nodeEl = document.getElementById(`flow-node-${targetId}`);
@@ -1123,20 +1152,24 @@ export default function FlowEditorPage() {
     }));
   }, []);
 
-  const revealExpandedNodeInCanvas = useCallback((targetId: string) => {
+  const revealToggledNodeInCanvas = useCallback((targetId: string, expandedAfterToggle: boolean) => {
     const requestId = latestRevealRequestRef.current + 1;
     latestRevealRequestRef.current = requestId;
 
     const runReveal = () => {
       if (latestRevealRequestRef.current !== requestId) return;
-      revealExpandedNodeAtCurrentMetrics(targetId);
+      if (expandedAfterToggle) {
+        revealExpandedNodeAtCurrentMetrics(targetId);
+        return;
+      }
+      focusNodeAtCurrentMetrics(targetId);
     };
 
     runReveal();
     [160, 420].forEach((delay) => {
       window.setTimeout(runReveal, delay);
     });
-  }, [revealExpandedNodeAtCurrentMetrics]);
+  }, [focusNodeAtCurrentMetrics, revealExpandedNodeAtCurrentMetrics]);
 
   useEffect(() => {
     if (!rootNode || hasCenteredInitialViewRef.current || !viewportSize.width || !viewportSize.height || !contentSize.width) return;
@@ -1633,7 +1666,7 @@ export default function FlowEditorPage() {
                             onToggleExpanded={toggleExpanded}
                             onExpandPath={expandPathToNode}
                             onFocusNode={focusNodeInCanvas}
-                            onRevealExpandedNode={revealExpandedNodeInCanvas}
+                            onRevealToggledNode={revealToggledNodeInCanvas}
                             onUpdateNode={updateNode}
                             onDeleteNode={deleteNode}
                             onAddChild={addChild}

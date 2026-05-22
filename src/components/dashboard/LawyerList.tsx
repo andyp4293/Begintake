@@ -83,20 +83,23 @@ function LawyerFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg mx-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+      <div
+        data-testid="lawyer-form-modal"
+        className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg max-h-[92vh] overflow-hidden mx-0 sm:mx-4"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-zinc-800">
           <h2 className="text-base font-semibold text-white">
             {isEditing ? 'Edit Team Member' : 'Add Team Member'}
           </h2>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-800 transition-colors">
+          <button onClick={onClose} aria-label="Close team member form" className="p-1 rounded-lg hover:bg-zinc-800 transition-colors">
             <X className="w-4 h-4 text-zinc-400" />
           </button>
         </div>
 
         {/* Form */}
-        <div className="p-5 space-y-4">
+        <div className="max-h-[calc(92vh-148px)] overflow-y-auto p-5 space-y-4">
           {/* Name */}
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1.5">Name *</label>
@@ -334,45 +337,49 @@ export function LawyerList() {
             <p className="text-zinc-500 text-sm">No team members yet</p>
             <button
               onClick={() => setShowForm(true)}
-              className="mt-3 text-xs text-white hover:text-zinc-300"
-            >
-              Add your first team member
-            </button>
-          </div>
-        ) : (
+            className="mt-3 text-xs text-white hover:text-zinc-300"
+          >
+            Add your first team member
+          </button>
+        </div>
+      ) : (
           <div className="space-y-2">
             {lawyers.map((lawyer) => (
               <div
                 key={lawyer.id}
-                className="group flex items-center gap-3 p-3 bg-zinc-800/50 rounded-xl hover:bg-zinc-800 transition-colors"
+                className="group flex flex-col gap-3 p-3 bg-zinc-800/50 rounded-xl hover:bg-zinc-800 transition-colors sm:flex-row sm:items-center"
               >
-                <div className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-zinc-300" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-white">{lawyer.name}</p>
-                    <span className={`w-2 h-2 rounded-full ${
-                      lawyer.available ? 'bg-green-500' : 'bg-zinc-600'
-                    }`} />
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4 text-zinc-300" />
                   </div>
-                  <p className="text-xs text-zinc-400 truncate">
-                    {lawyer.specialties.length
-                      ? lawyer.specialties.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' · ')
-                      : lawyer.email}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-white">{lawyer.name}</p>
+                      <span className={`w-2 h-2 rounded-full ${
+                        lawyer.available ? 'bg-green-500' : 'bg-zinc-600'
+                      }`} />
+                    </div>
+                    <p className="text-xs text-zinc-400 truncate">
+                      {lawyer.specialties.length
+                        ? lawyer.specialties.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' · ')
+                        : lawyer.email}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 self-end opacity-100 transition-opacity sm:self-auto sm:opacity-0 sm:group-hover:opacity-100">
                   <button
                     onClick={() => handleEdit(lawyer)}
-                    className="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors"
+                    aria-label={`Edit ${lawyer.name}`}
+                    className="p-2 rounded-lg hover:bg-zinc-700 transition-colors"
                     title="Edit"
                   >
                     <Pencil className="w-3 h-3 text-zinc-400" />
                   </button>
                   <button
                     onClick={() => handleDelete(lawyer)}
-                    className="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors"
+                    aria-label={`Remove ${lawyer.name}`}
+                    className="p-2 rounded-lg hover:bg-zinc-700 transition-colors"
                     title="Remove"
                   >
                     <Trash2 className="w-3 h-3 text-zinc-400" />

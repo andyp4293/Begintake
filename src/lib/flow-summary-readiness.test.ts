@@ -89,7 +89,7 @@ describe('validateFlowSummaryReadiness', () => {
         'Caller: I need help with my divorce.',
         'bobby: Is this an uncontested divorce, a contested divorce, or a legal separation?',
         'Caller: Contested.',
-        'bobby: What issues are involved in the divorce? Select the most important.',
+        'bobby: What are the main issues in the divorce or separation right now?',
         'Caller: Child custody and support.',
         'bobby: Has anything already been filed, and is there any court date or deadline coming up?',
         "Caller: Nothing's filed yet.",

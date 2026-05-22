@@ -9,6 +9,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const viewer = session.user?.email
+    ? await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { assistantName: true },
+      })
+    : null;
+  const assistantName = viewer?.assistantName?.trim() || null;
+
   const { searchParams } = new URL(req.url);
   const cursor = searchParams.get('cursor');
   const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
@@ -43,8 +51,9 @@ export async function GET(req: NextRequest) {
       }),
       prisma.callSession.count({ where }),
     ]);
+    const callsWithAssistantName = calls.map((call) => ({ ...call, assistantName }));
     const totalPages = Math.ceil(totalCount / limit);
-    return NextResponse.json({ calls, page, totalPages, totalCount });
+    return NextResponse.json({ calls: callsWithAssistantName, page, totalPages, totalCount });
   }
 
   // Cursor-based pagination (legacy)
@@ -63,5 +72,8 @@ export async function GET(req: NextRequest) {
   const data = hasMore ? calls.slice(0, limit) : calls;
   const nextCursor = hasMore ? data[data.length - 1].id : null;
 
-  return NextResponse.json({ calls: data, nextCursor });
+  return NextResponse.json({
+    calls: data.map((call) => ({ ...call, assistantName })),
+    nextCursor,
+  });
 }

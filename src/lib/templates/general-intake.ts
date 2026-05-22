@@ -103,16 +103,21 @@ export function createGeneralIntakeTemplate() {
   });
   addEdge(q2, q3);
 
+  const q3a = addNode('question', 'Q3A. Callback Number', {
+    question: 'What is the best callback number for you?',
+    collectFields: [{ name: 'callback_phone', label: 'Best callback number', type: 'text', required: true }],
+  });
+
   const q4 = addNode('question', 'Q4. Self or On Behalf Of', {
     question: 'Are you calling for yourself, or on behalf of someone else?',
   });
   const q3_yes = resp('Yes, this number is fine', "Note the caller's phone number from the call.");
   const q3_no = resp('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note it.");
   addEdge(q3, q3_yes); addEdge(q3_yes, q4);
-  addEdge(q3, q3_no); addEdge(q3_no, q4);
+  addEdge(q3, q3_no); addEdge(q3_no, q3a); addEdge(q3a, q4);
 
   const q5 = addNode('question', 'Q5. Tell Me What\'s Going On', {
-    note: 'Ask the caller to describe their situation in their own words. Be warm and inviting - say something like "Of course, I\'d be happy to help. Can you tell me a little about what\'s been going on?" Do NOT read a list of legal categories. Listen carefully, ask gentle follow-up questions if needed ("How long has this been going on?" or "Can you tell me a little more about that?"). Once you understand the situation, silently route to the correct practice area branch. The caller should feel heard, not processed.',
+    note: 'Ask the caller to describe their situation in their own words. Be warm and inviting - say something like "Thanks. Can you tell me a little about what\'s been going on?" Do NOT read a list of legal categories. Listen carefully, ask gentle follow-up questions if needed ("How long has this been going on?" or "Can you tell me a little more about that?"). Once you understand the situation, silently route to the correct practice area branch. The caller should feel heard, not processed.',
   });
   const q4_self = resp('For myself');
   const q4_other = resp('On behalf of someone else', 'Ask: "What is your relationship to them?" Note it.');
@@ -128,7 +133,11 @@ export function createGeneralIntakeTemplate() {
   });
   // AI routes here when caller describes: custody, divorce, child support, alimony,
   // domestic violence, child welfare, adoption, guardianship, paternity, or juvenile matters.
-  const q5_fam = q5r('Family Law', "Caller's situation involves family law", 'Route here when the caller describes: custody of children, divorce or separation, child support or alimony, a family member threatening or hurting them, child welfare or ACS involvement, adoption, guardianship, paternity, or a juvenile matter.');
+  const q5_fam = q5r(
+    'Family Law',
+    "Caller's situation involves family law",
+    'Route here only when you know the caller needs family law help but the specific family matter is still unclear.',
+  );
   addEdge(q5, q5_fam); addEdge(q5_fam, famTriage);
 
   // --- Custody & Visitation ---
@@ -210,24 +219,24 @@ export function createGeneralIntakeTemplate() {
   addEdge(famB_new, famB1); addEdge(famB_mod, famB1); addEdge(famB_enf, famB1);
 
   const famB2 = addNode('question', 'FB2. Arrears Period', {
-    question: 'How long has it been since you last received the support payments you are owed?',
-    note: 'Over 1 year = flag significant arrears - possible CSEA referral',
+    question: 'If someone owes you support, how long has it been since you last received a payment?',
+    note: 'Ask this only when the caller is the one receiving support. Over 1 year = flag significant arrears - possible CSEA referral.',
   });
   const famB1_child = resp('Child support only'); const famB1_sp = resp('Spousal maintenance only'); const famB1_both = resp('Both');
-  addEdge(famB1, famB1_child); addEdge(famB1_child, famB2);
-  addEdge(famB1, famB1_sp);    addEdge(famB1_sp,    famB2);
-  addEdge(famB1, famB1_both);  addEdge(famB1_both,  famB2);
 
   const famB3 = addNode('question', 'FB3. Party Role', {
     question: 'Are you the one receiving support, or being asked to pay?',
     note: 'Respondent = respondent-side representation',
   });
+  addEdge(famB1, famB1_child); addEdge(famB1_child, famB3);
+  addEdge(famB1, famB1_sp);    addEdge(famB1_sp,    famB3);
+  addEdge(famB1, famB1_both);  addEdge(famB1_both,  famB3);
   const famB2_lt3 = resp('Less than 3 months'); const famB2_mid = resp('3 to 12 months'); const famB2_gt1 = resp('Over 1 year', 'Flag significant arrears.');
-  addEdge(famB2, famB2_lt3); addEdge(famB2_lt3, famB3);
-  addEdge(famB2, famB2_mid); addEdge(famB2_mid, famB3);
-  addEdge(famB2, famB2_gt1); addEdge(famB2_gt1, famB3);
+  addEdge(famB2, famB2_lt3); addEdge(famB2_lt3, transferId);
+  addEdge(famB2, famB2_mid); addEdge(famB2_mid, transferId);
+  addEdge(famB2, famB2_gt1); addEdge(famB2_gt1, transferId);
   const famB3_pet = resp('Receiving support (Petitioner)'); const famB3_res = resp('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
-  addEdge(famB3, famB3_pet); addEdge(famB3_pet, transferId);
+  addEdge(famB3, famB3_pet); addEdge(famB3_pet, famB2);
   addEdge(famB3, famB3_res); addEdge(famB3_res, transferId);
 
   // --- Family Offense ---
@@ -330,7 +339,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(famTriage, famH_q5); addEdge(famH_q5, famDivRouting);
 
   const famDiv1 = addNode('question', 'FH1. Divorce Issues Involved', {
-    question: 'What issues are involved in the divorce? Select the most important.',
+    question: 'What are the main issues in the divorce or separation right now?',
   });
   const famDivR_uncon = resp('Uncontested - we agree on everything');
   const famDivR_con   = resp('Contested - we disagree on key issues');
@@ -396,14 +405,26 @@ export function createGeneralIntakeTemplate() {
   const famOther_q5 = resp('Other family law matter');
   addEdge(famTriage, famOther_q5); addEdge(famOther_q5, transferId);
 
+  // Let callers who already named a specific family issue skip the generic
+  // family triage question and route directly from the open-ended intake.
+  addEdge(q5, famA_q5);
+  addEdge(q5, famB_q5);
+  addEdge(q5, famC_q5);
+  addEdge(q5, famD_q5);
+  addEdge(q5, famE_q5);
+  addEdge(q5, famF_q5);
+  addEdge(q5, famG_q5);
+  addEdge(q5, famH_q5);
+  addEdge(q5, famOther_q5);
+
   // ═══════════════════════════════════════════════════════════════
   // BRANCH 2 — CRIMINAL DEFENSE
   // ═══════════════════════════════════════════════════════════════
 
   const crimRouting = addNode('question', 'Criminal - Matter Type', {
-    note: 'What type of criminal charge or matter are you facing?',
+    note: 'Do you know what type of criminal charge this is, or what the police said it was?',
   });
-  const q5_crim = q5r('Criminal Defense', "Caller's situation involves criminal defense", 'Route here when the caller describes: being arrested, facing criminal charges, a DUI, drug offense, assault, theft, domestic violence charge, sex offense, weapons charge, probation violation, warrant, or any criminal investigation or prosecution.');
+  const q5_crim = q5r('Criminal Defense', "Caller's situation involves criminal defense", 'Route here when the caller describes: being arrested, facing criminal charges, someone pressing charges against them, a DUI, drug offense, assault, theft, a bar fight, domestic violence charge, sex offense, weapons charge, probation violation, warrant, or any criminal investigation or prosecution.');
   addEdge(q5, q5_crim); addEdge(q5_crim, crimRouting);
 
   const crim_dui   = addNode('action', 'Flag: Criminal - DUI',       { actionType: 'set_flag', flagName: 'criminal_matter', flagValue: 'DUI / drunk driving' });
@@ -437,7 +458,7 @@ export function createGeneralIntakeTemplate() {
   addEdge(crimRouting, crimR_other); addEdge(crimR_other, crim_other);
 
   const crimB1 = addNode('question', 'Crim B1. Stage of Case', {
-    question: 'What is the current stage of your case?',
+    question: 'What stage is this at right now? For example, are police still investigating, have charges been filed, or do you already have a court date?',
   });
   [crim_dui, crim_drug, crim_viol, crim_theft, crim_dv, crim_sex, crim_wc, crim_juv, crim_other].forEach(n => addEdge(n, crimB1));
 

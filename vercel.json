@@ -2,6 +2,12 @@
   "buildCommand": "npx prisma generate && next build",
   "installCommand": "npm install",
   "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/warm-db",
+      "schedule": "*/3 * * * *"
+    }
+  ],
   "git": {
     "deploymentEnabled": false
   }

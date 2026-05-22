@@ -147,7 +147,19 @@ describe('compileFlowToPrompt', () => {
     expect(prompt).toContain('Do NOT ask the same callback number, email, name, or "for yourself / on behalf of someone else" question again');
     expect(prompt).toContain('If the caller volunteers answers to later scripted questions early, capture those facts immediately and skip those later questions instead of re-asking them just to preserve the original order.');
     expect(prompt).toContain('If one caller response answers multiple scripted questions at once, treat every clearly answered slot as captured and move to the first still-unanswered scripted question.');
+    expect(prompt).toContain('If the caller gives a plausible direct answer to the current question');
     expect(prompt).toContain('If the caller says "hello?", asks if you are still there, or there is a brief pause, reassure them briefly and resume the current unanswered question.');
+    expect(prompt).toContain('If the caller sounds confused about the labels or choices, explain the difference in plain English');
+    expect(prompt).toContain('If the caller asks a short follow-up question about the exact term or concept in the current intake question, answer it briefly in plain English and then return to that same question.');
+    expect(prompt).toContain('Only answer follow-up questions when they clearly relate to the current intake step or the caller\'s legal situation.');
+    expect(prompt).toContain('If the caller says they do not know or asks what you mean, give at most one short plain-English clarification for that question.');
+    expect(prompt).toContain('If they still cannot answer a non-core follow-up after that one clarification, include semanticFacts.questionState instead of pushing the same question again.');
+    expect(prompt).toContain('If the caller gives a vague, noisy, or non-routable answer to the open-ended issue question');
+    expect(prompt).toContain('Use common sense with equivalent phrases. Do not require the caller to match the exact response label if their meaning is already clear.');
+    expect(prompt).toContain('If the caller is clearly trying to reach a non-legal business or service that does not fit a law firm at all');
+    expect(prompt).toContain('semanticFacts.questionState');
+    expect(prompt).toContain('semanticFacts.conversationFit');
+    expect(prompt).toContain('semanticFacts.postCallIntent');
   });
 
   it('treats the first question as already asked in the opening message', () => {
@@ -574,6 +586,8 @@ describe('Anderson Bowman template', () => {
     expect(prompt).toContain('FOLLOW THIS SCRIPT EXACTLY');
     expect(prompt).toContain('silently call advanceActiveFlow');
     expect(prompt).toContain('Call tools silently');
+    expect(prompt).toContain('During active-flow calls, do NOT call captureIntakeState');
+    expect(prompt).toContain('Before every tool call, say nothing at all');
     expect(prompt).toContain('Never say tool names out loud');
   });
 
@@ -711,7 +725,7 @@ describe('Anderson Bowman template', () => {
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('transferTarget="paralegal", handoffMode="live_transfer"');
     expect(prompt).not.toContain('Welcome back! Let me connect you');
-    expect(prompt).toContain('The live transfer itself will say exactly: "Welcome back. We\'ll transfer you to our team right away."');
+    expect(prompt).toContain('The live transfer itself will say exactly: "Of course. I\'ll transfer you to our team right away."');
     expect(prompt).toContain('Do NOT say anything before the tool call unless the caller asks a new question.');
     expect(prompt).toContain('Do NOT add filler before the tool call.');
     expect(prompt).toContain('Do NOT call endCall after a successful live transfer.');

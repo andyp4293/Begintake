@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { normalizePhoneNumber, normalizeOptionalPhoneNumber } from '@/lib/phone';
 import { verifyVapiSecret, parseToolArguments } from '@/lib/vapi';
-import { identifyLegalArea, findBestLawyer } from '@/lib/lawyer-matcher';
+import { identifyLegalArea, identifyLegalAreaMatch, findBestLawyer } from '@/lib/lawyer-matcher';
 import { createCalendarEvent, checkAttorneyBusy } from '@/lib/google-calendar';
 import { sendCallSummaryEmail } from '@/lib/email';
 import { compileFlowToPrompt } from '@/lib/flow-compiler';
@@ -17,22 +17,82 @@ import {
   hydrateFlowRuntimeState,
   isInternalFlowFieldName,
   progressActiveFlow,
+  type SemanticAnswerIntent,
+  type SemanticConversationFit,
+  type SemanticPostCallIntent,
+  type SemanticQuestionState,
+  type SemanticCallerFacts,
   type FlowRuntimeWrite,
 } from '@/lib/active-flow-runner';
 import {
+  getDefaultTransferCallbackMessage,
   getLiveTransferAnnouncement,
   getTransferTarget,
   isLiveTransferEnabled,
   resolveTransferCallbackMessage,
 } from '@/lib/transfer-handoff';
+import { normalizeTranscriptTextWithSpeakerLabels } from '@/lib/transcript-speakers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const ASSISTANT_REQUEST_CACHE_TTL_MS = 5 * 60 * 1000;
+const ASSISTANT_REQUEST_FAST_TIMEOUT_MS = 1000;
+
+type FirmRuntimeContext = {
+  userId: string | null;
+  transferPhone: string | null;
+  assistantName: string;
+  firmName: string;
+};
+
+type AssistantRequestRuntimeContext = {
+  fetchedAt: number;
+  flowId?: string;
+  prompt: string;
+  firstMessage?: string;
+  firm: FirmRuntimeContext;
+};
+
+const globalForAssistantRequest = globalThis as unknown as {
+  assistantRequestContextCache?: Map<string, AssistantRequestRuntimeContext>;
+};
+
+const assistantRequestContextCache =
+  globalForAssistantRequest.assistantRequestContextCache ??
+  new Map<string, AssistantRequestRuntimeContext>();
+
+if (!globalForAssistantRequest.assistantRequestContextCache) {
+  globalForAssistantRequest.assistantRequestContextCache = assistantRequestContextCache;
+}
 
 // ─── System prompt for the AI paralegal ──────────────────────────────────────
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const LEADING_FILLER_PATTERNS = [
+  /^(?:okay[,.!\s]+)?(?:give me a moment|give me a second|give me a sec|one moment|just a sec|just a second|hold on(?: a sec| a second)?|hang on(?: a sec| a second)?|this(?:'ll| will)? just take a sec|let me check|let me see)\b[,:;.!-]*\s*/i,
+];
+
+function stripLeadingFillers(text: string): string {
+  let current = text.trim();
+  if (!current) return current;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const pattern of LEADING_FILLER_PATTERNS) {
+      const next = current.replace(pattern, '').trim();
+      if (next !== current) {
+        current = next;
+        changed = true;
+      }
+    }
+  }
+
+  return current;
 }
 
 function stripTrailingDuplicateQuestion(greeting: string, nextQuestion?: string | null): string {
@@ -54,7 +114,7 @@ function stripTrailingDuplicateQuestion(greeting: string, nextQuestion?: string 
 
 function buildInitialFirstMessage(greeting?: string, nextQuestion?: string | null): string | undefined {
   if (!greeting) {
-    return nextQuestion || undefined;
+    return nextQuestion ? stripLeadingFillers(nextQuestion) : undefined;
   }
 
   const baseGreeting = stripTrailingDuplicateQuestion(greeting, nextQuestion);
@@ -70,11 +130,146 @@ function buildInitialFirstMessage(greeting?: string, nextQuestion?: string | nul
 
   const normalize = (text: string) => text.trim().replace(/\s+/g, ' ').replace(/[.?!]+$/g, '').toLowerCase();
   if (normalize(trimmedGreeting).endsWith(normalize(trimmedQuestion))) {
-    return trimmedGreeting;
+    return stripLeadingFillers(trimmedGreeting);
   }
 
   const separator = /[.?!]\s*$/.test(trimmedGreeting) ? ' ' : '. ';
-  return `${trimmedGreeting}${separator}${trimmedQuestion}`;
+  return stripLeadingFillers(`${trimmedGreeting}${separator}${trimmedQuestion}`);
+}
+
+function getSortedEdgesFromNode(flow: any, nodeId: string) {
+  return flow.edges
+    .filter((edge: any) => edge.sourceNodeId === nodeId)
+    .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+}
+
+function getNodeQuestionText(node: any): string | null {
+  return typeof node?.config?.question === 'string' && node.config.question.trim()
+    ? node.config.question.trim()
+    : null;
+}
+
+function findOpeningQuestion(flow: any, startNode: any): string | null {
+  const firstEdge = getSortedEdgesFromNode(flow, startNode.id)[0];
+  const firstNode = firstEdge
+    ? flow.nodes.find((node: any) => node.id === firstEdge.targetNodeId)
+    : null;
+  return getNodeQuestionText(firstNode);
+}
+
+function buildExactToolCallMessage(content: string, options?: { endCallAfterSpokenEnabled?: boolean }) {
+  return {
+    type: 'request-complete',
+    role: 'assistant',
+    content,
+    ...(options?.endCallAfterSpokenEnabled ? { endCallAfterSpokenEnabled: true } : {}),
+  };
+}
+
+function getAssistantRequestCacheKey(vapiPhoneNumberId?: string): string {
+  return vapiPhoneNumberId?.trim() || '__default__';
+}
+
+function getCachedAssistantRequestContext(vapiPhoneNumberId?: string): AssistantRequestRuntimeContext | null {
+  const cacheKey = getAssistantRequestCacheKey(vapiPhoneNumberId);
+  const cached = assistantRequestContextCache.get(cacheKey);
+  if (!cached) return null;
+  if (Date.now() - cached.fetchedAt > ASSISTANT_REQUEST_CACHE_TTL_MS) {
+    assistantRequestContextCache.delete(cacheKey);
+    return null;
+  }
+  return cached;
+}
+
+function setCachedAssistantRequestContext(vapiPhoneNumberId: string | undefined, value: AssistantRequestRuntimeContext) {
+  assistantRequestContextCache.set(getAssistantRequestCacheKey(vapiPhoneNumberId), value);
+}
+
+function buildFallbackFirmRuntimeContext(): FirmRuntimeContext {
+  return {
+    userId: null,
+    transferPhone: process.env.TRANSFER_PHONE_NUMBER || null,
+    assistantName: '',
+    firmName: '',
+  };
+}
+
+function buildGenericActiveFlowPrompt(assistantName?: string, firmName?: string): string {
+  const resolvedName = assistantName?.trim() || 'Aria';
+  const resolvedFirm = firmName?.trim() || 'our law firm';
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  return `You are ${resolvedName}, an AI intake receptionist for ${resolvedFirm}.
+Today is ${today}.
+
+FOLLOW THIS SCRIPT EXACTLY.
+ABSOLUTE RULE: never say filler phrases like "hold on a sec", "give me a moment", "just a sec", "one moment", or "this will take a sec."
+ACTIVE FLOW CONTROL: after EVERY caller answer, silently call advanceActiveFlow with the caller's exact latest response.
+Do NOT choose the next scripted question, branch, transfer, or scheduling step yourself. The server-owned flow runner decides that for you.
+When the caller answered the current question in natural language, include matchedChoiceLabel in advanceActiveFlow with a short semantic summary of the branch they most likely meant.
+When the caller clearly reveals or corrects a core fact like new versus existing client, for themselves versus someone else, their name, callback number, email, issue summary, or post-summary intent, include those in semanticFacts even if they came out of order.
+If the caller is correcting something they said earlier, set semanticFacts.answerIntent to "correction". If the same turn both answers the current question and corrects earlier info, set it to "both".
+If the caller clearly sounds like they are not trying to reach a law firm at all, include semanticFacts.conversationFit as "wrong_number". If they clearly are describing a real legal problem, include semanticFacts.conversationFit as "legal_intake".
+After the summary or handoff stage, if the caller clearly sounds done, is asking a follow-up timing question, or urgently wants a real person now, include semanticFacts.postCallIntent with the closest intent.
+If advanceActiveFlow returns step="ask", step="clarify", or step="say", say the returned assistantMessage exactly and do not improvise a different scripted question.
+If advanceActiveFlow returns speakExactly=true, your very next spoken output must be the returned assistantMessage verbatim, with no prefix, suffix, hesitation, or filler words.
+If advanceActiveFlow returns step="live_transfer", stop speaking and let the live transfer happen.
+If advanceActiveFlow returns endCallAfterSpeaking=true, say the returned assistantMessage and then immediately call endCall.
+Ask each question one at a time. Wait for answers before proceeding.
+Keep ALL responses under 2 sentences - this is a phone call.
+NEVER give legal advice. You are an intake assistant, not an attorney.
+Be empathetic and calm, but do not overdo apology language.
+Assume many callers do not know legal procedure or legal labels. If they are unsure, ask a short plain-English follow-up that gets the same information instead of insisting on formal legal terminology.
+Sound like a calm front-desk receptionist, not a form, script reader, or decision tree.
+Call tools silently.
+Before every tool call, say nothing at all. The correct spoken content before a tool call is silence.
+Do NOT skip ahead to a summary, transfer, or goodbye unless the flow runner tells you to.`;
+}
+
+function buildGenericActiveFlowFirstMessage(assistantName?: string, firmName?: string): string {
+  const resolvedName = assistantName?.trim() || 'Aria';
+  const resolvedFirm = firmName?.trim() || 'our law firm';
+  return `Thank you for calling ${resolvedFirm}. I am the AI assistant, ${resolvedName}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time. Shall we get started?`;
+}
+
+function getToolCallSpokenMessage(toolCallId: string | undefined, name: string | undefined, result: any) {
+  if (!result || typeof result !== 'object') return undefined;
+  if (!toolCallId || !name) return undefined;
+  if (result.step === 'live_transfer') return undefined;
+  if (result.speakExactly !== true) return undefined;
+  if (typeof result.assistantMessage !== 'string' || !result.assistantMessage.trim()) return undefined;
+  const spokenText = stripLeadingFillers(result.assistantMessage);
+  if (!spokenText) return undefined;
+
+  return buildExactToolCallMessage(spokenText, {
+    endCallAfterSpokenEnabled: result.endCallAfterSpeaking === true,
+  });
+}
+
+function sanitizeToolResultForModel(name: string | undefined, result: any, hasExactSpokenMessage: boolean) {
+  if (!result || typeof result !== 'object') return result;
+  if (!hasExactSpokenMessage) return result;
+
+  if (name === 'advanceActiveFlow') {
+    const {
+      assistantMessage: _assistantMessage,
+      speakExactly: _speakExactly,
+      endCallAfterSpeaking: _endCallAfterSpeaking,
+      ...rest
+    } = result;
+
+    return {
+      ...rest,
+      spokenByTool: true,
+    };
+  }
+
+  return result;
 }
 
 async function loadActiveFlow() {
@@ -85,6 +280,34 @@ async function loadActiveFlow() {
       edges: { orderBy: { sortOrder: 'asc' } },
     },
   });
+}
+
+async function resolveFirmRuntimeContext(vapiPhoneNumberId?: string): Promise<FirmRuntimeContext> {
+  if (vapiPhoneNumberId) {
+    const matchedUser = await prisma.user.findFirst({
+      where: { vapiPhoneNumberId },
+      select: { id: true, transferPhoneNumber: true, assistantName: true, firmName: true },
+    });
+    if (matchedUser) {
+      return {
+        userId: matchedUser.id,
+        transferPhone: matchedUser.transferPhoneNumber || process.env.TRANSFER_PHONE_NUMBER || null,
+        assistantName: matchedUser.assistantName?.trim() || '',
+        firmName: matchedUser.firmName?.trim() || '',
+      };
+    }
+  }
+
+  const fallbackUser = await prisma.user.findFirst({
+    select: { id: true, transferPhoneNumber: true, assistantName: true, firmName: true },
+  });
+
+  return {
+    userId: fallbackUser?.id ?? null,
+    transferPhone: fallbackUser?.transferPhoneNumber || process.env.TRANSFER_PHONE_NUMBER || null,
+    assistantName: fallbackUser?.assistantName?.trim() || '',
+    firmName: fallbackUser?.firmName?.trim() || '',
+  };
 }
 
 async function buildSystemPrompt(assistantName?: string, firmName?: string): Promise<{ prompt: string; firstMessage?: string; flowId?: string }> {
@@ -99,18 +322,7 @@ async function buildSystemPrompt(assistantName?: string, firmName?: string): Pro
       const startNode = activeFlow.nodes.find((n: any) => n.type === 'start');
       const startConfig = startNode?.config as any;
       const rawGreeting = startConfig?.greeting as string | undefined;
-      const nextStartEdge = startNode
-        ? activeFlow.edges
-            .filter((e: any) => e.sourceNodeId === startNode.id)
-            .sort((a: any, b: any) => a.sortOrder - b.sortOrder)[0]
-        : null;
-      const nextStartNode = nextStartEdge
-        ? activeFlow.nodes.find((n: any) => n.id === nextStartEdge.targetNodeId)
-        : null;
-      const nextStartConfig = nextStartNode?.config as any;
-      const nextQuestion = typeof nextStartConfig?.question === 'string'
-        ? nextStartConfig.question
-        : null;
+      const nextQuestion = startNode ? findOpeningQuestion(activeFlow, startNode) : null;
       // Replace {name} and {firm} variables
       const greeting = rawGreeting
         ?.replace(/\{name\}/gi, assistantName || 'Aria')
@@ -152,7 +364,7 @@ Your job:
 
 IF CURRENT CLIENT (checkClient returns isCurrentClient: true):
 - Immediately call generateTransferSummary with transferTarget="paralegal", handoffMode="live_transfer", and the caller details you have.
-- The live transfer itself will say exactly: "Welcome back. We'll transfer you to our team right away."
+- The live transfer itself will say exactly: "Of course. I'll transfer you to our team right away."
 - Do not add any filler like "hold on", "hold on a sec", "just a sec", or "one moment" before the tool call.
 - Do not say anything else unless the transfer fails.
 
@@ -160,9 +372,10 @@ IF PROSPECTIVE CLIENT (not in our system):
 - Continue the normal intake flow. Do NOT transfer them to the paralegal just because they are new.
 
 REQUESTS FOR A REAL PERSON:
-- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar - say "Absolutely. I'll send this to the right person on our team so they can reach out to you." Do NOT promise an immediate live transfer.
-- If the situation sounds like an emergency - say "I'm flagging this for immediate review and sending it to the right lawyer now." Do NOT promise an immediate live transfer.
-- If you cannot determine the appropriate response - say "I'll make sure this gets to the right lawyer and they will reach out to you."
+- If the caller says "talk to a person", "real person", "human", "paralegal", "manager", "transfer", "connect me", or similar during the intake, immediately call generateTransferSummary with transferTarget="paralegal" and handoffMode="live_transfer".
+- The live transfer itself will say exactly: "Of course. I'll transfer you to our team right away."
+- If the live transfer fails, let the caller know our team will call them back at the best callback number you have for them, then end the call.
+- After the summary stage, do NOT offer or attempt a live paralegal transfer. If they still want a person then, let them know their information has been flagged for team follow-up and end the call.
 
 ENDING THE CALL:
 - When the caller says "no", "nope", "nothing else", "that's all", "I'm good", "goodbye", "bye", or anything similar indicating they're done:
@@ -172,19 +385,105 @@ ENDING THE CALL:
 - Never combine the goodbye with other information - keep it as its own separate message.
 
 IMPORTANT RULES:
+- ABSOLUTE RULE: never say filler phrases like "hold on a sec", "give me a moment", "just a sec", "one moment", or "this will take a sec."
 - NEVER give legal advice. You are a paralegal, not an attorney.
 - Be empathetic. People calling a law firm are often stressed or scared.
+- Be warm and empathetic, but do not overuse apology language. Do not keep repeating phrases like "I'm sorry" or "sorry to hear that" on every turn.
+- If the caller shares something difficult, acknowledge it naturally once, then continue the intake without repeating the same sympathy phrase over and over.
+- When the caller first explains the problem, sound like a calm human receptionist: briefly acknowledge it in a natural way, then move into the next question without becoming robotic.
+- Assume many callers do not know legal procedure, legal labels, or what stage their matter is in. If they are unsure, ask a short plain-English follow-up that gets the same information instead of insisting on formal legal terminology.
+- If the caller asks a short follow-up question about the exact term or concept you just asked about, answer it briefly in plain English and then return to that same question.
+- Only answer follow-up questions when they clearly relate to the current intake step or the caller's legal situation. Do not drift into unrelated Q&A, small talk, or legal advice.
+- Sound like a calm front-desk receptionist, not a form, script reader, or decision tree.
 - Keep ALL responses under 2 sentences - this is a phone call, be brief.
 - Call tools silently. Never say their tool names aloud.
 - Whenever the caller clearly provides their name, callback number, email, whether they are new or existing, whether they are calling for themselves or someone else, or their core issue, silently call captureIntakeState with every slot you now know.
+- Before every tool call, say nothing at all. The correct spoken content before a tool call is silence.
 - Do NOT add filler like "one moment", "hold on", "hold on a sec", "just a sec", or "let me check" before calling a tool.
 - Once the caller has already confirmed their callback number, name, email, or whether they are calling for themselves, do not ask that same question again unless they corrected you or you genuinely did not understand them.
 - If the caller volunteers answers to later intake questions early, capture those facts immediately and skip the later duplicate questions instead of re-asking them.
 - If one caller response answers multiple intake slots at once, treat every clearly answered slot as captured and move to the first still-unanswered question.
+- If the caller gives a plausible direct answer to the current question - like a name, "first time", "for myself", or "yes, this number is fine" - treat it as sufficient and move on instead of repeating or confirming the same question.
 - If the caller says "hello?" or asks if you are still there, briefly reassure them and resume the current unanswered question. Do not restart the intake or reconfirm earlier answers.
+- If the caller is clearly trying to reach a non-legal business or service that does not fit a law firm at all, politely tell them they have reached a law firm and likely have the wrong number instead of forcing them through intake.
+- If the caller clearly has no idea, needs a plain-English explanation, wants to skip or move on from the current question, or goes off-topic for the current question, treat that meaning as important context instead of repeating the same question forever.
+- If the caller turns into an obvious prank, scam, wrong-number, or non-legal business call at any point, stop forcing the intake and treat it as a wrong-number situation.
+- If the caller says they were scammed by, defrauded by, or harmed by a business or impersonator, that is still a legal intake, not a wrong-number call.
+- If you need clarification, restate the question naturally and let the caller answer in their own words. Do not turn the call into a rigid multiple-choice quiz unless they remain confused.
+- If the caller sounds confused about legal labels or choices, explain the difference in plain English and ask for whichever option is closest instead of repeating the same legal-language question word-for-word.
+- If the caller gives a vague, noisy, or non-routable answer to the open-ended issue question, do not invent a legal category or subtype yet. Treat it as still unclear and ask for a plain-English explanation of what happened.
 - Do not invent extra follow-up questions after you already have the scripted answer you need. Move to the next intake question.
 - Never read IDs aloud; they are internal references only.
 - If you don't know the answer, say "I'll make sure the right person on our team follows up with you."` };
+}
+
+async function prepareAssistantRequestRuntimeContext(vapiPhoneNumberId?: string): Promise<AssistantRequestRuntimeContext> {
+  const firm = await resolveFirmRuntimeContext(vapiPhoneNumberId);
+  const promptResult = await buildSystemPrompt(firm.assistantName || undefined, firm.firmName || undefined);
+
+  const context: AssistantRequestRuntimeContext = {
+    fetchedAt: Date.now(),
+    flowId: promptResult.flowId,
+    prompt: promptResult.prompt,
+    firstMessage: promptResult.firstMessage,
+    firm,
+  };
+
+  setCachedAssistantRequestContext(vapiPhoneNumberId, context);
+  return context;
+}
+
+async function getAssistantRequestRuntimeContextFast(vapiPhoneNumberId?: string): Promise<{
+  context: AssistantRequestRuntimeContext;
+  source: 'cache' | 'full' | 'fast-fallback';
+}> {
+  const cached = getCachedAssistantRequestContext(vapiPhoneNumberId);
+  if (cached) {
+    return { context: cached, source: 'cache' };
+  }
+
+  const fallbackFirm = buildFallbackFirmRuntimeContext();
+  const fallbackContext: AssistantRequestRuntimeContext = {
+    fetchedAt: Date.now(),
+    flowId: undefined,
+    prompt: buildGenericActiveFlowPrompt(fallbackFirm.assistantName || undefined, fallbackFirm.firmName || undefined),
+    firstMessage: buildGenericActiveFlowFirstMessage(fallbackFirm.assistantName || undefined, fallbackFirm.firmName || undefined),
+    firm: fallbackFirm,
+  };
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const fullPromise = prepareAssistantRequestRuntimeContext(vapiPhoneNumberId)
+    .then((context) => ({ context, source: 'full' as const }))
+    .catch((error) => {
+      console.error('[vapi] assistant-request context load failed:', error);
+      return null;
+    });
+
+  const timeoutPromise = new Promise<{
+    context: AssistantRequestRuntimeContext;
+    source: 'fast-fallback';
+  }>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      resolve({
+        context: fallbackContext,
+        source: 'fast-fallback',
+      });
+    }, ASSISTANT_REQUEST_FAST_TIMEOUT_MS);
+  });
+
+  const result = await Promise.race([fullPromise, timeoutPromise]);
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+  }
+
+  if (result && result.source === 'full') {
+    return result;
+  }
+
+  return {
+    context: fallbackContext,
+    source: 'fast-fallback',
+  };
 }
 
 async function loadFlowForSummaryValidation(intakeFlowId?: string | null) {
@@ -204,11 +503,19 @@ async function loadFlowForSummaryValidation(intakeFlowId?: string | null) {
 
 // ─── Tool definitions for VAPI assistant config ──────────────────────────────
 
-function getToolDefinitions() {
+function getToolDefinitions(options?: { activeFlow?: boolean }) {
+  const includeCaptureIntakeState = !options?.activeFlow;
+  const buildFunctionTool = (definition: Record<string, unknown>) => ({
+    type: 'function',
+    messages: [
+      { type: 'request-start', content: '' },
+      { type: 'request-response-delayed', content: '' },
+    ] as unknown[],
+    function: definition,
+  });
+
   return [
-    {
-      type: 'function',
-      function: {
+    ...(includeCaptureIntakeState ? [buildFunctionTool({
         name: 'captureIntakeState',
         description: 'Silently save common intake facts the caller has already provided so duplicate questions can be skipped later in the call.',
         parameters: {
@@ -223,25 +530,37 @@ function getToolDefinitions() {
           },
           required: [],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      })] : []),
+    buildFunctionTool({
         name: 'advanceActiveFlow',
-        description: 'Server-owned intake flow runner. After each caller answer on an active flow, call this with the latest caller response so the server can decide the next step, skip already-answered questions, and complete handoff or scheduling actions.',
+        description: 'Server-owned intake flow runner. After each caller answer on an active flow, call this silently with the latest caller response so the server can decide the next step, skip already-answered questions, and complete handoff or scheduling actions. Do not say any filler before or after this tool call. If the caller answered the current question in natural language, include a short semantic summary of the branch they most likely meant. If the caller also revealed or corrected core facts like new versus existing client, self versus someone else, name, callback number, email, or issue summary, include those in semanticFacts. If the caller clearly has no idea, needs a plain-English explanation, wants to skip or move on from the current question, or has gone off-topic for the current question, include semanticFacts.questionState. If the caller clearly sounds like they are not trying to reach a law firm at all, include semanticFacts.conversationFit as wrong_number. After the summary or handoff stage, if the caller clearly sounds done, is asking a follow-up timing question, or urgently wants a real person now, include semanticFacts.postCallIntent.',
         parameters: {
           type: 'object',
           properties: {
             callerResponse: { type: 'string', description: 'The caller’s exact latest answer in plain language.' },
+            matchedChoiceLabel: { type: 'string', description: 'Optional semantic summary of which branch or response the caller most likely meant for the current question, even if they did not say the exact option words.' },
+            semanticFacts: {
+              type: 'object',
+              description: 'Optional structured understanding of any core facts the caller clearly revealed or corrected in this turn, even if they answered out of order.',
+              properties: {
+                answerIntent: { type: 'string', enum: ['current_question', 'correction', 'both', 'unclear'], description: 'Whether this caller response mainly answered the current question, corrected earlier info, did both, or was unclear.' },
+                questionState: { type: 'string', enum: ['answered', 'uncertain', 'needs_explanation', 'wants_to_skip', 'off_topic', 'unclear'], description: 'Whether the caller clearly answered the current question, is unsure, needs a plain-English explanation, wants to skip or move on, has gone off-topic for the current question, or is still unclear.' },
+                conversationFit: { type: 'string', enum: ['legal_intake', 'wrong_number', 'unclear'], description: 'Whether this sounds like a genuine legal intake call, a wrong-number or non-legal business call, or is still unclear.' },
+                postCallIntent: { type: 'string', enum: ['done', 'follow_up_question', 'urgent_transfer', 'continue', 'unclear'], description: 'After the summary stage, whether the caller sounds done, is asking a follow-up question, urgently wants a real person now, wants to continue the conversation, or is still unclear.' },
+                callerName: { type: 'string', description: 'Caller full name if clear from the latest response.' },
+                callerPhone: { type: 'string', description: 'Best callback phone number if clear from the latest response.' },
+                callerEmail: { type: 'string', description: 'Caller email if clear from the latest response.' },
+                clientStatus: { type: 'string', enum: ['new', 'existing'], description: 'Whether the caller is a new or existing client, if clear from the latest response.' },
+                callingFor: { type: 'string', enum: ['self', 'other'], description: 'Whether the caller is calling for themselves or someone else, if clear from the latest response.' },
+                issueSummary: { type: 'string', description: 'The caller’s issue in plain language if they revealed or clarified it in this turn.' },
+              },
+              required: [],
+            },
           },
           required: ['callerResponse'],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      }),
+    buildFunctionTool({
         name: 'checkClient',
         description: 'Check if a caller is an existing client by their phone number',
         parameters: {
@@ -252,11 +571,8 @@ function getToolDefinitions() {
           },
           required: ['phone'],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      }),
+    buildFunctionTool({
         name: 'identifyLawyer',
         description: 'Identify the best lawyer for a legal issue based on description',
         parameters: {
@@ -266,11 +582,8 @@ function getToolDefinitions() {
           },
           required: ['legalIssueDescription'],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      }),
+    buildFunctionTool({
         name: 'scheduleConsultation',
         description: 'Schedule a consultation appointment. Automatically selects the best matched attorney based on the legal issue — no lawyerId needed.',
         parameters: {
@@ -285,11 +598,8 @@ function getToolDefinitions() {
           },
           required: ['callerName', 'callerPhone', 'preferredDate', 'preferredTime'],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      }),
+    buildFunctionTool({
         name: 'checkAttorneyAvailability',
         description: 'Check whether the best matched attorney is available right now — combines their business hours and live Google Calendar status. Call this before transferring to an attorney to avoid sending callers to someone who is busy.',
         parameters: {
@@ -300,11 +610,8 @@ function getToolDefinitions() {
           },
           required: [],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      }),
+    buildFunctionTool({
         name: 'generateTransferSummary',
         description: 'Used by intake flows at the handoff step. Saves intake data and prepares follow-up for the matched lawyer or team member, with live transfer only when explicitly enabled.',
         parameters: {
@@ -324,11 +631,8 @@ function getToolDefinitions() {
           },
           required: ['transferTarget'],
         },
-      },
-    },
-    {
-      type: 'function',
-      function: {
+      }),
+    buildFunctionTool({
         name: 'generateSummary',
         description: 'Generate a call summary and email it to the appropriate lawyer. Only call this after the caller has completed the full active intake branch; do not call it early.',
         parameters: {
@@ -346,8 +650,7 @@ function getToolDefinitions() {
           },
           required: ['callerName', 'callerPhone', 'issue'],
         },
-      },
-    },
+      }),
   ];
 }
 
@@ -367,6 +670,25 @@ async function resolveUserId(vapiPhoneNumberId?: string): Promise<string | null>
   // Fallback: single-tenant or unmatched number
   const fallback = await prisma.user.findFirst({ select: { id: true } });
   return fallback?.id ?? null;
+}
+
+async function resolveAssistantNameForCall(vapiPhoneNumberId?: string): Promise<string | undefined> {
+  if (vapiPhoneNumberId) {
+    const matchedUser = await prisma.user.findFirst({
+      where: { vapiPhoneNumberId },
+      select: { assistantName: true },
+    });
+    const matchedAssistantName = matchedUser?.assistantName?.trim();
+    if (matchedAssistantName) {
+      return matchedAssistantName;
+    }
+  }
+
+  const fallbackUser = await prisma.user.findFirst({
+    select: { assistantName: true },
+  });
+
+  return fallbackUser?.assistantName?.trim() || undefined;
 }
 
 // ─── Helper: update most recent call session ─────────────────────────────────
@@ -451,7 +773,7 @@ async function findOrCreateCallSessionForCapturedState(activeCallId?: string, ca
   return session;
 }
 
-async function loadCapturedIntakeState(activeCallId?: string, callerPhone?: string | null): Promise<{ sessionId: string | null; state: CapturedIntakeState }> {
+async function loadCapturedIntakeState(activeCallId?: string, callerPhone?: string | null): Promise<{ sessionId: string | null; sessionCallerPhone: string | null; state: CapturedIntakeState }> {
   const normalizedPhone = normalizeOptionalPhoneNumber(callerPhone || '') || null;
   const session = activeCallId
     ? await prisma.callSession.findUnique({ where: { callId: activeCallId } })
@@ -463,7 +785,7 @@ async function loadCapturedIntakeState(activeCallId?: string, callerPhone?: stri
     : null;
 
   if (!session) {
-    return { sessionId: null, state: {} };
+    return { sessionId: null, sessionCallerPhone: null, state: {} };
   }
 
   const rows = await prisma.intakeData.findMany({
@@ -487,7 +809,7 @@ async function loadCapturedIntakeState(activeCallId?: string, callerPhone?: stri
     if (normalizedStatus) state.clientStatus = normalizedStatus;
   }
 
-  return { sessionId: session.id, state };
+  return { sessionId: session.id, sessionCallerPhone: session.callerPhone || null, state };
 }
 
 function getMissingCapturedFieldNames(state: CapturedIntakeState): string[] {
@@ -505,10 +827,9 @@ async function handleCaptureIntakeState(
   activeCallId?: string,
   fallbackCallerPhone?: string | null,
 ) {
-  const entries = COMMON_CAPTURED_FIELDS
+  let entries = COMMON_CAPTURED_FIELDS
     .map((fieldName) => {
-      const fallbackValue = fieldName === 'callerPhone' ? fallbackCallerPhone : undefined;
-      const value = normalizeCapturedFieldValue(fieldName, args[fieldName] ?? fallbackValue);
+      const value = normalizeCapturedFieldValue(fieldName, args[fieldName]);
       return value
         ? {
             fieldName,
@@ -517,6 +838,27 @@ async function handleCaptureIntakeState(
         : null;
     })
     .filter((entry): entry is { fieldName: CapturedFieldName; fieldValue: string } => Boolean(entry));
+
+  entries = entries.filter((entry) => {
+    if (entry.fieldName === 'callerPhone' && fallbackCallerPhone) {
+      const normalizedFallback = normalizeOptionalPhoneNumber(fallbackCallerPhone) || fallbackCallerPhone;
+      if (entry.fieldValue === normalizedFallback) {
+        return false;
+      }
+    }
+
+    if (entry.fieldName === 'issueSummary') {
+      const text = entry.fieldValue.trim();
+      const match = identifyLegalAreaMatch(text);
+      const wordCount = text.split(/\s+/).filter(Boolean).length;
+      const hasIssueLeadIn = /\b(about|regarding|because|going through|dealing with|need help|help with|calling about|issue is|problem is|matter is)\b/i.test(text);
+      if (match.area === 'other' || wordCount < 4 || (!hasIssueLeadIn && match.score < 2)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   const resolvedPhone = entries.find((entry) => entry.fieldName === 'callerPhone')?.fieldValue || fallbackCallerPhone || null;
   const session = await findOrCreateCallSessionForCapturedState(activeCallId, resolvedPhone);
@@ -564,10 +906,267 @@ function normalizeClientStatusForFlow(clientType?: string | null): string | null
   return null;
 }
 
+function normalizeSemanticFactsArg(raw: unknown): SemanticCallerFacts | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+
+  const answerIntent: SemanticAnswerIntent | null = typeof value.answerIntent === 'string'
+    && ['current_question', 'correction', 'both', 'unclear'].includes(value.answerIntent)
+      ? value.answerIntent as SemanticAnswerIntent
+      : null;
+  const questionState: SemanticQuestionState | null = typeof value.questionState === 'string'
+    && ['answered', 'uncertain', 'needs_explanation', 'wants_to_skip', 'off_topic', 'unclear'].includes(value.questionState)
+      ? value.questionState as SemanticQuestionState
+      : null;
+  const conversationFit: SemanticConversationFit | null = typeof value.conversationFit === 'string'
+    && ['legal_intake', 'wrong_number', 'unclear'].includes(value.conversationFit)
+      ? value.conversationFit as SemanticConversationFit
+      : null;
+  const postCallIntent: SemanticPostCallIntent | null = typeof value.postCallIntent === 'string'
+    && ['done', 'follow_up_question', 'urgent_transfer', 'continue', 'unclear'].includes(value.postCallIntent)
+      ? value.postCallIntent as SemanticPostCallIntent
+      : null;
+  const clientStatus: SemanticCallerFacts['clientStatus'] = value.clientStatus === 'new' || value.clientStatus === 'existing'
+    ? value.clientStatus
+    : null;
+  const callingFor: SemanticCallerFacts['callingFor'] = value.callingFor === 'self' || value.callingFor === 'other'
+    ? value.callingFor
+    : null;
+  const callerName = typeof value.callerName === 'string' && value.callerName.trim()
+    ? value.callerName.trim()
+    : null;
+  const callerPhone = typeof value.callerPhone === 'string' && value.callerPhone.trim()
+    ? value.callerPhone.trim()
+    : null;
+  const callerEmail = typeof value.callerEmail === 'string' && value.callerEmail.trim()
+    ? value.callerEmail.trim()
+    : null;
+  const issueSummary = typeof value.issueSummary === 'string' && value.issueSummary.trim()
+    ? value.issueSummary.trim()
+    : null;
+
+  if (!answerIntent && !questionState && !conversationFit && !postCallIntent && !clientStatus && !callingFor && !callerName && !callerPhone && !callerEmail && !issueSummary) {
+    return null;
+  }
+
+  return {
+    ...(answerIntent ? { answerIntent } : {}),
+    ...(questionState ? { questionState } : {}),
+    ...(conversationFit ? { conversationFit } : {}),
+    ...(postCallIntent ? { postCallIntent } : {}),
+    ...(clientStatus ? { clientStatus } : {}),
+    ...(callingFor ? { callingFor } : {}),
+    ...(callerName ? { callerName } : {}),
+    ...(callerPhone ? { callerPhone } : {}),
+    ...(callerEmail ? { callerEmail } : {}),
+    ...(issueSummary ? { issueSummary } : {}),
+  };
+}
+
+function normalizePostFlowResponse(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^(?:uh|um|erm|hmm|mm|ah|well|so|like)\b[\s,.-]*/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isCallerDoneResponse(value: string): boolean {
-  const normalized = value.toLowerCase().trim();
+  const normalized = normalizePostFlowResponse(value);
   if (!normalized) return false;
-  return /^(no|nope|nah|nothing else|that'?s all|thats all|i'?m good|im good|goodbye|bye|all set|all good|no thank you)\b/.test(normalized);
+  return (
+    /^(?:no|nope|nah|nothing else|thats all|that s all|goodbye|bye|all set|all good|no thank you)\b/.test(normalized)
+    || /\b(?:i m good|im good|i am good|i think i m good|i think im good|i think i am good|i don t need any more help|i do not need any more help|no more help|nothing more|that is everything|that s everything|that is all)\b/.test(normalized)
+  );
+}
+
+function isCallerAskingFollowUpQuestion(value: string): boolean {
+  const normalized = normalizePostFlowResponse(value);
+  if (!normalized) return false;
+
+  return (
+    value.includes('?')
+    || /^(?:how|when|what|can|could|would|will|do|does|did|is|are|should)\b/.test(normalized)
+    || /\b(?:how long|when will|when should|what happens next|what now|reach out|follow up|hear back|timeline)\b/.test(normalized)
+  );
+}
+
+function isCallerRequestingImmediateParalegalTransfer(value: string): boolean {
+  const normalized = normalizePostFlowResponse(value);
+  if (!normalized) return false;
+
+  return (
+    /\b(?:real person|human|paralegal|manager)\b/.test(normalized)
+    || /\b(?:transfer(?: me)?|connect me|connect us)\b/.test(normalized)
+    || /\b(?:talk to (?:a |the )?(?:person|human|paralegal|someone))\b/.test(normalized)
+  );
+}
+
+function isSemanticPostCallIntent(semanticFacts: SemanticCallerFacts | null | undefined, intent: SemanticPostCallIntent): boolean {
+  return semanticFacts?.postCallIntent === intent;
+}
+
+function hasUsableControlUrl(controlUrl?: string | null): controlUrl is string {
+  return typeof controlUrl === 'string' && /^https?:\/\//.test(controlUrl.trim());
+}
+
+async function resolveParalegalTransferPhoneNumber(): Promise<string | null> {
+  const user = await prisma.user.findFirst({
+    where: { transferPhoneNumber: { not: null } },
+    select: { transferPhoneNumber: true },
+  });
+
+  return user?.transferPhoneNumber || process.env.TRANSFER_PHONE_NUMBER || null;
+}
+
+async function canOfferImmediateParalegalTransfer(controlUrl?: string | null): Promise<boolean> {
+  if (!hasUsableControlUrl(controlUrl)) {
+    return false;
+  }
+
+  const phoneNumber = await resolveParalegalTransferPhoneNumber();
+  return Boolean(phoneNumber);
+}
+
+function buildPostFlowFollowUpMessage(value: string): string {
+  const normalized = normalizePostFlowResponse(value);
+  const baseMessage = 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.';
+
+  if (/\b(?:how long|when|timeline|hear back|reach out|follow up|call me|contact me)\b/.test(normalized)) {
+    return `${baseMessage} I can't promise an exact timeline over the phone, but your information has been sent over. Is there anything else I can help you with today?`;
+  }
+
+  return `${baseMessage} Is there anything else I can help you with today?`;
+}
+
+function determineLegalAreaFromContext(...candidates: Array<string | null | undefined>) {
+  let bestArea: ReturnType<typeof identifyLegalArea> = 'other';
+  let bestScore = 0;
+
+  for (const candidate of candidates) {
+    if (!candidate || !candidate.trim()) continue;
+    const match = identifyLegalAreaMatch(candidate);
+    if (match.score > bestScore) {
+      bestScore = match.score;
+      bestArea = match.area;
+    }
+  }
+
+  return bestArea;
+}
+
+function resolvePreferredCallbackPhone(options: {
+  toolPhone?: string | null;
+  capturedPhone?: string | null;
+  sessionCallerPhone?: string | null;
+}) {
+  const toolPhone = normalizeOptionalPhoneNumber(options.toolPhone || '') || '';
+  const capturedPhone = normalizeOptionalPhoneNumber(options.capturedPhone || '') || '';
+  const sessionCallerPhone = normalizeOptionalPhoneNumber(options.sessionCallerPhone || '') || '';
+
+  if (toolPhone && (!sessionCallerPhone || toolPhone !== sessionCallerPhone)) {
+    return toolPhone;
+  }
+
+  return capturedPhone || toolPhone || sessionCallerPhone || '';
+}
+
+function normalizeComparableCallerName(value?: string | null) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/^(?:uh|um|my name is|this is|i am|i m|i'm)\s+/i, '')
+    .replace(/[^a-z\s'-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function areCallerNamesCompatible(existingName?: string | null, incomingName?: string | null) {
+  const normalizedExisting = normalizeComparableCallerName(existingName);
+  const normalizedIncoming = normalizeComparableCallerName(incomingName);
+
+  if (!normalizedExisting || !normalizedIncoming || normalizedIncoming === 'unknown') {
+    return true;
+  }
+
+  if (normalizedExisting === normalizedIncoming) {
+    return true;
+  }
+
+  const existingTokens = normalizedExisting.split(' ').filter(Boolean);
+  const incomingTokens = normalizedIncoming.split(' ').filter(Boolean);
+  if (existingTokens.length === 0 || incomingTokens.length === 0) {
+    return true;
+  }
+
+  const existingFirst = existingTokens[0] || '';
+  const incomingFirst = incomingTokens[0] || '';
+  const existingLast = existingTokens.at(-1) || '';
+  const incomingLast = incomingTokens.at(-1) || '';
+  if (
+    existingLast
+    && incomingLast
+    && existingLast === incomingLast
+    && existingFirst
+    && incomingFirst
+    && existingFirst[0] === incomingFirst[0]
+  ) {
+    return true;
+  }
+
+  const overlapCount = incomingTokens.filter((token) => existingTokens.includes(token)).length;
+  return overlapCount > 0 && overlapCount >= Math.min(existingTokens.length, incomingTokens.length);
+}
+
+async function resolveProspectiveClientForContact(options: {
+  callerName: string;
+  callerPhone?: string | null;
+  callerEmail?: string | null;
+}) {
+  const normalizedPhone = normalizeOptionalPhoneNumber(options.callerPhone || '') || '';
+  if (!normalizedPhone) {
+    return { client: null, linkClientId: null as string | null, shouldSetClientId: false, conflict: false };
+  }
+
+  const existingClient = await prisma.client.findUnique({
+    where: { phone: normalizedPhone },
+  });
+
+  if (!existingClient) {
+    const createdClient = await prisma.client.create({
+      data: {
+        name: options.callerName,
+        phone: normalizedPhone,
+        email: options.callerEmail || null,
+        isCurrentClient: false,
+      },
+    });
+
+    return { client: createdClient, linkClientId: createdClient.id, shouldSetClientId: true, conflict: false };
+  }
+
+  const namesCompatible = areCallerNamesCompatible(existingClient.name, options.callerName);
+  const emailsCompatible = !options.callerEmail || !existingClient.email || existingClient.email.toLowerCase() === options.callerEmail.toLowerCase();
+
+  if (namesCompatible && emailsCompatible) {
+    return { client: existingClient, linkClientId: existingClient.id, shouldSetClientId: true, conflict: false };
+  }
+
+  console.warn(
+    `[vapi] Callback number ${normalizedPhone} is already linked to client "${existingClient.name}", but this call captured "${options.callerName}". Leaving the call session unlinked to avoid attaching it to the wrong person.`
+  );
+
+  return { client: existingClient, linkClientId: null as string | null, shouldSetClientId: true, conflict: true };
+}
+
+function buildFlowClassificationContext(state: ReturnType<typeof hydrateFlowRuntimeState>) {
+  const values = Array.from(new Set(
+    Object.values(state.flagValues)
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value)),
+  ));
+
+  return values.length > 0 ? values.join('. ') : undefined;
 }
 
 function humanizeFieldName(fieldName: string): string {
@@ -665,7 +1264,10 @@ function buildIntakeNotesFromState(state: ReturnType<typeof hydrateFlowRuntimeSt
         'caller_name',
         'callerName',
         'callback_phone',
+        'callbackPhone',
         'callerPhone',
+        'call_origin_phone',
+        'callOriginPhone',
         'email',
         'callerEmail',
         'issue_summary',
@@ -683,15 +1285,18 @@ function buildTransferSummaryArgs(
   config: any,
 ) {
   return {
+    flowGuaranteedComplete: true,
     transferTarget: config?.transferTarget,
     handoffMode: config?.handoffMode,
     callbackMessage: typeof config?.callbackMessage === 'string' ? config.callbackMessage : undefined,
     message: typeof config?.message === 'string' ? config.message : undefined,
     callerName: getFlowCollectedValue(state, 'caller_name', 'callerName') || 'Unknown',
-    callerPhone: getFlowCollectedValue(state, 'callback_phone', 'callerPhone') || session.callerPhone || '',
+    callerPhone: getFlowCollectedValue(state, 'callback_phone', 'callbackPhone', 'callerPhone') || session.callerPhone || '',
+    callOriginPhone: getFlowCollectedValue(state, 'call_origin_phone', 'callOriginPhone') || session.callerPhone || '',
     callerEmail: getFlowCollectedValue(state, 'email', 'callerEmail') || undefined,
     issue: getFlowCollectedValue(state, 'issue_summary', 'issueSummary') || '',
     notes: buildIntakeNotesFromState(state),
+    classificationContext: buildFlowClassificationContext(state),
     petitionType: getFlowFlagValue(state, 'petitionType') || undefined,
     matterCategory:
       getFlowFlagValue(state, 'matterCategory') ||
@@ -706,6 +1311,7 @@ function buildTransferSummaryArgs(
       getFlowFlagValue(state, 'urgencyFlag') ||
       getFlowFlagValue(state, 'urgency_flag') ||
       undefined,
+    correctionContext: getFlowFlagValue(state, 'correctionContext') || undefined,
   };
 }
 
@@ -715,7 +1321,7 @@ function buildBookAppointmentArgs(
 ) {
   return {
     callerName: getFlowCollectedValue(state, 'caller_name', 'callerName') || 'Unknown',
-    callerPhone: getFlowCollectedValue(state, 'callback_phone', 'callerPhone') || session.callerPhone || '',
+    callerPhone: getFlowCollectedValue(state, 'callback_phone', 'callbackPhone', 'callerPhone') || session.callerPhone || '',
     callerEmail: getFlowCollectedValue(state, 'email', 'callerEmail') || undefined,
     legalIssue: getFlowCollectedValue(state, 'issue_summary', 'issueSummary') || '',
     preferredDate: getFlowCollectedValue(state, 'preferred_date') || '',
@@ -738,33 +1344,133 @@ function findPreviousQuestionNode(flow: any, nodeId: string) {
   return null;
 }
 
+function findQuestionNodeByPrompt(flow: any, prompt: string) {
+  const normalizedPrompt = prompt.trim().toLowerCase();
+  if (!normalizedPrompt) return null;
+
+  return flow.nodes.find((node: any) => {
+    if (node.type !== 'question') return false;
+    const question = typeof node.config?.question === 'string' ? node.config.question.trim().toLowerCase() : '';
+    const note = typeof node.config?.note === 'string' ? node.config.note.trim().toLowerCase() : '';
+    return question === normalizedPrompt || note === normalizedPrompt;
+  }) || null;
+}
+
 async function handlePostFlowState(
   callerResponse: string,
-  callSessionId: string,
-  flowId?: string | null,
+  session: { id: string; callId: string; callerPhone: string | null; summary?: string | null; notes?: string | null },
+  flowId: string | null | undefined,
+  runtimeState: ReturnType<typeof hydrateFlowRuntimeState>,
+  semanticFacts?: SemanticCallerFacts | null,
+  controlUrl?: string | null,
 ) {
   const writes: FlowRuntimeWrite[] = [];
 
-  if (isCallerDoneResponse(callerResponse)) {
+  if (isSemanticPostCallIntent(semanticFacts, 'done') || isCallerDoneResponse(callerResponse)) {
     writes.push(
       { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'none' },
       { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: FLOW_COMPLETED_NODE_ID },
     );
-    await persistFlowRuntimeWrites(callSessionId, flowId, writes);
+    await persistFlowRuntimeWrites(session.id, flowId, writes);
     return {
       success: true,
       step: 'end',
+      speakExactly: true,
       assistantMessage: 'Thank you for calling. Have a wonderful day. Goodbye!',
       endCallAfterSpeaking: true,
     };
   }
 
+  if (isSemanticPostCallIntent(semanticFacts, 'urgent_transfer') || isCallerRequestingImmediateParalegalTransfer(callerResponse)) {
+    const transferResult: any = await handleGenerateTransferSummary(
+      {
+        transferTarget: 'paralegal',
+        handoffMode: 'summary_only',
+        callerName: getFlowCollectedValue(runtimeState, 'caller_name', 'callerName') || undefined,
+        callerPhone: getFlowCollectedValue(runtimeState, 'callback_phone', 'callbackPhone', 'callerPhone') || session.callerPhone || undefined,
+        issue: getFlowCollectedValue(runtimeState, 'issue_summary', 'issueSummary') || session.summary || undefined,
+        notes: session.notes || undefined,
+        urgencyFlag: getFlowFlagValue(runtimeState, 'urgencyFlag') || getFlowCollectedValue(runtimeState, 'urgency_flag') || 'urgent',
+      },
+      undefined,
+      session.callId,
+    );
+
+    writes.push(
+      { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'none' },
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: FLOW_COMPLETED_NODE_ID },
+    );
+    await persistFlowRuntimeWrites(session.id, flowId, writes);
+    return {
+      success: true,
+      step: 'end',
+      speakExactly: true,
+      assistantMessage: typeof transferResult?.message === 'string' && transferResult.message
+        ? transferResult.message
+        : getDefaultTransferCallbackMessage('paralegal', { urgent: true }),
+      endCallAfterSpeaking: true,
+    };
+  }
+
+  if (isSemanticPostCallIntent(semanticFacts, 'follow_up_question') || isCallerAskingFollowUpQuestion(callerResponse)) {
+    writes.push({ fieldName: FLOW_POST_STATE_KEY, fieldValue: FLOW_POST_STATE_AWAITING_ANYTHING_ELSE });
+    await persistFlowRuntimeWrites(session.id, flowId, writes);
+    return {
+      success: true,
+      step: 'say',
+      speakExactly: true,
+      assistantMessage: buildPostFlowFollowUpMessage(callerResponse),
+    };
+  }
+
   writes.push({ fieldName: FLOW_POST_STATE_KEY, fieldValue: FLOW_POST_STATE_AWAITING_ANYTHING_ELSE });
-  await persistFlowRuntimeWrites(callSessionId, flowId, writes);
+  await persistFlowRuntimeWrites(session.id, flowId, writes);
   return {
     success: true,
     step: 'ask',
+    speakExactly: true,
     assistantMessage: 'Of course. What else can I help you with today?',
+  };
+}
+
+async function handleImmediateParalegalTransferRequest(
+  session: { id: string; callId: string; callerPhone: string | null },
+  flowId: string | null | undefined,
+  runtimeState: ReturnType<typeof hydrateFlowRuntimeState>,
+  activeCallId?: string,
+  controlUrl?: string | null,
+) {
+  const transferResult: any = await handleGenerateTransferSummary(
+    buildTransferSummaryArgs(runtimeState, session, {
+      transferTarget: 'paralegal',
+      handoffMode: 'live_transfer',
+      urgencyFlag: getFlowFlagValue(runtimeState, 'urgencyFlag') || getFlowCollectedValue(runtimeState, 'urgency_flag') || undefined,
+    }),
+    controlUrl,
+    activeCallId,
+  );
+
+  await persistFlowRuntimeWrites(session.id, flowId, [
+    { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'none' },
+    { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: FLOW_COMPLETED_NODE_ID },
+  ]);
+
+  if (transferResult?.liveTransfer && transferResult?.transferred) {
+    return {
+      success: true,
+      step: 'live_transfer',
+      transferred: true,
+    };
+  }
+
+  return {
+    success: true,
+    step: 'end',
+    speakExactly: true,
+    assistantMessage: typeof transferResult?.message === 'string' && transferResult.message
+      ? transferResult.message
+      : getDefaultTransferCallbackMessage('paralegal'),
+    endCallAfterSpeaking: true,
   };
 }
 
@@ -1020,11 +1726,17 @@ async function triggerVapiTransfer(
   }
 }
 
-async function handleBookAppointment(args: Record<string, unknown>, userId: string) {
-  const callerName  = typeof args.callerName  === 'string' ? args.callerName  : 'Unknown';
-  const rawPhone    = typeof args.callerPhone  === 'string' ? args.callerPhone  : '';
-  const callerPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
-  const callerEmail = typeof args.callerEmail  === 'string' ? args.callerEmail  : undefined;
+async function handleBookAppointment(args: Record<string, unknown>, userId: string, activeCallId?: string) {
+  const rawPhone = typeof args.callerPhone === 'string' ? args.callerPhone : '';
+  const normalizedToolPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
+  const { state: capturedState, sessionCallerPhone } = await loadCapturedIntakeState(activeCallId, normalizedToolPhone);
+  const callerName = typeof args.callerName === 'string' ? args.callerName : capturedState.callerName || 'Unknown';
+  const callerPhone = resolvePreferredCallbackPhone({
+    toolPhone: normalizedToolPhone,
+    capturedPhone: capturedState.callerPhone,
+    sessionCallerPhone,
+  });
+  const callerEmail = typeof args.callerEmail === 'string' ? args.callerEmail : capturedState.callerEmail || undefined;
   const legalIssue  = typeof args.legalIssue   === 'string' ? args.legalIssue   : '';
   const preferredDate = typeof args.preferredDate === 'string' ? args.preferredDate : '';
   const preferredTime = typeof args.preferredTime === 'string' ? args.preferredTime : '';
@@ -1091,35 +1803,35 @@ async function handleCheckAttorneyAvailability(args: Record<string, unknown>, us
   };
 }
 
-async function persistParalegalHandoff(args: Record<string, unknown>, callOutcome: string) {
+async function persistParalegalHandoff(args: Record<string, unknown>, callOutcome: string, activeCallId?: string) {
   const rawPhone = typeof args.callerPhone === 'string' ? args.callerPhone : (typeof args.phone === 'string' ? args.phone : '');
   const normalizedToolPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
-  const { state: capturedState } = await loadCapturedIntakeState(undefined, normalizedToolPhone);
+  const { state: capturedState, sessionCallerPhone } = await loadCapturedIntakeState(activeCallId, normalizedToolPhone);
   const callerName = typeof args.callerName === 'string' ? args.callerName : capturedState.callerName || 'Unknown';
-  const callerPhone = normalizedToolPhone || capturedState.callerPhone || '';
+  const callerPhone = resolvePreferredCallbackPhone({
+    toolPhone: normalizedToolPhone,
+    capturedPhone: capturedState.callerPhone,
+    sessionCallerPhone,
+  });
   const callerEmail = typeof args.callerEmail === 'string' ? args.callerEmail : capturedState.callerEmail || '';
   const issue = typeof args.issue === 'string' ? args.issue : capturedState.issueSummary || '';
   const notes = typeof args.notes === 'string' ? args.notes : '';
 
-  let client = callerPhone
-    ? await prisma.client.findUnique({ where: { phone: callerPhone } })
+  const clientResolution = await resolveProspectiveClientForContact({
+    callerName,
+    callerPhone,
+    callerEmail,
+  });
+  const client = clientResolution.linkClientId ? clientResolution.client : null;
+
+  let existing = activeCallId
+    ? await prisma.callSession.findUnique({ where: { callId: activeCallId } })
+    : callerPhone
+    ? await prisma.callSession.findFirst({
+        where: { callerPhone },
+        orderBy: { createdAt: 'desc' },
+      })
     : null;
-
-  if (!client && callerPhone) {
-    client = await prisma.client.create({
-      data: {
-        name: callerName,
-        phone: callerPhone,
-        email: callerEmail || null,
-        isCurrentClient: false,
-      },
-    });
-  }
-
-  let existing = callerPhone ? await prisma.callSession.findFirst({
-    where: { callerPhone },
-    orderBy: { createdAt: 'desc' },
-  }) : null;
 
   if (!existing) {
     existing = await prisma.callSession.findFirst({
@@ -1129,7 +1841,7 @@ async function persistParalegalHandoff(args: Record<string, unknown>, callOutcom
   }
 
   const sessionData = {
-    ...(client?.id ? { clientId: client.id } : {}),
+    ...(clientResolution.shouldSetClientId ? { clientId: clientResolution.linkClientId } : {}),
     ...(client ? { clientType: client.isCurrentClient ? 'current' : 'prospective' } : {}),
     callOutcome,
     ...(issue ? { summary: issue } : {}),
@@ -1163,40 +1875,39 @@ async function handleGenerateTransferSummary(
   activeCallId?: string
 ) {
   const transferTarget = getTransferTarget(args.transferTarget);
+  const paralegalPhoneNumber = await resolveParalegalTransferPhoneNumber();
+  const offerImmediateParalegalTransfer = Boolean(paralegalPhoneNumber && hasUsableControlUrl(controlUrl));
   const callbackMessage = resolveTransferCallbackMessage({
     transferTarget,
     callbackMessage: args.callbackMessage,
     message: args.message,
+    urgencyFlag: args.urgencyFlag,
+    offerImmediateParalegalTransfer,
   });
-  const liveTransfer = isLiveTransferEnabled(args.handoffMode, transferTarget);
+  const correctionContext = typeof args.correctionContext === 'string' ? args.correctionContext : null;
+  const liveTransferRequested = isLiveTransferEnabled(args.handoffMode, transferTarget);
 
   if (transferTarget === 'paralegal') {
-    const handoffResult = await persistParalegalHandoff(args, liveTransfer ? 'transferred' : 'team_followup');
+    const liveTransferNumber = typeof paralegalPhoneNumber === 'string' ? paralegalPhoneNumber : null;
 
-    if (liveTransfer) {
-      const user = await prisma.user.findFirst({
-        where: { transferPhoneNumber: { not: null } },
-        select: { transferPhoneNumber: true },
-      });
-      const phoneNumber = user?.transferPhoneNumber || process.env.TRANSFER_PHONE_NUMBER || null;
-      if (!phoneNumber) {
-        return { ...handoffResult, liveTransfer: false, message: callbackMessage };
-      }
-      if (controlUrl) {
+    if (liveTransferRequested && liveTransferNumber) {
+      if (hasUsableControlUrl(controlUrl)) {
         try {
           await triggerVapiTransfer(
             controlUrl,
-            { type: 'number', number: phoneNumber },
-            getLiveTransferAnnouncement('paralegal'),
+            { type: 'number', number: liveTransferNumber },
+            getLiveTransferAnnouncement('paralegal', { correctionContext }),
           );
+          const handoffResult = await persistParalegalHandoff(args, 'transferred', activeCallId);
           return {
             ...handoffResult,
             liveTransfer: true,
             transferred: true,
-            destination: { type: 'number', number: phoneNumber },
+            destination: { type: 'number', number: liveTransferNumber },
           };
         } catch (error) {
           console.error('[vapi] Failed to trigger paralegal live transfer:', error);
+          const handoffResult = await persistParalegalHandoff(args, 'team_followup', activeCallId);
           return {
             ...handoffResult,
             liveTransfer: false,
@@ -1205,17 +1916,20 @@ async function handleGenerateTransferSummary(
           };
         }
       }
+      const handoffResult = await persistParalegalHandoff(args, 'transferred', activeCallId);
       return {
         ...handoffResult,
         liveTransfer: true,
         type: 'transfer',
         destination: {
           type: 'number',
-          number: phoneNumber,
-          message: getLiveTransferAnnouncement('paralegal'),
+          number: liveTransferNumber,
+          message: getLiveTransferAnnouncement('paralegal', { correctionContext }),
         },
       };
     }
+
+    const handoffResult = await persistParalegalHandoff(args, 'team_followup', activeCallId);
 
     return {
       ...handoffResult,
@@ -1228,23 +1942,31 @@ async function handleGenerateTransferSummary(
   // Delegate to the shared summary handler which saves data and emails the lawyer
   const summaryResult = await handleGenerateSummary({ ...args }, activeCallId);
 
-  if (!liveTransfer) {
+  if (!liveTransferRequested) {
+    const shouldUseCallbackMessage = summaryResult.success
+      && (summaryResult.emailDelivered !== false || summaryResult.deliveryStatus === 'queued_until_call_end');
     return {
       ...summaryResult,
       liveTransfer: false,
       transferTarget,
-      message: summaryResult.success && summaryResult.emailDelivered !== false
+      message: shouldUseCallbackMessage
         ? callbackMessage
         : summaryResult.message,
     };
   }
 
   // attorney path: find best matched attorney and transfer to their direct line
-  const issueText = typeof args.issue === 'string' ? args.issue : '';
-  const legalArea = identifyLegalArea(issueText || 'other');
+  const legalArea = summaryResult.legalArea || determineLegalAreaFromContext(
+    typeof args.issue === 'string' ? args.issue : '',
+    typeof args.notes === 'string' ? args.notes : '',
+    typeof args.matterCategory === 'string' ? args.matterCategory : '',
+    typeof args.petitionType === 'string' ? args.petitionType : '',
+    typeof args.urgencyFlag === 'string' ? args.urgencyFlag : '',
+    typeof args.classificationContext === 'string' ? args.classificationContext : '',
+  );
   const lawyer = await findBestLawyer(legalArea);
   if (lawyer?.phone) {
-    if (controlUrl) {
+    if (hasUsableControlUrl(controlUrl)) {
       try {
         await triggerVapiTransfer(controlUrl, { type: 'number', number: lawyer.phone });
         return {
@@ -1282,25 +2004,6 @@ async function handleGenerateTransferSummary(
     transferTarget,
     message: callbackMessage,
   };
-}
-
-function normalizeTranscriptText(transcript: unknown): string {
-  if (Array.isArray(transcript)) {
-    return transcript
-      .map((entry: any) => {
-        const role = typeof entry?.role === 'string' ? entry.role : 'speaker';
-        const content = typeof entry?.content === 'string'
-          ? entry.content
-          : typeof entry?.message === 'string'
-          ? entry.message
-          : '';
-        return content ? `${role}: ${content}` : '';
-      })
-      .filter(Boolean)
-      .join('\n');
-  }
-
-  return typeof transcript === 'string' ? transcript : '';
 }
 
 function extractRecordingUrl(message: any): string | undefined {
@@ -1342,7 +2045,7 @@ function extractRecordingUrl(message: any): string | undefined {
 
 async function deliverQueuedSummaryEmail(
   callSessionId: string,
-  options: { intakeNotes?: string; transcriptText?: string; recordingUrl?: string }
+  options: { intakeNotes?: string; transcriptText?: string; recordingUrl?: string; assistantName?: string }
 ) {
   const callSession = await prisma.callSession.findUnique({
     where: { id: callSessionId },
@@ -1374,13 +2077,37 @@ async function deliverQueuedSummaryEmail(
     return;
   }
 
+  const runtimeRows = await loadFlowRuntimeRows(callSession.id);
+  const runtimeState = hydrateFlowRuntimeState(runtimeRows);
+  const resolvedCallerName =
+    getFlowCollectedValue(runtimeState, 'caller_name', 'callerName')
+    || callSession.client?.name
+    || 'Unknown caller';
+  const resolvedCallerPhone =
+    getFlowCollectedValue(runtimeState, 'callback_phone', 'callbackPhone', 'callerPhone')
+    || callSession.client?.phone
+    || callSession.callerPhone
+    || '';
+  const resolvedCallOriginPhone =
+    getFlowCollectedValue(runtimeState, 'call_origin_phone', 'callOriginPhone')
+    || callSession.callerPhone
+    || '';
+  const resolvedCallerEmail =
+    getFlowCollectedValue(runtimeState, 'email', 'callerEmail')
+    || callSession.client?.email
+    || undefined;
+  const backupSummaryEmail = await resolveBackupSummaryEmail(callSession.intakeFlowId);
+
   const emailResult = await sendCallSummaryEmail({
     callId: callSession.callId,
     lawyerEmail: callSession.lawyer.email,
     lawyerName: callSession.lawyer.name,
-    callerName: callSession.client?.name || 'Unknown caller',
-    callerPhone: callSession.callerPhone || '',
-    callerEmail: callSession.client?.email || undefined,
+    backupEmail: backupSummaryEmail,
+    assistantName: options.assistantName,
+    callerName: resolvedCallerName,
+    callerPhone: resolvedCallerPhone,
+    callOriginPhone: resolvedCallOriginPhone,
+    callerEmail: resolvedCallerEmail,
     summary: callSession.summary || 'No summary available.',
     notes: options.intakeNotes,
     transcript: options.transcriptText,
@@ -1407,30 +2134,66 @@ async function deliverQueuedSummaryEmail(
   });
 }
 
+async function resolveBackupSummaryEmail(intakeFlowId?: string | null): Promise<string | undefined> {
+  if (intakeFlowId) {
+    const flow = await prisma.intakeFlow.findUnique({
+      where: { id: intakeFlowId },
+      select: {
+        user: {
+          select: {
+            backupSummaryEmail: true,
+          },
+        },
+      },
+    });
+    const flowEmail = flow?.user?.backupSummaryEmail?.trim();
+    if (flowEmail) return flowEmail;
+  }
+
+  const fallbackUser = await prisma.user.findFirst({
+    select: {
+      backupSummaryEmail: true,
+    },
+  });
+  return fallbackUser?.backupSummaryEmail?.trim() || undefined;
+}
+
 async function handleGenerateSummary(args: Record<string, unknown>, activeCallId?: string) {
   const rawPhone = typeof args.callerPhone === 'string' ? args.callerPhone : (typeof args.phone === 'string' ? args.phone : '');
   const normalizedToolPhone = normalizeOptionalPhoneNumber(rawPhone) || '';
-  const { state: capturedState } = await loadCapturedIntakeState(activeCallId, normalizedToolPhone);
+  const { state: capturedState, sessionCallerPhone } = await loadCapturedIntakeState(activeCallId, normalizedToolPhone);
   const callerName = typeof args.callerName === 'string' ? args.callerName : capturedState.callerName || 'Unknown';
-  const callerPhone = normalizedToolPhone || capturedState.callerPhone || '';
+  const callerPhone = resolvePreferredCallbackPhone({
+    toolPhone: normalizedToolPhone,
+    capturedPhone: capturedState.callerPhone,
+    sessionCallerPhone,
+  });
   const callerEmail = typeof args.callerEmail === 'string' ? args.callerEmail : capturedState.callerEmail || '';
   const issue = typeof args.issue === 'string' ? args.issue : capturedState.issueSummary || '';
   const notes = typeof args.notes === 'string' ? args.notes : '';
+  const classificationContext = typeof args.classificationContext === 'string' ? args.classificationContext : '';
   const petitionType = typeof args.petitionType === 'string' ? args.petitionType : undefined;
   const matterCategory = typeof args.matterCategory === 'string' ? args.matterCategory : undefined;
   const partyRole = typeof args.partyRole === 'string' ? args.partyRole : undefined;
   const urgencyFlag = typeof args.urgencyFlag === 'string' ? args.urgencyFlag : undefined;
+  const flowGuaranteedComplete = args.flowGuaranteedComplete === true;
 
   // Identify the right lawyer
-  const legalArea = identifyLegalArea(issue);
+  const legalArea = determineLegalAreaFromContext(
+    issue,
+    notes,
+    matterCategory,
+    petitionType,
+    urgencyFlag,
+    classificationContext,
+  );
 
-  // Create or find client
-  let client = await prisma.client.findUnique({ where: { phone: callerPhone } });
-  if (!client && callerPhone) {
-    client = await prisma.client.create({
-      data: { name: callerName, phone: callerPhone, email: callerEmail || null, isCurrentClient: false },
-    });
-  }
+  const clientResolution = await resolveProspectiveClientForContact({
+    callerName,
+    callerPhone,
+    callerEmail,
+  });
+  const client = clientResolution.linkClientId ? clientResolution.client : null;
 
   // Update existing call session or create new one
   // Try by phone first, then find the most recent active session as fallback
@@ -1457,27 +2220,34 @@ async function handleGenerateSummary(args: Record<string, unknown>, activeCallId
     }
   }
 
-  const validationFlow = await loadFlowForSummaryValidation(existing?.intakeFlowId || null);
-  const summaryReadiness = validateSummaryReadiness({
-    flow: validationFlow,
-    legalArea,
-    issue,
-    notes,
-    petitionType,
-    matterCategory,
-    partyRole,
-    urgencyFlag,
-  });
-  if (!summaryReadiness.ready) {
-    console.warn(`[vapi] generateSummary blocked for incomplete branch in ${legalArea}: ${summaryReadiness.missingRequirements.join(', ')}`);
-    return {
-      success: false,
-      continueIntake: true,
-      deliveryStatus: 'incomplete_branch',
+  const validationFlow = flowGuaranteedComplete
+    ? existing?.intakeFlowId
+      ? await loadFlowForSummaryValidation(existing.intakeFlowId)
+      : null
+    : await loadFlowForSummaryValidation(existing?.intakeFlowId || null);
+
+  if (!flowGuaranteedComplete) {
+    const summaryReadiness = validateSummaryReadiness({
+      flow: validationFlow,
       legalArea,
-      missingRequirements: summaryReadiness.missingRequirements,
-      message: summaryReadiness.message,
-    };
+      issue,
+      notes,
+      petitionType,
+      matterCategory,
+      partyRole,
+      urgencyFlag,
+    });
+    if (!summaryReadiness.ready) {
+      console.warn(`[vapi] generateSummary blocked for incomplete branch in ${legalArea}: ${summaryReadiness.missingRequirements.join(', ')}`);
+      return {
+        success: false,
+        continueIntake: true,
+        deliveryStatus: 'incomplete_branch',
+        legalArea,
+        missingRequirements: summaryReadiness.missingRequirements,
+        message: summaryReadiness.message,
+      };
+    }
   }
 
   const lawyer = await findBestLawyer(legalArea);
@@ -1490,7 +2260,7 @@ async function handleGenerateSummary(args: Record<string, unknown>, activeCallId
     ? await prisma.callSession.update({
         where: { id: existing.id },
         data: {
-          clientId: client?.id,
+          ...(clientResolution.shouldSetClientId ? { clientId: clientResolution.linkClientId } : {}),
           clientType: 'prospective',
           callOutcome: 'summary_queued',
           legalArea,
@@ -1509,7 +2279,7 @@ async function handleGenerateSummary(args: Record<string, unknown>, activeCallId
         data: {
           callId: activeCallId || `summary-${Date.now()}`,
           callerPhone: effectivePhone,
-          clientId: client?.id,
+          ...(clientResolution.shouldSetClientId ? { clientId: clientResolution.linkClientId } : {}),
           clientType: 'prospective',
           callOutcome: 'summary_queued',
           legalArea,
@@ -1540,7 +2310,7 @@ async function handleGenerateSummary(args: Record<string, unknown>, activeCallId
       legalArea,
       emailDelivered: false,
       deliveryStatus: 'no_lawyer_assigned',
-      message: 'Your information has been recorded for internal follow-up. Our team will review your situation and reach out to you.',
+      message: getDefaultTransferCallbackMessage('attorney'),
     };
   }
 
@@ -1559,7 +2329,7 @@ async function handleGenerateSummary(args: Record<string, unknown>, activeCallId
       legalArea,
       emailDelivered: false,
       deliveryStatus: 'lawyer_missing_email',
-      message: `Your information has been recorded for ${lawyer.name}'s team, and they will review your situation and reach out to you.`,
+      message: getDefaultTransferCallbackMessage('attorney'),
     };
   }
 
@@ -1571,7 +2341,7 @@ async function handleGenerateSummary(args: Record<string, unknown>, activeCallId
     legalArea,
     emailDelivered: false,
     deliveryStatus: 'queued_until_call_end',
-    message: `Your information has been recorded for ${lawyer.name}. They will review your situation and reach out to you.`,
+    message: getDefaultTransferCallbackMessage('attorney'),
   };
 }
 
@@ -1583,6 +2353,8 @@ async function handleAdvanceActiveFlow(
   userId?: string,
 ) {
   const callerResponse = typeof args.callerResponse === 'string' ? args.callerResponse.trim() : '';
+  const matchedChoiceLabel = typeof args.matchedChoiceLabel === 'string' ? args.matchedChoiceLabel.trim() : '';
+  const semanticFacts = normalizeSemanticFactsArg(args.semanticFacts);
   if (!callerResponse) {
     return {
       success: false,
@@ -1611,10 +2383,31 @@ async function handleAdvanceActiveFlow(
 
   let runtimeRows: Array<{ fieldName: string; fieldValue: string; nodeId?: string | null }> = await loadFlowRuntimeRows(session.id);
   let runtimeState = hydrateFlowRuntimeState(runtimeRows);
+
+  if (session.callerPhone && !getFlowCollectedValue(runtimeState, 'call_origin_phone', 'callOriginPhone')) {
+    const originWrites: FlowRuntimeWrite[] = [
+      { fieldName: 'call_origin_phone', fieldValue: session.callerPhone },
+      { fieldName: 'callOriginPhone', fieldValue: session.callerPhone },
+    ];
+    await persistFlowRuntimeWrites(session.id, flow.id, originWrites);
+    runtimeRows = mergeRuntimeRows(runtimeRows, originWrites);
+    runtimeState = hydrateFlowRuntimeState(runtimeRows);
+  }
+
   const postState = runtimeState.internalValues[FLOW_POST_STATE_KEY] || 'none';
 
   if (postState === FLOW_POST_STATE_AWAITING_ANYTHING_ELSE) {
-    return handlePostFlowState(callerResponse, session.id, flow.id);
+    return handlePostFlowState(callerResponse, session, flow.id, runtimeState, semanticFacts, controlUrl);
+  }
+
+  if (isCallerRequestingImmediateParalegalTransfer(callerResponse)) {
+    return handleImmediateParalegalTransferRequest(
+      session,
+      flow.id,
+      runtimeState,
+      activeCallId,
+      controlUrl,
+    );
   }
 
   let pendingResponse: string | null = callerResponse;
@@ -1622,6 +2415,8 @@ async function handleAdvanceActiveFlow(
     const progress = progressActiveFlow(flow, runtimeState, pendingResponse, {
       sessionCallerPhone: session.callerPhone,
       sessionClientType: normalizeClientStatusForFlow(session.clientType),
+      matchedChoiceLabel: pendingResponse ? matchedChoiceLabel : null,
+      semanticFacts: pendingResponse ? semanticFacts : null,
     });
     pendingResponse = null;
 
@@ -1635,6 +2430,7 @@ async function handleAdvanceActiveFlow(
       return {
         success: true,
         step: progress.kind,
+        speakExactly: true,
         assistantMessage: progress.assistantMessage,
         currentNodeLabel: progress.node.label,
       };
@@ -1647,6 +2443,7 @@ async function handleAdvanceActiveFlow(
       return {
         success: true,
         step: 'end',
+        speakExactly: true,
         assistantMessage: progress.assistantMessage,
         endCallAfterSpeaking: true,
       };
@@ -1658,6 +2455,23 @@ async function handleAdvanceActiveFlow(
         controlUrl,
         activeCallId,
       );
+
+      if (transferResult?.continueIntake && Array.isArray(transferResult.missingRequirements) && transferResult.missingRequirements.length > 0) {
+        const retryQuestion = findQuestionNodeByPrompt(flow, transferResult.missingRequirements[0]);
+        if (retryQuestion) {
+          await persistFlowRuntimeWrites(session.id, flow.id, [
+            { fieldName: FLOW_POST_STATE_KEY, fieldValue: 'none' },
+            { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: retryQuestion.id },
+          ]);
+          return {
+            success: true,
+            step: 'ask',
+            speakExactly: true,
+            assistantMessage: typeof retryQuestion.config?.question === 'string' ? retryQuestion.config.question : transferResult.missingRequirements[0],
+            currentNodeLabel: retryQuestion.label,
+          };
+        }
+      }
 
       await persistFlowRuntimeWrites(session.id, flow.id, [
         { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: FLOW_COMPLETED_NODE_ID },
@@ -1681,6 +2495,7 @@ async function handleAdvanceActiveFlow(
       return {
         success: true,
         step: 'say',
+        speakExactly: true,
         assistantMessage: `${transferResult.message} Is there anything else I can help you with today?`,
       };
     }
@@ -1779,6 +2594,7 @@ async function handleAdvanceActiveFlow(
           return {
             success: true,
             step: 'clarify',
+            speakExactly: true,
             assistantMessage: retryQuestion?.config?.question || 'What day and time usually works best for a consultation?',
             currentNodeLabel: retryQuestion?.label || progress.node.label,
           };
@@ -1794,6 +2610,7 @@ async function handleAdvanceActiveFlow(
           return {
             success: true,
             step: 'clarify',
+            speakExactly: true,
             assistantMessage: bookingResult.message,
             currentNodeLabel: retryQuestion?.label || progress.node.label,
           };
@@ -1809,6 +2626,7 @@ async function handleAdvanceActiveFlow(
         return {
           success: true,
           step: 'end',
+          speakExactly: true,
           assistantMessage: endNode?.type === 'end' && typeof endNode.config?.closingMessage === 'string'
             ? `${bookingResult.message} ${endNode.config.closingMessage}`.trim()
             : bookingResult.message,
@@ -1860,7 +2678,13 @@ async function maybeDeliverInferredSummaryEmail(
   const issue = options.summary || callSession.summary || '';
   if (!issue) return;
 
-  const legalArea = identifyLegalArea(issue);
+  const legalArea = determineLegalAreaFromContext(
+    issue,
+    options.transcriptText || callSession.notes || '',
+    callSession.matterCategory || undefined,
+    callSession.petitionType || undefined,
+    callSession.urgencyFlag || undefined,
+  );
   if (legalArea === 'other') return;
 
   const validationFlow = await loadFlowForSummaryValidation(callSession.intakeFlowId || null);
@@ -2009,47 +2833,14 @@ export async function POST(req: NextRequest) {
       const serverUrl = `${appUrl}/api/webhooks/vapi`;
       // Identify which firm this call belongs to via VAPI phone number ID
       const reqPhoneNumberId = body?.message?.call?.phoneNumberId || body?.message?.call?.phoneNumber?.id;
-      const firmUserId = await resolveUserId(reqPhoneNumberId);
-
-      const firmUser = firmUserId ? await prisma.user.findUnique({
-        where: { id: firmUserId },
-        select: { transferPhoneNumber: true, assistantName: true, firmName: true },
-      }) : null;
-
-      const transferPhone  = firmUser?.transferPhoneNumber  || process.env.TRANSFER_PHONE_NUMBER || null;
-      const assistantName  = firmUser?.assistantName  || '';
-      const firmName       = firmUser?.firmName       || '';
-
-      let systemPrompt: string;
-      let flowFirstMessage: string | undefined;
-      let activeFlowId: string | undefined;
-      try {
-        const result = await buildSystemPrompt(assistantName || undefined, firmName || undefined);
-        systemPrompt = result.prompt;
-        flowFirstMessage = result.firstMessage;
-        activeFlowId = result.flowId;
-      } catch (err) {
-        console.error('[vapi] buildSystemPrompt failed:', err);
-        systemPrompt = `You are a warm, professional AI paralegal receptionist for a law firm. Listen empathetically, ask for the caller's name and phone number, and help them schedule a consultation or take notes on their situation. Never give legal advice.`;
-      }
-      console.log(`[vapi] assistant-request prompt built in ${Date.now() - t0}ms`);
-
-      const assistantCallId = body?.message?.call?.id;
-      const assistantCallerPhone = body?.message?.call?.customer?.number;
-      if (assistantCallId && activeFlowId) {
-        await prisma.callSession.upsert({
-          where: { callId: assistantCallId },
-          create: {
-            callId: assistantCallId,
-            callerPhone: assistantCallerPhone ? normalizePhoneNumber(assistantCallerPhone) : null,
-            intakeFlowId: activeFlowId,
-          },
-          update: {
-            intakeFlowId: activeFlowId,
-            ...(assistantCallerPhone ? { callerPhone: normalizePhoneNumber(assistantCallerPhone) } : {}),
-          },
-        });
-      }
+      const { context: assistantContext, source } = await getAssistantRequestRuntimeContextFast(reqPhoneNumberId);
+      const transferPhone = assistantContext.firm.transferPhone;
+      const assistantName = assistantContext.firm.assistantName || '';
+      const firmName = assistantContext.firm.firmName || '';
+      const systemPrompt = assistantContext.prompt;
+      const flowFirstMessage = assistantContext.firstMessage;
+      const activeFlowId = assistantContext.flowId;
+      console.log(`[vapi] assistant-request prompt ready in ${Date.now() - t0}ms (${source})`);
 
       // Use the flow's greeting as firstMessage if available, otherwise use default
       const defaultFirstMessage = assistantName
@@ -2059,6 +2850,38 @@ export async function POST(req: NextRequest) {
       const assistant: any = {
         name: assistantName ? `${assistantName} - Begintake` : 'Begintake Intake Assistant',
         firstMessage: flowFirstMessage || defaultFirstMessage,
+        hooks: [
+          {
+            on: 'customer.speech.timeout',
+            options: {
+              timeoutSeconds: 5,
+              triggerMaxCount: 1,
+              triggerResetMode: 'onUserSpeech',
+            },
+            do: [
+              {
+                type: 'say',
+                exact: "I'm still here whenever you're ready.",
+              },
+            ],
+            name: 'customer_silence_reengage_fast',
+          },
+          {
+            on: 'customer.speech.timeout',
+            options: {
+              timeoutSeconds: 12,
+              triggerMaxCount: 1,
+              triggerResetMode: 'onUserSpeech',
+            },
+            do: [
+              {
+                type: 'say',
+                exact: 'If you can hear me, go ahead and say anything and we can keep going.',
+              },
+            ],
+            name: 'customer_silence_reengage_followup',
+          },
+        ],
         artifactPlan: {
           recordingEnabled: true,
           transcriptPlan: {
@@ -2075,10 +2898,10 @@ export async function POST(req: NextRequest) {
         model: {
           provider: 'openai',
           model: 'gpt-5.2',
-          temperature: 0.4,
+          temperature: 0,
           messages: [{ role: 'system', content: systemPrompt }],
           tools: [
-            ...getToolDefinitions(),
+            ...getToolDefinitions({ activeFlow: Boolean(activeFlowId) || source !== 'cache' }),
             { type: 'endCall' },
           ],
         },
@@ -2096,9 +2919,10 @@ export async function POST(req: NextRequest) {
         voice: {
           provider: '11labs',
           voiceId: 'NDjuUGBKZhdOwAYMSat7',
-          stability: 0.45,
-          similarityBoost: 0.75,
+          stability: 0.62,
+          similarityBoost: 0.68,
         },
+        backgroundSound: 'office',
         startSpeakingPlan: {
           waitSeconds: 0.4,
         },
@@ -2120,7 +2944,7 @@ export async function POST(req: NextRequest) {
 
       // Log full response (minus system prompt to save space)
       const logAssistant = { ...assistant, model: { ...assistant.model, messages: ['[system prompt]'] } };
-      console.log(`[vapi] RETURNING in ${Date.now() - t0}ms: ${JSON.stringify(logAssistant)}`);
+      console.log(`[vapi] RETURNING in ${Date.now() - t0}ms (${source}): ${JSON.stringify(logAssistant)}`);
       return NextResponse.json({ assistant });
     }
 
@@ -2180,7 +3004,7 @@ export async function POST(req: NextRequest) {
             }
             break;
           case 'scheduleConsultation':
-            result = await handleBookAppointment(args, userId);
+            result = await handleBookAppointment(args, userId, activeCallId);
             break;
           case 'checkAttorneyAvailability':
             result = await handleCheckAttorneyAvailability(args, userId);
@@ -2195,7 +3019,14 @@ export async function POST(req: NextRequest) {
             result = { error: `Unknown tool: ${name}` };
         }
 
-        results.push({ toolCallId, result: JSON.stringify(result) });
+        const spokenMessage = getToolCallSpokenMessage(toolCallId, name, result);
+        const serializedResult = sanitizeToolResultForModel(name, result, Boolean(spokenMessage));
+        results.push({
+          toolCallId,
+          name,
+          result: JSON.stringify(serializedResult),
+          ...(spokenMessage ? { message: spokenMessage } : {}),
+        });
       }
 
       return NextResponse.json({ results });
@@ -2236,6 +3067,7 @@ export async function POST(req: NextRequest) {
     if (messageType === 'end-of-call-report') {
       const callId = body?.message?.call?.id;
       const callerPhone = body?.message?.call?.customer?.number;
+      const vapiPhoneNumberId = body?.message?.call?.phoneNumberId || body?.message?.call?.phoneNumber?.id || undefined;
       const summary = body?.message?.summary;
       const transcript = body?.message?.artifact?.transcript ?? body?.message?.transcript;
       const recordingUrl = extractRecordingUrl(body?.message);
@@ -2244,8 +3076,9 @@ export async function POST(req: NextRequest) {
         const existingSession = await prisma.callSession.findUnique({
           where: { callId },
         });
+        const assistantName = await resolveAssistantNameForCall(vapiPhoneNumberId);
         const intakeNotes = existingSession?.notes || undefined;
-        const transcriptText = normalizeTranscriptText(transcript);
+        const transcriptText = normalizeTranscriptTextWithSpeakerLabels(transcript, assistantName);
 
         // Infer labels from summary if not already set by tools
         const inferredLegalArea = summary ? identifyLegalArea(summary) : null;
@@ -2286,6 +3119,7 @@ export async function POST(req: NextRequest) {
             intakeNotes,
             transcriptText,
             recordingUrl,
+            assistantName,
           });
         } else if (finalSession) {
           await maybeDeliverInferredSummaryEmail(finalSession.id, {

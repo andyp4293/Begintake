@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { jsPDF } from 'jspdf';
+import { parseTranscriptLine } from '@/lib/transcript-speakers';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -13,8 +14,11 @@ interface CallSummaryEmailParams {
   callId?: string;
   lawyerEmail: string;
   lawyerName: string;
+  backupEmail?: string;
+  assistantName?: string;
   callerName: string;
   callerPhone: string;
+  callOriginPhone?: string;
   callerEmail?: string;
   summary: string;
   notes?: string;
@@ -27,41 +31,21 @@ interface CallSummaryEmailParams {
   partyRole?: string;
 }
 
-function parseTranscriptEntries(transcript?: string): Array<{ label: string; content: string; isAi: boolean }> {
+function parseTranscriptEntries(
+  transcript?: string,
+  assistantName?: string
+): Array<{ label: string; content: string; isAi: boolean }> {
   if (!transcript) return [];
 
   return transcript
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) {
-        return { label: 'Note', content: line, isAi: false };
-      }
-
-      const role = line.slice(0, colonIdx).trim().toLowerCase();
-      const content = line.slice(colonIdx + 1).trim();
-      const normalizedRole = role.replace(/\s+/g, '');
-      const isCaller = [
-        'user',
-        'caller',
-        'customer',
-        'client',
-        'human',
-        'person',
-      ].includes(normalizedRole);
-      const isAi = !isCaller;
-      return {
-        label: isAi ? 'AI' : 'Caller',
-        content,
-        isAi,
-      };
-    });
+    .map((line) => parseTranscriptLine(line, assistantName));
 }
 
-function renderTranscriptHtml(transcript?: string): string {
-  const entries = parseTranscriptEntries(transcript);
+function renderTranscriptHtml(transcript?: string, assistantName?: string): string {
+  const entries = parseTranscriptEntries(transcript, assistantName);
   if (!entries.length) return '';
 
   return entries
@@ -211,7 +195,10 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
   addText('CLIENT INFORMATION', 10, 'bold', [50, 50, 50]);
   y += 2;
   addText(`Name: ${params.callerName}`, 10);
-  addText(`Phone: ${params.callerPhone}`, 10);
+  if (params.callOriginPhone) {
+    addText(`Phone Used for Call: ${params.callOriginPhone}`, 10);
+  }
+  addText(`Best Callback Number: ${params.callerPhone}`, 10);
   if (params.callerEmail) addText(`Email: ${params.callerEmail}`, 10);
   addText(`Legal Area: ${params.legalArea}`, 10);
   addText(`Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, 10);
@@ -250,7 +237,7 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
   if (params.transcript) {
     addText('CALL TRANSCRIPT', 10, 'bold', [50, 50, 50]);
     y += 2;
-    const entries = parseTranscriptEntries(params.transcript);
+    const entries = parseTranscriptEntries(params.transcript, params.assistantName);
     for (const entry of entries) {
       addText(entry.label, 8, 'bold', entry.isAi ? [37, 99, 235] : [15, 23, 42]);
       addText(entry.content, 9);
@@ -314,6 +301,12 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
   const fromEmail = (process.env.RESEND_FROM_EMAIL || 'noreply@example.com')
     .replace(/\\n/g, '')
     .trim();
+  const recipients = Array.from(new Map(
+    [params.lawyerEmail, params.backupEmail]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean)
+      .map((value) => [value.toLowerCase(), value] as const)
+  ).values());
 
   try {
     const resolvedRecordingUrl = await resolveRecordingUrl(params.recordingUrl, params.callId);
@@ -344,7 +337,7 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
 
     const resendResult = await resend.emails.send({
       from: `Begintake <${fromEmail}>`,
-      to: params.lawyerEmail,
+      to: recipients,
       subject: `New Prospective Client: ${params.callerName} - ${params.legalArea}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -352,7 +345,8 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
 
           <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
             <p><strong>Client Name:</strong> ${params.callerName}</p>
-            <p><strong>Call Back Number:</strong> <a href="tel:${params.callerPhone}">${params.callerPhone}</a></p>
+            ${params.callOriginPhone ? `<p><strong>Phone Used for Call:</strong> <a href="tel:${params.callOriginPhone}">${params.callOriginPhone}</a></p>` : ''}
+            <p><strong>Best Callback Number:</strong> <a href="tel:${params.callerPhone}">${params.callerPhone}</a></p>
             ${params.callerEmail ? `<p><strong>Email:</strong> <a href="mailto:${params.callerEmail}">${params.callerEmail}</a></p>` : ''}
             <p><strong>Legal Area:</strong> ${params.legalArea}</p>
           </div>
@@ -378,7 +372,7 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
           ${params.transcript ? `
             <h3 style="color: #333;">Call Transcript</h3>
             <div style="margin-top: 8px;">
-              ${renderTranscriptHtml(params.transcript)}
+              ${renderTranscriptHtml(params.transcript, params.assistantName)}
             </div>
           ` : ''}
 
@@ -420,7 +414,7 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
     }
 
     console.log(
-      `[email] Sent summary${pdfBuffer ? ' with PDF' : ''} to ${params.lawyerEmail} for caller ${params.callerName} (message ${delivery.providerMessageId})`
+      `[email] Sent summary${pdfBuffer ? ' with PDF' : ''} to ${recipients.join(', ')} for caller ${params.callerName} (message ${delivery.providerMessageId})`
     );
     return delivery;
   } catch (error: any) {
