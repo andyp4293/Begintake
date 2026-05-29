@@ -30,35 +30,42 @@ describe('BackupSummaryEmailCard', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the backup summary recipient heading', () => {
+  it('renders the firm intake operations heading', () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ backupSummaryEmail: '' }),
+      json: async () => ({ backupSummaryEmail: '', additionalSummaryEmails: [], assumeNewClients: false }),
     } as any);
 
     renderWithProviders(<BackupSummaryEmailCard />);
 
-    expect(screen.getByText('Backup Summary Recipient')).toBeInTheDocument();
+    expect(screen.getByText('Firm Intake Operations')).toBeInTheDocument();
+    expect(screen.getByText('Intake Summary Distribution')).toBeInTheDocument();
   });
 
-  it('loads the saved backup email into the input', async () => {
+  it('loads the saved summary distribution settings', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ backupSummaryEmail: 'backup@test.com' }),
+      json: async () => ({
+        backupSummaryEmail: 'backup@test.com',
+        additionalSummaryEmails: ['ops@test.com', 'paralegal@test.com'],
+        assumeNewClients: true,
+      }),
     } as any);
 
-    renderWithProviders(<BackupSummaryEmailCard />);
+    const { container } = renderWithProviders(<BackupSummaryEmailCard />);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('backup@test.com')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('intake@firm.com')).toHaveValue('backup@test.com');
+      expect(container.querySelector('textarea')).toHaveValue('ops@test.com\nparalegal@test.com');
+      expect(screen.getByRole('checkbox')).toBeChecked();
     });
   });
 
-  it('saves the updated backup email', async () => {
+  it('saves the updated distribution list and assume-new-clients toggle', async () => {
     fetchMock
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ backupSummaryEmail: '' }),
+        json: async () => ({ backupSummaryEmail: '', additionalSummaryEmails: [], assumeNewClients: false }),
       } as any)
       .mockResolvedValueOnce({
         ok: true,
@@ -66,16 +73,37 @@ describe('BackupSummaryEmailCard', () => {
       } as any)
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ backupSummaryEmail: 'always@test.com' }),
+        json: async () => ({
+          backupSummaryEmail: 'intake@test.com',
+          additionalSummaryEmails: ['ops@test.com', 'paralegal@test.com'],
+          assumeNewClients: true,
+        }),
       } as any);
 
-    renderWithProviders(<BackupSummaryEmailCard />);
+    const { container } = renderWithProviders(<BackupSummaryEmailCard />);
 
-    const input = await screen.findByPlaceholderText('backup@example.com');
     await waitFor(() => {
-      expect((input as HTMLInputElement).value).toBe('');
+      expect(screen.getByPlaceholderText('intake@firm.com')).toHaveValue('');
+      expect(container.querySelector('textarea')).toHaveValue('');
+      expect(screen.getByRole('checkbox')).not.toBeChecked();
     });
-    fireEvent.change(input, { target: { value: 'always@test.com' } });
+
+    const primaryInput = await screen.findByPlaceholderText('intake@firm.com');
+    fireEvent.change(primaryInput, { target: { value: 'intake@test.com' } });
+
+    const additionalTextarea = container.querySelector('textarea') as HTMLTextAreaElement | null;
+    expect(additionalTextarea).not.toBeNull();
+    if (!additionalTextarea) throw new Error('Expected additional recipients textarea');
+    fireEvent.change(additionalTextarea, { target: { value: 'ops@test.com\nparalegal@test.com' } });
+
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(primaryInput).toHaveValue('intake@test.com');
+      expect(additionalTextarea).toHaveValue('ops@test.com\nparalegal@test.com');
+      expect(checkbox).toBeChecked();
+    });
 
     const saveButton = await screen.findByRole('button');
     fireEvent.click(saveButton);
@@ -87,7 +115,11 @@ describe('BackupSummaryEmailCard', () => {
         expect.objectContaining({
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ backupSummaryEmail: 'always@test.com' }),
+          body: JSON.stringify({
+            backupSummaryEmail: 'intake@test.com',
+            additionalSummaryEmails: ['ops@test.com', 'paralegal@test.com'],
+            assumeNewClients: true,
+          }),
         })
       );
     });

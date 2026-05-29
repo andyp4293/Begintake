@@ -61,6 +61,18 @@ describe('sendCallSummaryEmail', () => {
     expect(callArgs.to).toEqual(['lawyer@test.com', 'backup@test.com']);
   });
 
+  it('includes additional internal recipients when configured', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+    await sendCallSummaryEmail({
+      ...baseParams,
+      backupEmail: 'backup@test.com',
+      additionalEmails: ['ops@test.com', 'paralegal@test.com'],
+    });
+
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.to).toEqual(['lawyer@test.com', 'backup@test.com', 'ops@test.com', 'paralegal@test.com']);
+  });
+
   it('dedupes the backup recipient when it matches the primary lawyer email', async () => {
     mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
     await sendCallSummaryEmail({
@@ -70,6 +82,18 @@ describe('sendCallSummaryEmail', () => {
 
     const callArgs = mockSend.mock.calls[0][0];
     expect(callArgs.to).toEqual(['lawyer@test.com']);
+  });
+
+  it('dedupes additional recipients when they overlap with the primary or backup recipient', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+    await sendCallSummaryEmail({
+      ...baseParams,
+      backupEmail: 'backup@test.com',
+      additionalEmails: [' lawyer@test.com ', 'backup@test.com', 'ops@test.com'],
+    });
+
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.to).toEqual(['lawyer@test.com', 'backup@test.com', 'ops@test.com']);
   });
 
   it('includes caller name in subject', async () => {

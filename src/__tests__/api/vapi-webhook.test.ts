@@ -2382,6 +2382,82 @@ describe('VAPI Webhook', () => {
       );
     });
 
+    it('includes additional internal summary recipients when configured', async () => {
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce({
+        assistantName: 'Bobby',
+      } as any);
+      vi.mocked(prisma.intakeFlow.findUnique).mockResolvedValueOnce({
+        user: {
+          backupSummaryEmail: 'backup@test.com',
+          additionalSummaryEmails: ['ops@test.com', 'paralegal@test.com'],
+        },
+      } as any);
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-extra-recipients',
+          callId: 'call-queued-extra-recipients',
+          notes: 'Caller needs help with probate.',
+          summary: 'Probate intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-extra-recipients',
+          callId: 'call-queued-extra-recipients',
+          callerPhone: '+15559990001',
+          summary: 'Probate intake',
+          notes: 'assistant: Thanks for calling.\nuser: I need help with probate.',
+          legalArea: 'estate',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          intakeFlowId: 'flow-extra-recipients',
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-extra-recipients',
+          callId: 'call-queued-extra-recipients',
+          callerPhone: '+15559990001',
+          summary: 'Probate intake',
+          notes: 'assistant: Thanks for calling.\nuser: I need help with probate.',
+          legalArea: 'estate',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          intakeFlowId: 'flow-extra-recipients',
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued-extra-recipients' },
+          summary: 'Probate intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I need help with probate.' },
+            ],
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lawyerEmail: 'sarah@test.com',
+          backupEmail: 'backup@test.com',
+          additionalEmails: ['ops@test.com', 'paralegal@test.com'],
+        })
+      );
+    });
+
     it('picks up artifact.recordingUrl when the recording object is not present', async () => {
       vi.mocked(prisma.callSession.findUnique)
         .mockResolvedValueOnce({

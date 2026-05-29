@@ -206,6 +206,21 @@ describe('active flow runner', () => {
     expect(result.writes.some((write) => write.fieldName === 'clientStatus' && write.fieldValue === 'existing')).toBe(true);
   });
 
+  it('can skip the new-versus-existing question entirely when the firm is assuming all callers are new', () => {
+    const flow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
+    const q1b = flow.nodes.find((node: any) => node.label === 'Q1b. New or Existing Client?');
+    const state = hydrateFlowRuntimeState([
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q1b.id },
+    ]);
+
+    const result = progressActiveFlow(flow, state, null, { assumeNewClients: true });
+
+    expect(result.kind).toBe('ask');
+    if (result.kind !== 'ask') return;
+    expect(result.node.label).toBe('Q2. Caller Name');
+    expect(result.writes.some((write) => write.fieldName === 'clientStatus' && write.fieldValue === 'new')).toBe(true);
+  });
+
   it('starts on the explicit get-started question before the client-status question', () => {
     const flow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
     const state = hydrateFlowRuntimeState([]);

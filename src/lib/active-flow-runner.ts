@@ -49,6 +49,7 @@ interface FlowProgressContext {
   sessionClientType?: string | null;
   matchedChoiceLabel?: string | null;
   semanticFacts?: SemanticCallerFacts | null;
+  assumeNewClients?: boolean;
 }
 
 interface InferredCallerFacts {
@@ -1662,6 +1663,7 @@ function resolvePreAnsweredAnswer(node: FlowNodeLike, state: HydratedFlowRuntime
 
   switch (kind) {
     case 'client_status':
+      if (context.assumeNewClients) return 'new';
       return latestValue(state, 'clientStatus') || normalizeClientStatus(context.sessionClientType) || null;
     case 'caller_name':
       return latestValue(state, 'caller_name', 'callerName');

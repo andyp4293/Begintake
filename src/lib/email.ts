@@ -15,6 +15,7 @@ interface CallSummaryEmailParams {
   lawyerEmail: string;
   lawyerName: string;
   backupEmail?: string;
+  additionalEmails?: string[];
   assistantName?: string;
   callerName: string;
   callerPhone: string;
@@ -302,7 +303,7 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
     .replace(/\\n/g, '')
     .trim();
   const recipients = Array.from(new Map(
-    [params.lawyerEmail, params.backupEmail]
+    [params.lawyerEmail, params.backupEmail, ...(params.additionalEmails || [])]
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
       .filter(Boolean)
       .map((value) => [value.toLowerCase(), value] as const)

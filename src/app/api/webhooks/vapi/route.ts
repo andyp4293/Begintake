@@ -277,6 +277,13 @@ async function loadActiveFlow() {
   return prisma.intakeFlow.findFirst({
     where: { isActive: true },
     include: {
+      user: {
+        select: {
+          backupSummaryEmail: true,
+          additionalSummaryEmails: true,
+          assumeNewClients: true,
+        },
+      },
       nodes: { orderBy: { sortOrder: 'asc' } },
       edges: { orderBy: { sortOrder: 'asc' } },
     },
@@ -2104,13 +2111,14 @@ async function deliverQueuedSummaryEmail(
     getFlowCollectedValue(runtimeState, 'email', 'callerEmail')
     || callSession.client?.email
     || undefined;
-  const backupSummaryEmail = await resolveBackupSummaryEmail(callSession.intakeFlowId);
+  const summaryRecipients = await resolveSummaryRecipients(callSession.intakeFlowId);
 
   const emailResult = await sendCallSummaryEmail({
     callId: callSession.callId,
     lawyerEmail: callSession.lawyer.email,
     lawyerName: callSession.lawyer.name,
-    backupEmail: backupSummaryEmail,
+    backupEmail: summaryRecipients.backupEmail,
+    additionalEmails: summaryRecipients.additionalEmails,
     assistantName: options.assistantName,
     callerName: resolvedCallerName,
     callerPhone: resolvedCallerPhone,
@@ -2142,7 +2150,7 @@ async function deliverQueuedSummaryEmail(
   });
 }
 
-async function resolveBackupSummaryEmail(intakeFlowId?: string | null): Promise<string | undefined> {
+async function resolveSummaryRecipients(intakeFlowId?: string | null): Promise<{ backupEmail?: string; additionalEmails: string[] }> {
   if (intakeFlowId) {
     const flow = await prisma.intakeFlow.findUnique({
       where: { id: intakeFlowId },
@@ -2150,20 +2158,31 @@ async function resolveBackupSummaryEmail(intakeFlowId?: string | null): Promise<
         user: {
           select: {
             backupSummaryEmail: true,
+            additionalSummaryEmails: true,
           },
         },
       },
     });
     const flowEmail = flow?.user?.backupSummaryEmail?.trim();
-    if (flowEmail) return flowEmail;
+    const flowAdditional = (flow?.user?.additionalSummaryEmails || []).map((email) => email.trim()).filter(Boolean);
+    if (flowEmail || flowAdditional.length) {
+      return {
+        backupEmail: flowEmail || undefined,
+        additionalEmails: flowAdditional,
+      };
+    }
   }
 
   const fallbackUser = await prisma.user.findFirst({
     select: {
       backupSummaryEmail: true,
+      additionalSummaryEmails: true,
     },
   });
-  return fallbackUser?.backupSummaryEmail?.trim() || undefined;
+  return {
+    backupEmail: fallbackUser?.backupSummaryEmail?.trim() || undefined,
+    additionalEmails: (fallbackUser?.additionalSummaryEmails || []).map((email) => email.trim()).filter(Boolean),
+  };
 }
 
 async function handleGenerateSummary(args: Record<string, unknown>, activeCallId?: string) {
@@ -2376,6 +2395,11 @@ async function handleAdvanceActiveFlow(
     ? await prisma.intakeFlow.findUnique({
         where: { id: session.intakeFlowId },
         include: {
+          user: {
+            select: {
+              assumeNewClients: true,
+            },
+          },
           nodes: { orderBy: { sortOrder: 'asc' } },
           edges: { orderBy: { sortOrder: 'asc' } },
         },
@@ -2419,12 +2443,14 @@ async function handleAdvanceActiveFlow(
   }
 
   let pendingResponse: string | null = callerResponse;
+  const assumeNewClients = Boolean((flow as any)?.user?.assumeNewClients);
   for (let guard = 0; guard < 40; guard += 1) {
     const progress = progressActiveFlow(flow, runtimeState, pendingResponse, {
       sessionCallerPhone: session.callerPhone,
       sessionClientType: normalizeClientStatusForFlow(session.clientType),
       matchedChoiceLabel: pendingResponse ? matchedChoiceLabel : null,
       semanticFacts: pendingResponse ? semanticFacts : null,
+      assumeNewClients,
     });
     pendingResponse = null;
 
