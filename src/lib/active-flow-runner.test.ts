@@ -1128,7 +1128,7 @@ describe('active flow runner', () => {
     expect(result.node.label).toBe('FH - Divorce / Separation');
   });
 
-  it('routes clearly outside-family legal issues in the family template to the family-line-only ending instead of forcing a family branch', () => {
+  it('routes clearly outside-family legal issues in the family template to a family-law-only follow-up instead of forcing a family branch', () => {
     const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
     const q = flow.nodes.find((node: any) => node.label === "Q5. Tell Me What's Going On");
     const rows: Array<{ fieldName: string; fieldValue: string; nodeId?: string | null }> = [
@@ -1137,14 +1137,14 @@ describe('active flow runner', () => {
 
     const { result } = advanceConversationTurn(flow, rows, 'I got arrested for a DUI last night.', {});
 
-    expect(result.kind).toBe('end');
-    if (result.kind !== 'end') return;
-    expect(result.node.label).toBe('Family Line Only - Call Main Line');
-    expect(result.assistantMessage).toBe('This line is for family law only, please call the main line.');
+    expect(result.kind).toBe('ask');
+    if (result.kind !== 'ask') return;
+    expect(result.node.label).toBe('Family Line Only - Family-Law Follow-Up');
+    expect(result.assistantMessage).toBe('This line is for family law only. Can I help you with anything family-law-related today?');
     expect(rows.some((row) => row.fieldName === 'practiceArea' && row.fieldValue === 'outside_family_scope')).toBe(true);
   });
 
-  it('uses the same family-line-only ending when the caller reaches family triage but then describes a different practice area', () => {
+  it('uses the same family-law-only follow-up when the caller reaches family triage but then describes a different practice area', () => {
     const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
     const famTriage = flow.nodes.find((node: any) => node.label === 'Family Law - Matter Triage');
     const rows: Array<{ fieldName: string; fieldValue: string; nodeId?: string | null }> = [
@@ -1154,14 +1154,14 @@ describe('active flow runner', () => {
 
     const { result } = advanceConversationTurn(flow, rows, 'Actually this is about my green card application.', {});
 
-    expect(result.kind).toBe('end');
-    if (result.kind !== 'end') return;
-    expect(result.node.label).toBe('Family Line Only - Call Main Line');
-    expect(result.assistantMessage).toBe('This line is for family law only, please call the main line.');
+    expect(result.kind).toBe('ask');
+    if (result.kind !== 'ask') return;
+    expect(result.node.label).toBe('Family Line Only - Family-Law Follow-Up');
+    expect(result.assistantMessage).toBe('This line is for family law only. Can I help you with anything family-law-related today?');
     expect(rows.some((row) => row.fieldName === 'practiceArea' && row.fieldValue === 'outside_family_scope')).toBe(true);
   });
 
-  it('ends the family intake with the family-only main-line message when a caller clarifies a business tax issue mid-call', () => {
+  it('asks once about any family-law issue before ending when a caller clarifies a business tax issue mid-call', () => {
     const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
 
     const simulation = simulateConversation(flow, [
@@ -1178,8 +1178,27 @@ describe('active flow runner', () => {
 
     expect(finalOutput?.kind).toBe('end');
     expect(finalOutput?.label).toBe('Family Line Only - Call Main Line');
-    expect(finalOutput?.assistantMessage).toBe('This line is for family law only, please call the main line.');
+    expect(finalOutput?.assistantMessage).toBe('Okay. Please call the main line for non-family-law matters. Goodbye.');
     expect(simulation.rows.some((row) => row.fieldName === 'practiceArea' && row.fieldValue === 'outside_family_scope')).toBe(true);
+  });
+
+  it('routes back into family intake when the caller says they do have a family-law issue after an outside-scope detour', () => {
+    const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
+
+    const simulation = simulateConversation(flow, [
+      'Yes.',
+      'First time.',
+      'John Smith.',
+      'Yes, this number is fine.',
+      'For myself.',
+      'Tax issues.',
+      'Actually yes, I need help with custody.',
+    ]);
+
+    expect(simulation.outputs.some((output) => output.label === 'Family Line Only - Family-Law Follow-Up')).toBe(true);
+    const finalOutput = simulation.outputs.at(-1);
+    expect(finalOutput?.kind).toBe('ask');
+    expect(finalOutput?.label).toBe('FA - Custody Order Status');
   });
 
   it('routes custody-order violation language directly to the custody branch', () => {

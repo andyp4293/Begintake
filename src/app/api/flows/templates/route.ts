@@ -19,7 +19,7 @@ export async function GET() {
     {
       id: 'family-court-intake',
       name: 'Family Court Intake',
-      description: 'Family-law-focused intake template built on the same main intake structure as the general flow, with deeper family routing and an outside-scope fallback that directs callers to the main line.',
+      description: 'Family-law-focused intake template built on the same main intake structure as the general flow, with deeper family routing and an outside-scope fallback that checks once for any family-law issue before directing callers to the main line.',
     },
     {
       id: 'general-intake',

@@ -1624,6 +1624,9 @@ function matchEdgeForAnswer(
       case 'issue_summary':
         return matchIssueSummaryEdge(edges, flow, response, semanticFacts);
       default:
+        if (isFamilyLineOnlyFollowUpQuestion(node)) {
+          return matchFamilyLineOnlyFollowUpEdge(edges, flow, response);
+        }
         if (isDivorceUrgencyQuestion(node)) {
           return matchDivorceUrgencyEdge(edges, flow, response);
         }
@@ -1847,6 +1850,11 @@ function isDivorceUrgencyQuestion(node: FlowNodeLike): boolean {
 function isFamilyMatterTriageQuestion(node: FlowNodeLike): boolean {
   const text = normalizeText(`${node.label} ${getQuestionPrompt(node)}`);
   return text.includes('family law matter triage') || text.includes('family matter');
+}
+
+function isFamilyLineOnlyFollowUpQuestion(node: FlowNodeLike): boolean {
+  const text = normalizeText(`${node.label} ${getQuestionPrompt(node)}`);
+  return text.includes('family line only') || text.includes('family-law-related today');
 }
 
 function isSupportFilingStatusQuestion(node: FlowNodeLike): boolean {
@@ -2122,6 +2130,33 @@ function matchContextualSemanticEdge(
     if (/\b(appeal|parole|expungement|post conviction|after conviction|convicted)\b/.test(normalized)) {
       return findEdgeBySignalRegex(edges, flow, /\bpost conviction\b|\bappeal\b|\bparole\b|\bexpungement\b/);
     }
+  }
+
+  return null;
+}
+
+function matchFamilyLineOnlyFollowUpEdge(
+  edges: FlowEdgeLike[],
+  flow: FlowLike,
+  response: string,
+): FlowEdgeLike | null {
+  const yesNo = parseYesNo(response);
+  const areaMatch = identifyLegalAreaMatch(response);
+
+  if (yesNo === 'yes' || (areaMatch.area === 'family' && areaMatch.score > 0)) {
+    return edges.find((edge) => {
+      const target = getNodeById(flow, edge.targetNodeId);
+      const signals = deriveMatchSignals(target, edge).map((signal) => normalizeText(signal)).join(' ');
+      return /\byes\b/.test(signals);
+    }) || null;
+  }
+
+  if (yesNo === 'no' || (areaMatch.area !== 'family' && areaMatch.score > 0)) {
+    return edges.find((edge) => {
+      const target = getNodeById(flow, edge.targetNodeId);
+      const signals = deriveMatchSignals(target, edge).map((signal) => normalizeText(signal)).join(' ');
+      return /\bno\b/.test(signals);
+    }) || null;
   }
 
   return null;

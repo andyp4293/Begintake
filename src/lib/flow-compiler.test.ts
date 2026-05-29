@@ -68,7 +68,8 @@ describe('compileFlowToPrompt', () => {
     expect(prompt).toContain('custody');
     expect(prompt).toContain('safe');
     expect(prompt).toContain('outside family law');
-    expect(prompt).toContain('This line is for family law only, please call the main line.');
+    expect(prompt).toContain('This line is for family law only. Can I help you with anything family-law-related today?');
+    expect(prompt).toContain('Please call the main line for non-family-law matters. Goodbye.');
     expect(prompt).toContain('LAWYER FOLLOW-UP');
     expect(prompt).toContain('petition_type');
     expect(prompt).toContain('generateTransferSummary');
@@ -522,15 +523,18 @@ describe('Family Court Intake template', () => {
     const famTriage = template.nodes.find((n: any) => n.label === 'Family Law - Matter Triage');
     const outsideResponseNodes = template.nodes.filter((n: any) => n.type === 'response' && n.label === 'Different practice area / not family law');
     const outsideAction = template.nodes.find((n: any) => n.label === 'Flag: Outside Family Scope');
+    const outsideFollowUp = template.nodes.find((n: any) => n.label === 'Family Line Only - Family-Law Follow-Up');
     const outsideEnd = template.nodes.find((n: any) => n.label === 'Family Line Only - Call Main Line');
 
     expect(q5).toBeDefined();
     expect(famTriage).toBeDefined();
     expect(outsideResponseNodes.length).toBeGreaterThan(0);
     expect(outsideAction).toBeDefined();
+    expect(outsideFollowUp).toBeDefined();
+    expect(outsideFollowUp!.type).toBe('question');
     expect(outsideEnd).toBeDefined();
     expect(outsideEnd!.type).toBe('end');
-    expect(outsideEnd!.config.closingMessage).toBe('This line is for family law only, please call the main line.');
+    expect(outsideEnd!.config.closingMessage).toBe('Okay. Please call the main line for non-family-law matters. Goodbye.');
 
     const q5Targets = template.edges
       .filter((e: any) => e.sourceNodeId === q5!.id)
@@ -541,7 +545,8 @@ describe('Family Court Intake template', () => {
 
     expect(q5Targets).toContain('Different practice area / not family law');
     expect(triageTargets).toContain('Different practice area / not family law');
-    expect(template.edges.some((e: any) => e.sourceNodeId === outsideAction!.id && e.targetNodeId === outsideEnd!.id)).toBe(true);
+    expect(template.edges.some((e: any) => e.sourceNodeId === outsideAction!.id && e.targetNodeId === outsideFollowUp!.id)).toBe(true);
+    expect(template.edges.some((e: any) => e.sourceNodeId === outsideFollowUp!.id && e.targetNodeId === outsideEnd!.id)).toBe(false);
   });
 
   it('has custody branch routing aligned to the main family flow labels', () => {

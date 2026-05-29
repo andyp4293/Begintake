@@ -83,12 +83,26 @@ export function createFamilyIntakeTemplate() {
     actionType: 'set_flag',
     flagName: 'practiceArea',
     flagValue: 'outside_family_scope',
-    note: 'Caller described a legal issue that sounds outside family law, such as criminal charges, immigration, personal injury, employment, real estate, business, bankruptcy, tax, estate planning, intellectual property, civil rights, or environmental matters. Do not force it into a family branch. Tell them this line is for family law only and direct them to the main line.',
+    note: 'Caller described a legal issue that sounds outside family law, such as criminal charges, immigration, personal injury, employment, real estate, business, bankruptcy, tax, estate planning, intellectual property, civil rights, or environmental matters. Do not force it into a family branch. Tell them this line is for family law only, then check whether there is anything family-law-related you can still help with today.',
+  });
+  const outsideFamilyFollowUpId = addNode('question', 'Family Line Only - Family-Law Follow-Up', {
+    note: 'Ask: "This line is for family law only. Can I help you with anything family-law-related today?" If the caller says yes, or confirms they do have a family-law issue, route them back into the family intake. If they say no or keep describing a non-family matter, end politely and tell them to call the main line.',
   });
   const outsideFamilyLineEndId = addNode('end', 'Family Line Only - Call Main Line', {
-    closingMessage: 'This line is for family law only, please call the main line.',
+    closingMessage: 'Okay. Please call the main line for non-family-law matters. Goodbye.',
   });
-  addEdge(outsideFamilyScopeId, outsideFamilyLineEndId);
+  addEdge(outsideFamilyScopeId, outsideFamilyFollowUpId);
+  const outsideFamilyYes = addNode('response', 'Yes', {
+    response: 'Yes',
+    instruction: 'Use this if the caller says yes or confirms they do have a family-law issue, such as custody, support, divorce, protection order, ACS, paternity, adoption, guardianship, or a juvenile matter.',
+  });
+  const outsideFamilyNo = addNode('response', 'No', {
+    response: 'No',
+    instruction: 'Use this if the caller says no or keeps describing a non-family legal matter.',
+  });
+  addEdge(outsideFamilyFollowUpId, outsideFamilyYes);
+  addEdge(outsideFamilyFollowUpId, outsideFamilyNo);
+  addEdge(outsideFamilyNo, outsideFamilyLineEndId);
 
   const startId = addNode('start', 'Opening Greeting', {
     greeting: "Thank you for calling {firm}. I am the AI assistant, {name}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.",
@@ -151,6 +165,7 @@ export function createFamilyIntakeTemplate() {
   addEdge(q4_self, q5);
   addEdge(q4, q4_other);
   addEdge(q4_other, q5);
+  addEdge(outsideFamilyYes, q5);
 
   const famTriage = addNode('question', 'Family Law - Matter Triage', {
     note: 'What brings you to us today regarding your family matter?',
@@ -166,14 +181,14 @@ export function createFamilyIntakeTemplate() {
   const q5_outside = q5r(
     'Different practice area / not family law',
     "Caller's situation sounds like a non-family legal matter or a different practice area",
-    'Use this when the caller is describing a legal issue that sounds outside family law, such as a DUI, arrest, criminal charge, probation issue, green card or visa problem, immigration case, car accident or injury claim, employment discrimination, wrongful termination, real estate dispute, property problem, business or contract dispute, bankruptcy, IRS or tax matter, will or trust issue, trademark or copyright issue, police misconduct, civil rights matter, or environmental problem. Do not force it into a family branch. Route to the family-line-only closing instead.',
+    'Use this when the caller is describing a legal issue that sounds outside family law, such as a DUI, arrest, criminal charge, probation issue, green card or visa problem, immigration case, car accident or injury claim, employment discrimination, wrongful termination, real estate dispute, property problem, business or contract dispute, bankruptcy, IRS or tax matter, will or trust issue, trademark or copyright issue, police misconduct, civil rights matter, or environmental problem. Do not force it into a family branch. Route to the family-line-only follow-up instead.',
   );
   addEdge(q5, q5_outside);
   addEdge(q5_outside, outsideFamilyScopeId);
 
   const famOutside = resp(
     'Different practice area / not family law',
-    'Use this when the caller clarifies that the matter actually sounds outside family law, such as a DUI, arrest, criminal charge, probation issue, green card or visa problem, immigration case, car accident or injury claim, employment discrimination, wrongful termination, real estate dispute, property problem, business or contract dispute, bankruptcy, IRS or tax matter, will or trust issue, trademark or copyright issue, police misconduct, civil rights matter, or environmental problem. Route to the family-line-only closing instead of continuing family intake.',
+    'Use this when the caller clarifies that the matter actually sounds outside family law, such as a DUI, arrest, criminal charge, probation issue, green card or visa problem, immigration case, car accident or injury claim, employment discrimination, wrongful termination, real estate dispute, property problem, business or contract dispute, bankruptcy, IRS or tax matter, will or trust issue, trademark or copyright issue, police misconduct, civil rights matter, or environmental problem. Route to the family-line-only follow-up instead of continuing family intake.',
   );
   addEdge(famTriage, famOutside);
   addEdge(famOutside, outsideFamilyScopeId);
@@ -552,7 +567,7 @@ export function createFamilyIntakeTemplate() {
 
   return {
     name: 'Family Court Intake',
-    description: 'Family-law-first intake template built on the same main intake structure as the general flow. Covers custody, support, family offense, child welfare, paternity, adoption, guardianship, juvenile matters, divorce, and includes an outside-family fallback that directs callers to the main line.',
+    description: 'Family-law-first intake template built on the same main intake structure as the general flow. Covers custody, support, family offense, child welfare, paternity, adoption, guardianship, juvenile matters, divorce, and includes an outside-family fallback that confirms whether the caller has any family-law issue before sending them to the main line.',
     isTemplate: true,
     nodes,
     edges,

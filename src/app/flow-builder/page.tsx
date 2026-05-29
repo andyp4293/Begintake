@@ -33,7 +33,7 @@ const TEMPLATES = [
     name: 'Family Court Intake',
     badge: 'Family Law',
     badgeColor: '#3b82f6',
-    description: 'A family-law-focused intake flow built on the same main intake structure as the general template. It keeps deeper family routing while sending non-family matters back to the main line.',
+    description: 'A family-law-focused intake flow built on the same main intake structure as the general template. It keeps deeper family routing while checking once for any family-law issue before sending non-family matters back to the main line.',
     areas: ['Custody & Visitation', 'Divorce', 'Child & Spousal Support', 'Orders of Protection', 'Child Welfare / ACS', 'Paternity', 'Adoption & Guardianship', 'Juvenile Matters'],
   },
   {
