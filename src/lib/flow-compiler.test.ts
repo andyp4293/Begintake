@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { compileFlowToPrompt, extractToolsFromFlow } from './flow-compiler';
-import { createFamilyIntakeTemplate as createAndersonBowmanTemplate } from './templates/family-intake';
+import { createFamilyIntakeTemplate } from './templates/family-intake';
 
 // ─── compileFlowToPrompt ──────────────────────────────────────────────────────
 
@@ -57,16 +57,18 @@ describe('compileFlowToPrompt', () => {
     expect(prompt).toContain('LAWYER FOLLOW-UP');
   });
 
-  it('compiles the Anderson Bowman template', () => {
-    const template = createAndersonBowmanTemplate();
-    const flow = { id: 'ab-test', ...template };
+  it('compiles the family court template with the main-intake style opening and outside-family fallback', () => {
+    const template = createFamilyIntakeTemplate();
+    const flow = { id: 'family-template-test', ...template };
     const prompt = compileFlowToPrompt(flow, 'Aria');
 
     expect(prompt).toContain('Aria');
     expect(prompt).toContain('Shall we get started');
-    expect(prompt).toContain('What brings you to the firm today');
+    expect(prompt).toContain("Thanks. Can you tell me a little about what's been going on?");
     expect(prompt).toContain('custody');
     expect(prompt).toContain('safe');
+    expect(prompt).toContain('outside family law');
+    expect(prompt).toContain('This line is for family law only, please call the main line.');
     expect(prompt).toContain('LAWYER FOLLOW-UP');
     expect(prompt).toContain('petition_type');
     expect(prompt).toContain('generateTransferSummary');
@@ -483,54 +485,82 @@ describe('extractToolsFromFlow', () => {
   });
 });
 
-// ─── Anderson Bowman template structure ──────────────────────────────────────
+// ─── Family Court Intake template structure ──────────────────────────────────
 
-describe('Anderson Bowman template', () => {
+describe('Family Court Intake template', () => {
   it('creates valid template with nodes and edges', () => {
-    const template = createAndersonBowmanTemplate();
-    expect(template.name).toBeTruthy(); // "Family Court Intake Example"
+    const template = createFamilyIntakeTemplate();
+    expect(template.name).toBeTruthy();
     expect(template.isTemplate).toBe(true);
     expect(template.nodes.length).toBeGreaterThan(20);
     expect(template.edges.length).toBeGreaterThan(20);
   });
 
   it('has exactly one start node', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const startNodes = template.nodes.filter((n: any) => n.type === 'start');
     expect(startNodes).toHaveLength(1);
   });
 
-  it('has at least one transfer node', () => {
-    const template = createAndersonBowmanTemplate();
+  it('has shared attorney and paralegal transfer nodes', () => {
+    const template = createFamilyIntakeTemplate();
     const transferNodes = template.nodes.filter((n: any) => n.type === 'transfer');
-    expect(transferNodes.length).toBeGreaterThan(0);
+    expect(transferNodes.map((n: any) => n.label)).toEqual(expect.arrayContaining(['Transfer to Attorney', 'Transfer to Paralegal']));
   });
 
-  it('has the 8 triage branches from Q5', () => {
-    const template = createAndersonBowmanTemplate();
-    const triageNode = template.nodes.find((n: any) => n.label === 'Q5. What brings you to the firm today?');
-    expect(triageNode).toBeDefined();
-    const triageEdges = template.edges.filter((e: any) => e.sourceNodeId === triageNode!.id);
-    expect(triageEdges.length).toBe(8);
+  it('uses the same warm open-ended issue question as the main intake flow', () => {
+    const template = createFamilyIntakeTemplate();
+    const q5 = template.nodes.find((n: any) => n.label === "Q5. Tell Me What's Going On");
+    expect(q5).toBeDefined();
+    expect(q5!.config.note).toContain('The caller should feel heard, not processed.');
+    expect(q5!.config.note).toContain('do not force it into a family branch');
   });
 
-  it('has custody branch (Branch A) as a decision node', () => {
-    const template = createAndersonBowmanTemplate();
-    const custodyNode = template.nodes.find((n: any) => n.label === 'Branch A - Custody Order Status');
+  it('adds an explicit outside-family fallback from both the open-ended intake and family triage', () => {
+    const template = createFamilyIntakeTemplate();
+    const q5 = template.nodes.find((n: any) => n.label === "Q5. Tell Me What's Going On");
+    const famTriage = template.nodes.find((n: any) => n.label === 'Family Law - Matter Triage');
+    const outsideResponseNodes = template.nodes.filter((n: any) => n.type === 'response' && n.label === 'Different practice area / not family law');
+    const outsideAction = template.nodes.find((n: any) => n.label === 'Flag: Outside Family Scope');
+    const outsideEnd = template.nodes.find((n: any) => n.label === 'Family Line Only - Call Main Line');
+
+    expect(q5).toBeDefined();
+    expect(famTriage).toBeDefined();
+    expect(outsideResponseNodes.length).toBeGreaterThan(0);
+    expect(outsideAction).toBeDefined();
+    expect(outsideEnd).toBeDefined();
+    expect(outsideEnd!.type).toBe('end');
+    expect(outsideEnd!.config.closingMessage).toBe('This line is for family law only, please call the main line.');
+
+    const q5Targets = template.edges
+      .filter((e: any) => e.sourceNodeId === q5!.id)
+      .map((e: any) => template.nodes.find((n: any) => n.id === e.targetNodeId)?.label);
+    const triageTargets = template.edges
+      .filter((e: any) => e.sourceNodeId === famTriage!.id)
+      .map((e: any) => template.nodes.find((n: any) => n.id === e.targetNodeId)?.label);
+
+    expect(q5Targets).toContain('Different practice area / not family law');
+    expect(triageTargets).toContain('Different practice area / not family law');
+    expect(template.edges.some((e: any) => e.sourceNodeId === outsideAction!.id && e.targetNodeId === outsideEnd!.id)).toBe(true);
+  });
+
+  it('has custody branch routing aligned to the main family flow labels', () => {
+    const template = createFamilyIntakeTemplate();
+    const custodyNode = template.nodes.find((n: any) => n.label === 'FA - Custody Order Status');
     expect(custodyNode).toBeDefined();
-    expect(['question', 'decision']).toContain(custodyNode!.type);
+    expect(custodyNode!.type).toBe('question');
   });
 
-  it('has safety-first protocol for family offense (Branch C)', () => {
-    const template = createAndersonBowmanTemplate();
-    const safetyNode = template.nodes.find((n: any) => n.label === 'Branch C - Safety Check');
+  it('has safety-first protocol for family offense', () => {
+    const template = createFamilyIntakeTemplate();
+    const safetyNode = template.nodes.find((n: any) => n.label === 'FC - Safety Check');
     expect(safetyNode).toBeDefined();
     expect(safetyNode!.type).toBe('question');
     expect(safetyNode!.config.question).toContain('safe');
   });
 
   it('has emergency action node with safety flag and O-Petition', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const emergencyNode = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
     expect(emergencyNode).toBeDefined();
     expect(emergencyNode!.config.flagValue).toBe('safety_first');
@@ -538,7 +568,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('Q2 (Caller Name) is now a question node with collectFields - not collect_info', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const q2 = template.nodes.find((n: any) => n.label === 'Q2. Caller Name');
     expect(q2).toBeDefined();
     expect(q2!.type).toBe('question');
@@ -549,9 +579,9 @@ describe('Anderson Bowman template', () => {
     expect(q2!.config.collectFields[0].label).toBe('First and last name');
   });
 
-  it('A3 (Number and Ages of Children) is now a question node with 2 collectFields', () => {
-    const template = createAndersonBowmanTemplate();
-    const a3 = template.nodes.find((n: any) => n.label === 'A3. Number and Ages of Children');
+  it('FA3 (Number and Ages of Children) is now a question node with 2 collectFields', () => {
+    const template = createFamilyIntakeTemplate();
+    const a3 = template.nodes.find((n: any) => n.label === 'FA3. Children - Number and Ages');
     expect(a3).toBeDefined();
     expect(a3!.type).toBe('question');
     expect(a3!.config.question).toContain('children');
@@ -561,13 +591,24 @@ describe('Anderson Bowman template', () => {
   });
 
   it('has NO standalone collect_info nodes - all converted to question+collectFields', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const collectInfoNodes = template.nodes.filter((n: any) => n.type === 'collect_info');
     expect(collectInfoNodes).toHaveLength(0);
   });
 
+  it('keeps non-core family questions collapsed by default while leaving the opening path expanded', () => {
+    const template = createFamilyIntakeTemplate();
+    const q1 = template.nodes.find((n: any) => n.label === 'Q1. Shall we get started?');
+    const q5 = template.nodes.find((n: any) => n.label === "Q5. Tell Me What's Going On");
+    const divorce = template.nodes.find((n: any) => n.label === 'FH - Divorce / Separation');
+
+    expect(q1?.config.defaultCollapsed).toBeUndefined();
+    expect(q5?.config.defaultCollapsed).toBeUndefined();
+    expect(divorce?.config.defaultCollapsed).toBe(true);
+  });
+
   it('compiled prompt contains all critical legal terms', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow, 'Aria');
 
@@ -580,7 +621,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('compiled prompt instructs AI to follow script exactly', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('FOLLOW THIS SCRIPT EXACTLY');
@@ -592,7 +633,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('compiled prompt uses summary-only follow-up by default', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('LAWYER FOLLOW-UP');
@@ -601,7 +642,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('compiled prompt does not promise a live handoff by default', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('Do NOT promise a live handoff');
@@ -610,7 +651,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('compiled prompt always instructs endCall after follow-up handoff', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     const transferIdx = prompt.indexOf('LAWYER FOLLOW-UP');
@@ -621,19 +662,19 @@ describe('Anderson Bowman template', () => {
   // ── Transfer endpoint audit (no scheduling — all branches go direct to transfer) ──
 
   it('has no Connect or Schedule question node (scheduling removed)', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const cos = template.nodes.find((n: any) => n.label === 'Connect or Schedule?');
     expect(cos).toBeUndefined();
   });
 
   it('has no Book Consultation action node (scheduling removed)', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const booking = template.nodes.find((n: any) => n.label === 'Book Consultation');
     expect(booking).toBeUndefined();
   });
 
   it('all branch endpoints route directly to a transfer node', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const transferNodes = new Set(
       template.nodes.filter((n: any) => n.type === 'transfer').map((n: any) => n.id)
     );
@@ -643,7 +684,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('emergency and urgent paths go directly to the attorney transfer node', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const emergency = template.nodes.find((n: any) => n.label === 'EMERGENCY - Advise 911');
 
     // cEmergency -> transfer directly
@@ -652,13 +693,13 @@ describe('Anderson Bowman template', () => {
 
     expect(emergencyTransfer?.type).toBe('transfer');
     expect(emergencyTransfer?.config?.transferTarget).toBe('attorney');
-    expect(emergencyTransfer?.label).toContain('Emergency Transfer');
+    expect(emergencyTransfer?.label).toBe('Transfer to Attorney');
   });
 
   // ── Dead-end / orphan audit ──────────────────────────────────────────────
 
   it('every non-start node has at least one incoming edge (no orphans)', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const startNode = template.nodes.find((n: any) => n.type === 'start');
     const targetIds = new Set(template.edges.map((e: any) => e.targetNodeId));
     for (const node of template.nodes) {
@@ -668,7 +709,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('every non-transfer, non-end node has at least one outgoing edge (no dead ends)', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const sourceIds = new Set(template.edges.map((e: any) => e.sourceNodeId));
     for (const node of template.nodes) {
       if (node.type === 'transfer' || node.type === 'end') continue;
@@ -677,7 +718,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('extractToolsFromFlow includes generateTransferSummary for the template', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const tools = extractToolsFromFlow(flow);
     expect(tools).toContain('generateTransferSummary');
@@ -685,7 +726,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('compiled prompt includes generateTransferSummary instructions for follow-up mode', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('generateTransferSummary');
@@ -759,22 +800,22 @@ describe('Anderson Bowman template', () => {
   });
 
   it('compiled prompt includes Q2 collect field label "First and last name"', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
     expect(prompt).toContain('First and last name');
   });
 
-  it('compiled prompt includes A3 collect field labels', () => {
-    const template = createAndersonBowmanTemplate();
+  it('compiled prompt includes FA3 collect field labels', () => {
+    const template = createFamilyIntakeTemplate();
     const flow = { id: 'test', ...template };
     const prompt = compileFlowToPrompt(flow);
-    expect(prompt).toContain('How many children are involved');
+    expect(prompt).toContain('Number of children involved');
     expect(prompt).toContain('Ages of each child');
   });
 
   it('all edges reference valid node IDs', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const nodeIds = new Set(template.nodes.map((n: any) => n.id));
     for (const edge of template.edges) {
       expect(nodeIds.has(edge.sourceNodeId)).toBe(true);
@@ -783,7 +824,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('no orphaned nodes (every non-start node has at least one incoming edge)', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const startNode = template.nodes.find((n: any) => n.type === 'start');
     const targetIds = new Set(template.edges.map((e: any) => e.targetNodeId));
     for (const node of template.nodes) {
@@ -793,7 +834,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('all question nodes in the template have a question text or guidance note', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const questionNodes = template.nodes.filter((n: any) => n.type === 'question');
     for (const node of questionNodes) {
       // A question must have at least one of: verbatim question text or AI guidance note
@@ -802,7 +843,7 @@ describe('Anderson Bowman template', () => {
   });
 
   it('question nodes with collectFields all have a valid question prompt', () => {
-    const template = createAndersonBowmanTemplate();
+    const template = createFamilyIntakeTemplate();
     const withFields = template.nodes.filter((n: any) => n.type === 'question' && n.config.collectFields?.length > 0);
     expect(withFields.length).toBeGreaterThan(0);
     for (const node of withFields) {

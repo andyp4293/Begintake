@@ -5,6 +5,7 @@ import {
   hydrateFlowRuntimeState,
   progressActiveFlow,
 } from '@/lib/active-flow-runner';
+import { createFamilyIntakeTemplate } from '@/lib/templates/family-intake';
 import { createGeneralIntakeTemplate } from '@/lib/templates/general-intake';
 import { createDefaultIntakeTemplate } from '@/lib/templates/default-intake';
 
@@ -522,6 +523,64 @@ describe('active flow runner', () => {
     expect(result.kind).toBe('clarify');
     if (result.kind !== 'clarify') return;
     expect(result.assistantMessage).toBe('Shall we get started?');
+  });
+
+  it('briefly explains the opener when the caller asks what the intake is for instead of repeating the same question', () => {
+    const flow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
+    const q1 = flow.nodes.find((node: any) => node.label === 'Q1. Shall we get started?');
+    const state = hydrateFlowRuntimeState([
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q1.id },
+    ]);
+
+    const result = progressActiveFlow(flow, state, 'What is this for?', {});
+
+    expect(result.kind).toBe('clarify');
+    if (result.kind !== 'clarify') return;
+    expect(result.assistantMessage).toBe("Of course. I just ask a few quick questions so I can understand your situation and get it to the right lawyer. Would you like to get started?");
+  });
+
+  it('uses the same brief explanation on the first opener refusal instead of looping the opening question', () => {
+    const flow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
+    const q1 = flow.nodes.find((node: any) => node.label === 'Q1. Shall we get started?');
+    const state = hydrateFlowRuntimeState([
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q1.id },
+    ]);
+
+    const result = progressActiveFlow(flow, state, 'No.', {});
+
+    expect(result.kind).toBe('clarify');
+    if (result.kind !== 'clarify') return;
+    expect(result.assistantMessage).toBe("Of course. I just ask a few quick questions so I can understand your situation and get it to the right lawyer. Would you like to get started?");
+  });
+
+  it('ends politely after a repeated opener refusal instead of looping forever', () => {
+    const flow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
+    const q1 = flow.nodes.find((node: any) => node.label === 'Q1. Shall we get started?');
+    const state = hydrateFlowRuntimeState([
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q1.id },
+      { fieldName: `__flow_flag::clarify_count::${q1.id}`, fieldValue: '1', nodeId: q1.id },
+    ]);
+
+    const result = progressActiveFlow(flow, state, 'No.', {});
+
+    expect(result.kind).toBe('end');
+    if (result.kind !== 'end') return;
+    expect(result.assistantMessage).toBe('No problem. If you need legal help later, feel free to call us back. Goodbye.');
+  });
+
+  it('still advances normally when the caller says yes after the opener explanation', () => {
+    const flow = { id: 'flow-general', ...createGeneralIntakeTemplate() } as any;
+    const q1 = flow.nodes.find((node: any) => node.label === 'Q1. Shall we get started?');
+    const state = hydrateFlowRuntimeState([
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q1.id },
+      { fieldName: `__flow_flag::clarify_count::${q1.id}`, fieldValue: '1', nodeId: q1.id },
+    ]);
+
+    const result = progressActiveFlow(flow, state, 'Yes.', {});
+
+    expect(result.kind).toBe('ask');
+    if (result.kind !== 'ask') return;
+    expect(result.node.label).toBe('Q1b. New or Existing Client?');
   });
 
   it('asks the open-ended issue summary in a natural voice instead of reading builder instructions', () => {
@@ -1053,6 +1112,74 @@ describe('active flow runner', () => {
     expect(result.kind).toBe(expectedKind);
     if (!('node' in result)) return;
     expect(result.node.label).toBe(expectedLabel);
+  });
+
+  it('routes direct divorce issue summaries in the family template straight into the divorce branch', () => {
+    const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
+    const q = flow.nodes.find((node: any) => node.label === "Q5. Tell Me What's Going On");
+    const rows = [
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q.id },
+    ];
+
+    const { result } = advanceConversationTurn(flow, rows, 'I need help with a divorce.', {});
+
+    expect(result.kind).toBe('ask');
+    if (result.kind !== 'ask') return;
+    expect(result.node.label).toBe('FH - Divorce / Separation');
+  });
+
+  it('routes clearly outside-family legal issues in the family template to the family-line-only ending instead of forcing a family branch', () => {
+    const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
+    const q = flow.nodes.find((node: any) => node.label === "Q5. Tell Me What's Going On");
+    const rows: Array<{ fieldName: string; fieldValue: string; nodeId?: string | null }> = [
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: q.id },
+    ];
+
+    const { result } = advanceConversationTurn(flow, rows, 'I got arrested for a DUI last night.', {});
+
+    expect(result.kind).toBe('end');
+    if (result.kind !== 'end') return;
+    expect(result.node.label).toBe('Family Line Only - Call Main Line');
+    expect(result.assistantMessage).toBe('This line is for family law only, please call the main line.');
+    expect(rows.some((row) => row.fieldName === 'practiceArea' && row.fieldValue === 'outside_family_scope')).toBe(true);
+  });
+
+  it('uses the same family-line-only ending when the caller reaches family triage but then describes a different practice area', () => {
+    const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
+    const famTriage = flow.nodes.find((node: any) => node.label === 'Family Law - Matter Triage');
+    const rows: Array<{ fieldName: string; fieldValue: string; nodeId?: string | null }> = [
+      { fieldName: FLOW_CURRENT_NODE_KEY, fieldValue: famTriage.id },
+      { fieldName: 'issueSummary', fieldValue: 'I need legal help but I am not sure what kind yet.' },
+    ];
+
+    const { result } = advanceConversationTurn(flow, rows, 'Actually this is about my green card application.', {});
+
+    expect(result.kind).toBe('end');
+    if (result.kind !== 'end') return;
+    expect(result.node.label).toBe('Family Line Only - Call Main Line');
+    expect(result.assistantMessage).toBe('This line is for family law only, please call the main line.');
+    expect(rows.some((row) => row.fieldName === 'practiceArea' && row.fieldValue === 'outside_family_scope')).toBe(true);
+  });
+
+  it('ends the family intake with the family-only main-line message when a caller clarifies a business tax issue mid-call', () => {
+    const flow = { id: 'flow-family', ...createFamilyIntakeTemplate() } as any;
+
+    const simulation = simulateConversation(flow, [
+      'Yes.',
+      'First time.',
+      'John Smith.',
+      'Yes, this number is fine.',
+      'For myself.',
+      'Tax issues.',
+      'No, I have a business tax issue.',
+    ]);
+
+    const finalOutput = simulation.outputs.at(-1);
+
+    expect(finalOutput?.kind).toBe('end');
+    expect(finalOutput?.label).toBe('Family Line Only - Call Main Line');
+    expect(finalOutput?.assistantMessage).toBe('This line is for family law only, please call the main line.');
+    expect(simulation.rows.some((row) => row.fieldName === 'practiceArea' && row.fieldValue === 'outside_family_scope')).toBe(true);
   });
 
   it('routes custody-order violation language directly to the custody branch', () => {

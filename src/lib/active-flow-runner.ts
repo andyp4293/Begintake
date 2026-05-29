@@ -478,6 +478,29 @@ function isSkipRequestResponse(value: string): boolean {
   return /\b(move on|can we move on|could we move on|go ahead and move on|let s move on|lets move on|skip (it|this|that)|next question|go to the next|whatever you think|i don t know,? move on|i do not know,? move on)\b/.test(normalized);
 }
 
+function isGetStartedExplanationRequest(value: string): boolean {
+  const normalized = semanticNormalizeText(stripLeadingDisfluencies(value));
+  if (!normalized) return false;
+
+  return /\bwhat\b.*\bfor\b|\bwhy\b.*\b(call|asking|ask|question|questions|need|doing)\b|\bwhat is this for\b|\bwhat s this for\b/.test(normalized);
+}
+
+function isGetStartedDeclineResponse(value: string): boolean {
+  const normalized = semanticNormalizeText(stripLeadingDisfluencies(value));
+  if (!normalized) return false;
+
+  return parseYesNo(value) === 'no'
+    || /\b(not now|maybe later|call back later|rather not|do not want to|don t want to|not interested|i m good|i am good|i m okay|i am okay)\b/.test(normalized);
+}
+
+function buildGetStartedExplanationMessage(): string {
+  return "Of course. I just ask a few quick questions so I can understand your situation and get it to the right lawyer. Would you like to get started?";
+}
+
+function buildGetStartedDeclineGoodbye(): string {
+  return 'No problem. If you need legal help later, feel free to call us back. Goodbye.';
+}
+
 function isHelloCheck(value: string): boolean {
   const normalized = normalizeText(stripLeadingDisfluencies(value));
   return /^(?:(?:hello|hello there|are you there|you there|can you hear me|still there)[\s?!.]*)+$/.test(normalized);
@@ -2421,6 +2444,49 @@ export function progressActiveFlow(
       const answerWrites = buildQuestionAnswerWrites(flow, currentNode, trimmedResponse, context);
       writes.push(...answerWrites);
       workingState = applyRuntimeWritesToState(workingState, answerWrites);
+
+      if (currentQuestionKind === 'get_started') {
+        if (isGetStartedExplanationRequest(trimmedResponse)) {
+          const clarifyCountWrite = markClarifyCount(currentNode.id, Math.max(getClarifyCount(workingState, currentNode.id), 1));
+          const markCurrent = markCurrentNode(currentNode.id);
+          writes.push(clarifyCountWrite);
+          writes.push(markCurrent);
+          workingState = applyRuntimeWritesToState(workingState, [clarifyCountWrite, markCurrent]);
+          return {
+            kind: 'clarify',
+            node: currentNode,
+            assistantMessage: buildGetStartedExplanationMessage(),
+            writes,
+          };
+        }
+
+        if (isGetStartedDeclineResponse(trimmedResponse)) {
+          const priorClarifyCount = getClarifyCount(workingState, currentNode.id);
+          if (priorClarifyCount < 1) {
+            const clarifyCountWrite = markClarifyCount(currentNode.id, 1);
+            const markCurrent = markCurrentNode(currentNode.id);
+            writes.push(clarifyCountWrite);
+            writes.push(markCurrent);
+            workingState = applyRuntimeWritesToState(workingState, [clarifyCountWrite, markCurrent]);
+            return {
+              kind: 'clarify',
+              node: currentNode,
+              assistantMessage: buildGetStartedExplanationMessage(),
+              writes,
+            };
+          }
+
+          const completeWrite = markCurrentNode(null);
+          writes.push(completeWrite);
+          workingState = applyRuntimeWritesToState(workingState, [completeWrite]);
+          return {
+            kind: 'end',
+            node: currentNode,
+            assistantMessage: buildGetStartedDeclineGoodbye(),
+            writes,
+          };
+        }
+      }
 
       const validationFailure = validateStructuredQuestionAnswer(currentNode, trimmedResponse, context);
       if (validationFailure) {

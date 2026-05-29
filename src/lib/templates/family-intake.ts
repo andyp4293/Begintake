@@ -1,438 +1,558 @@
 /**
- * Family Court Intake Script
+ * Family Court Intake Template
  *
- * Uses the Response node pattern:
- *   Question -> Response (per answer) -> next step
- * This gives each answer its own visible branch in the flow builder.
+ * Mirrors the main intake structure while keeping routing focused on family-law matters.
+ * It also includes explicit fallback paths when the caller describes a legal issue that
+ * sounds outside family law, so the shared runner can direct them back to the firm's
+ * main line without forcing the caller into the wrong branch.
  */
 
-let nodeCounter = 0;
-function nodeId() { return `fi-node-${++nodeCounter}`; }
-let edgeCounter = 0;
-function edgeId() { return `fi-edge-${++edgeCounter}`; }
+let nc = 0;
+function nodeId() { return `fi-node-${++nc}`; }
+let ec = 0;
+function edgeId() { return `fi-edge-${++ec}`; }
+
+const FAMILY_INTAKE_ALWAYS_EXPANDED_QUESTION_LABELS = new Set([
+  'Q1. Shall we get started?',
+  'Q1b. New or Existing Client?',
+  'Q2. Caller Name',
+  'Q3. Best Phone Number',
+  'Q4. Self or On Behalf Of',
+  "Q5. Tell Me What's Going On",
+]);
 
 export function createFamilyIntakeTemplate() {
-  nodeCounter = 0;
-  edgeCounter = 0;
+  nc = 0;
+  ec = 0;
 
   const nodes: any[] = [];
   const edges: any[] = [];
 
   function addNode(type: string, label: string, config: any) {
+    const resolvedConfig = type === 'question' && !FAMILY_INTAKE_ALWAYS_EXPANDED_QUESTION_LABELS.has(label)
+      ? { ...config, defaultCollapsed: config?.defaultCollapsed ?? true }
+      : config;
     const id = nodeId();
-    nodes.push({ id, type, label, config, positionX: 0, positionY: nodes.length * 120, sortOrder: nodes.length });
+    nodes.push({
+      id,
+      type,
+      label,
+      config: resolvedConfig,
+      positionX: 0,
+      positionY: nodes.length * 120,
+      sortOrder: nodes.length,
+    });
     return id;
   }
 
-  function addEdge(sourceId: string, targetId: string) {
-    const id = edgeId();
-    edges.push({ id, sourceNodeId: sourceId, targetNodeId: targetId, label: null, condition: null, sortOrder: edges.length });
-  }
-
-  function response(label: string, instruction?: string) {
-    return addNode('response', label, { response: label, instruction: instruction || '' });
-  }
-
-  // Helper: create a dedicated transfer node for each branch endpoint
-  const TRANSFER_MSG = 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.';
-  const TRANSFER_DATA = ['caller_name', 'phone', 'party_role', 'matter_category', 'petition_type', 'urgency_flag', 'branch_path', 'all_collected_fields'];
-
-  function mkTransfer(label: string, urgent = false) {
-    return addNode('transfer', label, {
-      transferTarget: 'attorney',
-      handoffMode: 'summary_only',
-      callbackMessage: urgent
-        ? 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case, and I am marking it as urgent. They will review it and call you back at the best callback number I have for you.'
-        : TRANSFER_MSG,
-      message: urgent
-        ? 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case, and I am marking it as urgent. They will review it and call you back at the best callback number I have for you.'
-        : TRANSFER_MSG,
-      includeNotes: true,
-      transferData: TRANSFER_DATA,
+  function addEdge(sourceNodeId: string, targetNodeId: string) {
+    edges.push({
+      id: edgeId(),
+      sourceNodeId,
+      targetNodeId,
+      label: null,
+      condition: null,
+      sortOrder: edges.length,
     });
   }
 
-  // Paralegal transfer for existing clients (bypasses full intake)
+  function resp(label: string, instruction = '') {
+    return addNode('response', label, { response: label, instruction });
+  }
+
+  function q5r(shortLabel: string, fullResponse: string, instruction: string) {
+    return addNode('response', shortLabel, { response: fullResponse, instruction });
+  }
+
+  const transferId = addNode('transfer', 'Transfer to Attorney', {
+    transferTarget: 'attorney',
+    handoffMode: 'summary_only',
+    callbackMessage: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.',
+    message: 'Thank you. I wrote down everything you shared with me today so I can pass this to the right lawyer for your case. They will review it and call you back at the best callback number I have for you.',
+    includeNotes: true,
+    transferData: ['caller_name', 'phone', 'party_role', 'practice_area', 'matter_type', 'petition_type', 'urgency_flag', 'all_collected_fields'],
+  });
+
   const transferParalegalId = addNode('transfer', 'Transfer to Paralegal', {
     transferTarget: 'paralegal',
     handoffMode: 'live_transfer',
     callbackMessage: "Welcome back. I've sent this to our team, and the right lawyer will reach out to you shortly.",
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SECTION 0 - OPENING & CALLER IDENTIFICATION
-  // ═══════════════════════════════════════════════════════════════════════════
+  const outsideFamilyScopeId = addNode('action', 'Flag: Outside Family Scope', {
+    actionType: 'set_flag',
+    flagName: 'practiceArea',
+    flagValue: 'outside_family_scope',
+    note: 'Caller described a legal issue that sounds outside family law, such as criminal charges, immigration, personal injury, employment, real estate, business, bankruptcy, tax, estate planning, intellectual property, civil rights, or environmental matters. Do not force it into a family branch. Tell them this line is for family law only and direct them to the main line.',
+  });
+  const outsideFamilyLineEndId = addNode('end', 'Family Line Only - Call Main Line', {
+    closingMessage: 'This line is for family law only, please call the main line.',
+  });
+  addEdge(outsideFamilyScopeId, outsideFamilyLineEndId);
 
   const startId = addNode('start', 'Opening Greeting', {
     greeting: "Thank you for calling {firm}. I am the AI assistant, {name}, and I'll ask you a few questions to figure out how we can best help you. You may request to get transferred to a paralegal at any time.",
   });
 
-  // Q1. Shall we get started?
   const q1 = addNode('question', 'Q1. Shall we get started?', { question: 'Shall we get started?' });
   addEdge(startId, q1);
 
-  // Q1b. New or existing client
   const q1b = addNode('question', 'Q1b. New or Existing Client?', {
     question: 'Have you worked with our firm before, or is this your first time reaching out to us?',
     note: 'This helps us route you correctly. Listen for any indication they are a returning client.',
   });
 
-  // Q1 responses - both lead to Q1b
-  const q1_yes = response("Yes, let's begin");
-  const q1_explain = response("What is this for?", "Briefly explain: \"Of course. I'm going to collect some basic information about you and your situation so the right lawyer can review it. After that, they'll reach out to you about next steps. It only takes a few minutes.\"");
+  const q1_yes = resp("Yes, let's begin");
+  const q1_what = resp('What is this for?', 'Briefly explain: "I\'ll collect some basic information about your situation so the right lawyer can review it. After that, they\'ll reach out to you about next steps. It only takes a few minutes."');
   addEdge(q1, q1_yes);
   addEdge(q1_yes, q1b);
-  addEdge(q1, q1_explain);
-  addEdge(q1_explain, q1b);
+  addEdge(q1, q1_what);
+  addEdge(q1_what, q1b);
 
-  // Q1b responses
-  const q1b_existing = response('Existing client - worked with firm before');
-  const q1b_new      = response('New client - first time calling');
+  const q1b_existing = resp('Existing client - worked with firm before');
+  const q1b_new = resp('New client - first time calling');
   addEdge(q1b, q1b_existing);
-  addEdge(q1b_existing, transferParalegalId);   // existing clients → paralegal/reception, not attorney
+  addEdge(q1b_existing, transferParalegalId);
   addEdge(q1b, q1b_new);
 
-  // Q2. Caller name (collect field, no branching)
   const q2 = addNode('question', 'Q2. Caller Name', {
     question: 'Could I start with your first and last name?',
     collectFields: [{ name: 'caller_name', label: 'First and last name', type: 'text', required: true }],
   });
   addEdge(q1b_new, q2);
 
-  // Q3. Best phone number
-  const q3 = addNode('question', 'Q3. Best Number to Reach You', {
-    question: "Is the number you're calling from the best number to reach you in case we get disconnected?",
+  const q3 = addNode('question', 'Q3. Best Phone Number', {
+    question: "Is the number you're calling from the best number to reach you if we get disconnected?",
   });
   addEdge(q2, q3);
-
-  // Q4. Self or on behalf of
-  const q4 = addNode('question', 'Q4. Self or On Behalf Of', {
-    question: 'Are you calling for yourself, or on behalf of someone else?',
-  });
 
   const q3a = addNode('question', 'Q3A. Callback Number', {
     question: 'What is the best callback number for you?',
     collectFields: [{ name: 'callback_phone', label: 'Best callback number', type: 'text', required: true }],
   });
 
-  // Q3 responses - both lead to Q4
-  const q3_yes = response('Yes, this number is fine', "Note the caller's phone number from the call.");
-  const q3_no = response('No, use a different number', "Ask: \"What's the best number to reach you?\" Collect and note the number.");
+  const q4 = addNode('question', 'Q4. Self or On Behalf Of', {
+    question: 'Are you calling for yourself, or on behalf of someone else?',
+  });
+  const q3_yes = resp('Yes, this number is fine', "Note the caller's phone number from the call.");
+  const q3_no = resp('No, use a different number', 'Ask: "What\'s the best number to reach you?" Collect and note it.');
   addEdge(q3, q3_yes);
   addEdge(q3_yes, q4);
   addEdge(q3, q3_no);
   addEdge(q3_no, q3a);
   addEdge(q3a, q4);
 
-  // Q5. Primary matter triage
-  const q5 = addNode('question', 'Q5. What brings you to the firm today?', {
-    question: 'What brings you to the firm today?',
+  const q5 = addNode('question', "Q5. Tell Me What's Going On", {
+    note: 'Ask the caller to describe their situation in their own words. Be warm and inviting - say something like "Thanks. Can you tell me a little about what\'s been going on?" Do NOT read a list of family categories. Listen carefully, ask gentle follow-up questions if needed, and figure out whether this sounds like custody, support, protection, child welfare, paternity, adoption, juvenile, divorce, another family-law issue, or a different practice area entirely. If it does not sound like family law, do not force it into a family branch. The caller should feel heard, not processed.',
   });
-
-  // Q4 responses - both lead to Q5
-  const q4_self = response('For myself');
-  const q4_family = response('For a family member', 'Ask: "What is your relationship to them? For example, are you a parent, grandparent, or someone else?" Note the relationship.');
+  const q4_self = resp('For myself');
+  const q4_other = resp('On behalf of someone else', 'Ask: "What is your relationship to them?" Note it.');
   addEdge(q4, q4_self);
   addEdge(q4_self, q5);
-  addEdge(q4, q4_family);
-  addEdge(q4_family, q5);
+  addEdge(q4, q4_other);
+  addEdge(q4_other, q5);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SECTION 1 - PRIMARY MATTER TRIAGE (Q5 responses -> branches)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // ── BRANCH A - CUSTODY & VISITATION ─────────────────────────────────────
-  const branchARouting = addNode('question', 'Branch A - Custody Order Status', {
-    note: 'Is there currently a custody order in place, or would this be a new filing?',
+  const famTriage = addNode('question', 'Family Law - Matter Triage', {
+    note: 'What brings you to us today regarding your family matter?',
   });
-  const q5_a = response('My children - custody or visitation');
-  addEdge(q5, q5_a);
-  addEdge(q5_a, branchARouting);
+  const q5_fam = q5r(
+    'Family Law',
+    "Caller's situation involves family law",
+    'Route here only when you know the caller needs family law help but the specific family matter is still unclear.',
+  );
+  addEdge(q5, q5_fam);
+  addEdge(q5_fam, famTriage);
 
-  const aNew = addNode('action', 'Flag: V-Petition - new', {
-    actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition (Custody) - new',
-  });
-  const aMod = addNode('action', 'Flag: V-Petition - modification', {
-    actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition - modification',
-    note: 'Substantial change in circumstances required',
-  });
-  const aViolation = addNode('action', 'Flag: V-Petition - violation/enforcement', {
-    actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition - violation/enforcement',
-    note: 'Flag potential contempt/enforcement',
-  });
+  const q5_outside = q5r(
+    'Different practice area / not family law',
+    "Caller's situation sounds like a non-family legal matter or a different practice area",
+    'Use this when the caller is describing a legal issue that sounds outside family law, such as a DUI, arrest, criminal charge, probation issue, green card or visa problem, immigration case, car accident or injury claim, employment discrimination, wrongful termination, real estate dispute, property problem, business or contract dispute, bankruptcy, IRS or tax matter, will or trust issue, trademark or copyright issue, police misconduct, civil rights matter, or environmental problem. Do not force it into a family branch. Route to the family-line-only closing instead.',
+  );
+  addEdge(q5, q5_outside);
+  addEdge(q5_outside, outsideFamilyScopeId);
 
-  const branchA_new = response('No order exists');
-  const branchA_mod = response('Order exists - want to modify');
-  const branchA_viol = response('Order exists - being violated');
-  addEdge(branchARouting, branchA_new);   addEdge(branchA_new, aNew);
-  addEdge(branchARouting, branchA_mod);   addEdge(branchA_mod, aMod);
-  addEdge(branchARouting, branchA_viol);  addEdge(branchA_viol, aViolation);
+  const famOutside = resp(
+    'Different practice area / not family law',
+    'Use this when the caller clarifies that the matter actually sounds outside family law, such as a DUI, arrest, criminal charge, probation issue, green card or visa problem, immigration case, car accident or injury claim, employment discrimination, wrongful termination, real estate dispute, property problem, business or contract dispute, bankruptcy, IRS or tax matter, will or trust issue, trademark or copyright issue, police misconduct, civil rights matter, or environmental problem. Route to the family-line-only closing instead of continuing family intake.',
+  );
+  addEdge(famTriage, famOutside);
+  addEdge(famOutside, outsideFamilyScopeId);
 
-  const a1 = addNode('question', 'A1. Marital / Relationship Status', {
+  const famACustodyRouting = addNode('question', 'FA - Custody Order Status', {
+    note: 'Is there currently a custody order in place?',
+  });
+  const famA_q5 = resp('Custody or visitation of my children');
+  addEdge(famTriage, famA_q5);
+  addEdge(famA_q5, famACustodyRouting);
+
+  const famA_new = addNode('action', 'Flag: V-Petition - new', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition (Custody) - new' });
+  const famA_mod = addNode('action', 'Flag: V-Petition - modification', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition - modification', note: 'Substantial change in circumstances required' });
+  const famA_viol = addNode('action', 'Flag: V-Petition - enforcement', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'V-Petition - violation/enforcement', note: 'Flag potential contempt' });
+
+  const famAR_new = resp('No order exists - new petition');
+  const famAR_mod = resp('Order exists - want to modify');
+  const famAR_viol = resp('Order exists - being violated');
+  addEdge(famACustodyRouting, famAR_new);
+  addEdge(famAR_new, famA_new);
+  addEdge(famACustodyRouting, famAR_mod);
+  addEdge(famAR_mod, famA_mod);
+  addEdge(famACustodyRouting, famAR_viol);
+  addEdge(famAR_viol, famA_viol);
+
+  const famA1 = addNode('question', 'FA1. Marital / Relationship Status', {
     question: 'What is your marital or relationship status with the other parent?',
-    note: 'Married/divorcing may need Supreme Court referral for divorce',
+    note: 'Married/divorcing may need Supreme Court referral',
   });
-  addEdge(aNew, a1);
-  addEdge(aMod, a1);
-  addEdge(aViolation, a1);
+  addEdge(famA_new, famA1);
+  addEdge(famA_mod, famA1);
+  addEdge(famA_viol, famA1);
 
-  const a2 = addNode('question', 'A2. Type of Custody Sought', {
+  const famA2 = addNode('question', 'FA2. Type of Custody Sought', {
     question: 'Are you seeking physical custody, legal custody, or both?',
   });
-  const a1_married = response('Married or divorcing', 'Note: may need Supreme Court referral for divorce.');
-  const a1_never   = response('Never married');
-  const a1_sep     = response('Separated or divorced');
-  addEdge(a1, a1_married); addEdge(a1_married, a2);
-  addEdge(a1, a1_never);   addEdge(a1_never, a2);
-  addEdge(a1, a1_sep);     addEdge(a1_sep, a2);
+  const famA1_married = resp('Married or divorcing', 'Note: may need Supreme Court referral for divorce.');
+  const famA1_never = resp('Never married');
+  const famA1_sep = resp('Separated or divorced');
+  addEdge(famA1, famA1_married);
+  addEdge(famA1_married, famA2);
+  addEdge(famA1, famA1_never);
+  addEdge(famA1_never, famA2);
+  addEdge(famA1, famA1_sep);
+  addEdge(famA1_sep, famA2);
 
-  const a3 = addNode('question', 'A3. Number and Ages of Children', {
+  const famA3 = addNode('question', 'FA3. Children - Number and Ages', {
     question: 'How many children are involved, and how old are they?',
     collectFields: [
-      { name: 'num_children', label: 'How many children are involved', type: 'text', required: true },
+      { name: 'num_children', label: 'Number of children involved', type: 'text', required: true },
       { name: 'children_ages', label: 'Ages of each child', type: 'text', required: true },
     ],
     note: 'If teenager 13-17, court may consider child preference',
   });
-  const a2_physical = response('Physical custody (residence)');
-  const a2_legal    = response('Legal custody (decision-making)');
-  const a2_both     = response('Both / unsure');
-  addEdge(a2, a2_physical); addEdge(a2_physical, a3);
-  addEdge(a2, a2_legal);    addEdge(a2_legal, a3);
-  addEdge(a2, a2_both);     addEdge(a2_both, a3);
+  const famA2_phys = resp('Physical custody (residence)');
+  const famA2_legal = resp('Legal custody (decision-making)');
+  const famA2_both = resp('Both / unsure');
+  addEdge(famA2, famA2_phys);
+  addEdge(famA2_phys, famA3);
+  addEdge(famA2, famA2_legal);
+  addEdge(famA2_legal, famA3);
+  addEdge(famA2, famA2_both);
+  addEdge(famA2_both, famA3);
 
-  const a4 = addNode('question', 'A4. Urgency / Safety Screen', {
+  const famA4 = addNode('question', 'FA4. Urgency / Safety Screen', {
     question: 'Is there an immediate safety concern for you or the children right now?',
-    note: 'CRITICAL QUESTION - determines whether emergency application is needed',
+    note: 'CRITICAL - determines whether emergency application is needed',
   });
-  addEdge(a3, a4);
+  addEdge(famA3, famA4);
+  const famA4_urgent = resp('Yes - immediate safety concern', 'FLAG URGENT. Say: "Your safety is the priority. I am sending this to the right lawyer for immediate review now." Proceed immediately to the follow-up step.');
+  const famA4_routine = resp('No - routine matter');
+  addEdge(famA4, famA4_urgent);
+  addEdge(famA4_urgent, transferId);
+  addEdge(famA4, famA4_routine);
+  addEdge(famA4_routine, transferId);
 
-  // ── BRANCH B - CHILD SUPPORT & SPOUSAL MAINTENANCE ──────────────────────
-  const branchBRouting = addNode('question', 'Branch B - Support Filing Status', {
-    note: "Are you looking to file for support for the first time, modify an existing order, or enforce an order that isn't being followed?",
+  const famBSupportRouting = addNode('question', 'FB - Support Filing Status', {
+    note: 'Is this a new support matter, a modification, or enforcement?',
   });
-  const q5_b = response('Child support or spousal support');
-  addEdge(q5, q5_b);
-  addEdge(q5_b, branchBRouting);
+  const famB_q5 = resp('Child support or spousal support');
+  addEdge(famTriage, famB_q5);
+  addEdge(famB_q5, famBSupportRouting);
 
-  const bNew     = addNode('action', 'Flag: F-Petition - new', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition (Support) - new' });
-  const bMod     = addNode('action', 'Flag: F-Petition - modification', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - modification', note: 'Must show substantial change in circumstances' });
-  const bEnforce = addNode('action', 'Flag: F-Petition - enforcement', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - violation/enforcement' });
+  const famB_new = addNode('action', 'Flag: F-Petition - new', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition (Support) - new' });
+  const famB_mod = addNode('action', 'Flag: F-Petition - modification', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - modification', note: 'Substantial change in circumstances required' });
+  const famB_enf = addNode('action', 'Flag: F-Petition - enforcement', { actionType: 'set_flag', flagName: 'petitionType', flagValue: 'F-Petition - violation/enforcement' });
 
-  const branchB_new     = response('New - first time');
-  const branchB_mod     = response('Modify existing order');
-  const branchB_enforce = response('Enforce - not being paid');
-  addEdge(branchBRouting, branchB_new);     addEdge(branchB_new, bNew);
-  addEdge(branchBRouting, branchB_mod);     addEdge(branchB_mod, bMod);
-  addEdge(branchBRouting, branchB_enforce); addEdge(branchB_enforce, bEnforce);
+  const famBR_new = resp('New - first time');
+  const famBR_mod = resp('Modify existing order');
+  const famBR_enf = resp('Enforce - not being paid');
+  addEdge(famBSupportRouting, famBR_new);
+  addEdge(famBR_new, famB_new);
+  addEdge(famBSupportRouting, famBR_mod);
+  addEdge(famBR_mod, famB_mod);
+  addEdge(famBSupportRouting, famBR_enf);
+  addEdge(famBR_enf, famB_enf);
 
-  const b1 = addNode('question', 'B1. Type of Support', {
+  const famB1 = addNode('question', 'FB1. Type of Support', {
     question: 'Are you looking for child support, spousal maintenance, or both?',
   });
-  addEdge(bNew, b1); addEdge(bMod, b1); addEdge(bEnforce, b1);
+  addEdge(famB_new, famB1);
+  addEdge(famB_mod, famB1);
+  addEdge(famB_enf, famB1);
 
-  const b2 = addNode('question', 'B2. Arrears Period (if enforcement)', {
+  const famB2 = addNode('question', 'FB2. Arrears Period', {
     question: 'If someone owes you support, how long has it been since you last received a payment?',
-    note: 'Ask this only when the caller is the one receiving support. Over 1 year = flag significant arrears, possible CSEA referral / income execution.',
+    note: 'Ask this only when the caller is the one receiving support. Over 1 year = flag significant arrears - possible CSEA referral.',
   });
-  const b1_child   = response('Child support only');
-  const b1_spousal = response('Spousal maintenance only');
-  const b1_both    = response('Both');
+  const famB1_child = resp('Child support only');
+  const famB1_sp = resp('Spousal maintenance only');
+  const famB1_both = resp('Both');
 
-  const b3 = addNode('question', 'B3. Party Role', {
+  const famB3 = addNode('question', 'FB3. Party Role', {
     question: 'Are you the one receiving support, or being asked to pay?',
     note: 'Respondent = respondent-side representation',
   });
-  addEdge(b1, b1_child);   addEdge(b1_child, b3);
-  addEdge(b1, b1_spousal); addEdge(b1_spousal, b3);
-  addEdge(b1, b1_both);    addEdge(b1_both, b3);
-  const b2_lt3  = response('Less than 3 months');
-  const b2_3to12 = response('3 to 12 months');
-  const b2_gt1  = response('Over 1 year', 'Flag significant arrears - possible CSEA referral / income execution.');
-  addEdge(b2, b2_lt3);
-  addEdge(b2, b2_3to12);
-  addEdge(b2, b2_gt1);
+  addEdge(famB1, famB1_child);
+  addEdge(famB1_child, famB3);
+  addEdge(famB1, famB1_sp);
+  addEdge(famB1_sp, famB3);
+  addEdge(famB1, famB1_both);
+  addEdge(famB1_both, famB3);
 
-  // ── BRANCH C - FAMILY OFFENSE / ORDER OF PROTECTION ─────────────────────
-  const cSafety = addNode('question', 'Branch C - Safety Check', {
+  const famB2_lt3 = resp('Less than 3 months');
+  const famB2_mid = resp('3 to 12 months');
+  const famB2_gt1 = resp('Over 1 year', 'Flag significant arrears.');
+  addEdge(famB2, famB2_lt3);
+  addEdge(famB2_lt3, transferId);
+  addEdge(famB2, famB2_mid);
+  addEdge(famB2_mid, transferId);
+  addEdge(famB2, famB2_gt1);
+  addEdge(famB2_gt1, transferId);
+
+  const famB3_pet = resp('Receiving support (Petitioner)');
+  const famB3_res = resp('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
+  addEdge(famB3, famB3_pet);
+  addEdge(famB3_pet, famB2);
+  addEdge(famB3, famB3_res);
+  addEdge(famB3_res, transferId);
+
+  const famCSafety = addNode('question', 'FC - Safety Check', {
     question: 'First, I need to ask - are you in a safe place right now?',
-    note: 'SAFETY-FIRST PROTOCOL - caller safety must be confirmed before proceeding',
+    note: 'SAFETY-FIRST PROTOCOL - confirm caller safety before proceeding',
   });
-  const q5_c = response('A family member is threatening or hurting me');
-  addEdge(q5, q5_c);
-  addEdge(q5_c, cSafety);
+  const famC_q5 = resp('A family member is threatening or hurting me');
+  addEdge(famTriage, famC_q5);
+  addEdge(famC_q5, famCSafety);
 
-  const cEmergency = addNode('action', 'EMERGENCY - Advise 911', {
-    actionType: 'set_flag', flagName: 'urgencyFlag', flagValue: 'safety_first',
+  const famCEmergency = addNode('action', 'EMERGENCY - Advise 911', {
+    actionType: 'set_flag',
+    flagName: 'urgencyFlag',
+    flagValue: 'safety_first',
     petitionType: 'O-Petition - emergency order of protection',
-    note: 'EMERGENCY PROTOCOL: Advise caller to call 911 immediately. Let them know you are flagging this for immediate lawyer review.',
+    note: 'EMERGENCY: Advise caller to call 911. Let them know you are flagging this for immediate lawyer review.',
   });
-  const c1 = addNode('question', 'C1. Nature of Conduct', {
+  const famC1 = addNode('question', 'FC1. Nature of Conduct', {
     question: 'Can you tell me a little about what has been happening?',
   });
 
-  const cSafety_unsafe = response("No, or I'm not sure", 'EMERGENCY: Advise caller to call 911 immediately. Let them know you are flagging this for immediate lawyer review.');
-  const cSafety_safe   = response('Yes, I am safe');
-  addEdge(cSafety, cSafety_unsafe); addEdge(cSafety_unsafe, cEmergency);
-  addEdge(cSafety, cSafety_safe);   addEdge(cSafety_safe, c1);
+  const famCS_unsafe = resp("No, or I'm not sure", 'EMERGENCY: Advise 911 immediately. Let them know you are flagging this for immediate lawyer review.');
+  const famCS_safe = resp('Yes, I am safe');
+  addEdge(famCSafety, famCS_unsafe);
+  addEdge(famCS_unsafe, famCEmergency);
+  addEdge(famCEmergency, transferId);
+  addEdge(famCSafety, famCS_safe);
+  addEdge(famCS_safe, famC1);
 
-  const c2 = addNode('question', 'C2. Relationship to Respondent', {
-    question: 'What is your relationship to the person who is doing this?',
+  const famC2 = addNode('question', 'FC2. Relationship to Respondent', {
+    question: 'What is your relationship to the person doing this?',
   });
-  const c1_physical   = response('Physical violence or threats');
-  const c1_harassment = response('Harassment, stalking, or intimidation');
-  const c1_emotional  = response('Emotional / psychological abuse');
-  const c1_sexual     = response('Sexual abuse');
-  addEdge(c1, c1_physical);   addEdge(c1_physical, c2);
-  addEdge(c1, c1_harassment); addEdge(c1_harassment, c2);
-  addEdge(c1, c1_emotional);  addEdge(c1_emotional, c2);
-  addEdge(c1, c1_sexual);     addEdge(c1_sexual, c2);
+  const famC1_phys = resp('Physical violence or threats');
+  const famC1_har = resp('Harassment, stalking, or intimidation');
+  const famC1_emo = resp('Emotional or psychological abuse');
+  const famC1_sex = resp('Sexual abuse');
+  addEdge(famC1, famC1_phys);
+  addEdge(famC1_phys, famC2);
+  addEdge(famC1, famC1_har);
+  addEdge(famC1_har, famC2);
+  addEdge(famC1, famC1_emo);
+  addEdge(famC1_emo, famC2);
+  addEdge(famC1, famC1_sex);
+  addEdge(famC1_sex, famC2);
 
-  // ── BRANCH D - CHILD WELFARE / ACS ──────────────────────────────────────
-  const branchDRouting = addNode('question', 'Branch D - ACS / Child Welfare', {
-    note: "Can you tell me more about the situation? Did ACS come to your home, are you concerned about a child elsewhere, or is this a foster care matter?",
+  const famC2_sp = resp('Spouse or former spouse');
+  const famC2_co = resp('Co-parent or parent of my child');
+  const famC2_fam = resp('Parent or sibling (family member)');
+  const famC2_par = resp('Intimate partner / boyfriend / girlfriend');
+  addEdge(famC2, famC2_sp);
+  addEdge(famC2_sp, transferId);
+  addEdge(famC2, famC2_co);
+  addEdge(famC2_co, transferId);
+  addEdge(famC2, famC2_fam);
+  addEdge(famC2_fam, transferId);
+  addEdge(famC2, famC2_par);
+  addEdge(famC2_par, transferId);
+
+  const famDRouting = addNode('question', 'FD - ACS / Child Welfare', {
+    note: 'Did ACS come to your home, are you concerned about a child elsewhere, or is this a foster care matter?',
   });
-  const q5_d = response("A child's safety or welfare concern");
-  addEdge(q5, q5_d);
-  addEdge(q5_d, branchDRouting);
+  const famD_q5 = resp("A child's safety or welfare concern");
+  addEdge(famTriage, famD_q5);
+  addEdge(famD_q5, famDRouting);
 
-  const d1 = addNode('question', 'D1. Stage of ACS Involvement', {
-    question: 'Has ACS come to your home? And is there a court date scheduled?',
+  const famD1 = addNode('question', 'FD1. Stage of ACS Involvement', {
+    question: 'Has ACS come to your home? Is there a court date scheduled?',
     note: 'If court date imminent, flag URGENT',
   });
-  const d2 = addNode('question', 'D2. Foster Care Sub-Branch', {
+  const famD2 = addNode('question', 'FD2. Foster Care Sub-Branch', {
     question: 'What kind of foster care matter is this?',
   });
 
-  const branchD_acs     = response('ACS came to my home');
-  const branchD_child   = response('Concerned about a child elsewhere');
-  const branchD_foster  = response('Foster parent legal matter');
-  addEdge(branchDRouting, branchD_acs);    addEdge(branchD_acs, d1);
-  addEdge(branchDRouting, branchD_child);
-  addEdge(branchDRouting, branchD_foster); addEdge(branchD_foster, d2);
+  const famDR_acs = resp('ACS came to my home');
+  const famDR_child = resp('Concerned about a child elsewhere');
+  const famDR_fos = resp('Foster parent legal matter');
+  addEdge(famDRouting, famDR_acs);
+  addEdge(famDR_acs, famD1);
+  addEdge(famDRouting, famDR_child);
+  addEdge(famDR_child, transferId);
+  addEdge(famDRouting, famDR_fos);
+  addEdge(famDR_fos, famD2);
 
-  const d1_investigation = response('ACS at investigation stage - no court date yet');
-  const d1_court         = response('Petition filed - court date scheduled', 'FLAG URGENT - court date imminent.');
-  // both d1 responses lead to connectOrSchedule (added below)
+  const famD1_inv = resp('Investigation stage - no court date yet');
+  const famD1_court = resp('Petition filed - court date scheduled', 'FLAG URGENT.');
+  addEdge(famD1, famD1_inv);
+  addEdge(famD1_inv, transferId);
+  addEdge(famD1, famD1_court);
+  addEdge(famD1_court, transferId);
 
-  const d2_placement = response('Extension of placement / permanency hearing');
-  const d2_adopt     = response('Foster-to-adopt');
-  const d2_dispute   = response('Dispute with agency');
-  addEdge(d1, d1_investigation);
-  addEdge(d1, d1_court);
-  addEdge(d2, d2_placement);
-  addEdge(d2, d2_adopt);
-  addEdge(d2, d2_dispute);
+  const famD2_pl = resp('Extension of placement / permanency hearing');
+  const famD2_ad = resp('Foster-to-adopt');
+  const famD2_disp = resp('Dispute with agency');
+  addEdge(famD2, famD2_pl);
+  addEdge(famD2_pl, transferId);
+  addEdge(famD2, famD2_ad);
+  addEdge(famD2_ad, transferId);
+  addEdge(famD2, famD2_disp);
+  addEdge(famD2_disp, transferId);
 
-  // ── BRANCH E - PATERNITY ─────────────────────────────────────────────────
-  const branchERouting = addNode('question', 'Branch E - Paternity', {
-    note: 'Are you a mother looking to establish paternity, a father seeking parental rights, or someone disputing paternity?',
+  const famERouting = addNode('question', 'FE - Paternity', {
+    note: 'Are you a mother seeking to establish paternity, a father seeking parental rights, or disputing paternity?',
   });
-  const q5_e = response('Paternity - establishing who the father is');
-  addEdge(q5, q5_e);
-  addEdge(q5_e, branchERouting);
+  const famE_q5 = resp('Paternity - establishing who the father is');
+  addEdge(famTriage, famE_q5);
+  addEdge(famE_q5, famERouting);
 
-  const branchE_mother = response('Mother seeking to establish');
-  const branchE_father = response('Father seeking rights', 'May need to establish paternity first before custody petition.');
-  const branchE_dispute = response('Alleged father disputing', 'DNA challenge / Respondent representation.');
-  addEdge(branchERouting, branchE_mother);
-  addEdge(branchERouting, branchE_father);
-  addEdge(branchERouting, branchE_dispute);
+  const famER_mom = resp('Mother seeking to establish');
+  const famER_dad = resp('Father seeking parental rights', 'May need to establish paternity before custody.');
+  const famER_disp = resp('Disputing paternity', 'DNA challenge / Respondent representation.');
+  addEdge(famERouting, famER_mom);
+  addEdge(famER_mom, transferId);
+  addEdge(famERouting, famER_dad);
+  addEdge(famER_dad, transferId);
+  addEdge(famERouting, famER_disp);
+  addEdge(famER_disp, transferId);
 
-  // ── BRANCH F - ADOPTION & GUARDIANSHIP ──────────────────────────────────
-  const branchFRouting = addNode('question', 'Branch F - Adoption / Guardianship', {
-    note: 'What type of adoption or guardianship matter do you need help with? For example: stepparent adoption, foster-to-adopt, private adoption, kinship adoption, guardianship of a minor, or guardianship of an adult with a disability?',
+  const famFRouting = addNode('question', 'FF - Adoption / Guardianship', {
+    note: 'What type of adoption or guardianship matter? (stepparent, foster-to-adopt, private, kinship, guardianship of minor or adult)',
   });
-  const q5_f = response('Adoption or guardianship');
-  addEdge(q5, q5_f);
-  addEdge(q5_f, branchFRouting);
+  const famF_q5 = resp('Adoption or guardianship');
+  addEdge(famTriage, famF_q5);
+  addEdge(famF_q5, famFRouting);
+  const famFR_any = resp('Any type');
+  addEdge(famFRouting, famFR_any);
+  addEdge(famFR_any, transferId);
 
-  const branchF_any = response('Any type');
-  addEdge(branchFRouting, branchF_any);
-
-  // ── BRANCH G - JUVENILE ──────────────────────────────────────────────────
-  const branchGRouting = addNode('question', 'Branch G - Juvenile Matter', {
-    note: 'Can you tell me more about the juvenile matter? Is this about an alleged crime or delinquent act, or about truancy or a child beyond parental control?',
+  const famGRouting = addNode('question', 'FG - Juvenile Matter', {
+    note: 'Is this about an alleged crime / delinquent act, or truancy / child beyond parental control?',
   });
-  const q5_g = response('A juvenile matter');
-  addEdge(q5, q5_g);
-  addEdge(q5_g, branchGRouting);
+  const famG_q5 = resp('A juvenile matter');
+  addEdge(famTriage, famG_q5);
+  addEdge(famG_q5, famGRouting);
+  const famGR_any = resp('Any type');
+  addEdge(famGRouting, famGR_any);
+  addEdge(famGR_any, transferId);
 
-  const branchG_any = response('Any type');
-  addEdge(branchGRouting, branchG_any);
-
-  // ── BRANCH H - OTHER ────────────────────────────────────────────────────
-  const branchHRouting = addNode('question', 'Branch H - Other Legal Matter', {
-    note: 'Can you tell me what kind of legal matter you need help with? For example: name change, termination of parental rights, Special Immigrant Juvenile Status (SIJS), or something else?',
+  const famDivRouting = addNode('question', 'FH - Divorce / Separation', {
+    note: 'Is this an uncontested divorce, contested divorce, or legal separation?',
   });
-  const q5_h = response('Something else');
-  addEdge(q5, q5_h);
-  addEdge(q5_h, branchHRouting);
+  const famH_q5 = resp('Divorce or legal separation');
+  addEdge(famTriage, famH_q5);
+  addEdge(famH_q5, famDivRouting);
 
-  const branchH_any = response('Any type');
-  addEdge(branchHRouting, branchH_any);
+  const famDiv1 = addNode('question', 'FH1. Divorce Issues Involved', {
+    question: 'What are the main issues in the divorce or separation right now?',
+  });
+  const famDivR_uncon = resp('Uncontested - we agree on everything');
+  const famDivR_con = resp('Contested - we disagree on key issues');
+  const famDivR_sep = resp('Legal separation only');
+  addEdge(famDivRouting, famDivR_uncon);
+  addEdge(famDivR_uncon, famDiv1);
+  addEdge(famDivRouting, famDivR_con);
+  addEdge(famDivR_con, famDiv1);
+  addEdge(famDivRouting, famDivR_sep);
+  addEdge(famDivR_sep, famDiv1);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TRANSFER PROTOCOL - HANDOFF TO ATTORNEY (node declared at top of function)
-  // ═══════════════════════════════════════════════════════════════════════════
+  const famDiv2 = addNode('question', 'FH2. Filing Status / Court Dates', {
+    question: 'Has anything already been filed, and is there any court date or deadline coming up?',
+    note: 'If there is already a case or a court date, capture that clearly for the lawyer review.',
+  });
+  const famDiv1_prop = resp('Property division and assets');
+  const famDiv1_sup = resp('Spousal support / alimony');
+  const famDiv1_child = resp('Child custody and support');
+  const famDiv1_all = resp('All of the above');
+  addEdge(famDiv1, famDiv1_prop);
+  addEdge(famDiv1_prop, famDiv2);
+  addEdge(famDiv1, famDiv1_sup);
+  addEdge(famDiv1_sup, famDiv2);
+  addEdge(famDiv1, famDiv1_child);
+  addEdge(famDiv1_child, famDiv2);
+  addEdge(famDiv1, famDiv1_all);
+  addEdge(famDiv1_all, famDiv2);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BRANCH ENDPOINTS → all route directly to Transfer
-  // ═══════════════════════════════════════════════════════════════════════════
+  const famDiv3 = addNode('question', 'FH3. Children Involved', {
+    question: 'Are there minor children involved in this matter?',
+  });
+  const famDiv2_notFiled = resp('Nothing filed yet');
+  const famDiv2_filed = resp('Filed already - no court date yet');
+  const famDiv2_court = resp('Filed already - court date or deadline coming up', 'FLAG URGENT. Make sure the notes clearly mention the upcoming date or deadline.');
+  addEdge(famDiv2, famDiv2_notFiled);
+  addEdge(famDiv2_notFiled, famDiv3);
+  addEdge(famDiv2, famDiv2_filed);
+  addEdge(famDiv2_filed, famDiv3);
+  addEdge(famDiv2, famDiv2_court);
+  addEdge(famDiv2_court, famDiv3);
 
-  // A4 urgency
-  const a4_urgent  = response('Yes - immediate safety concern', 'FLAG URGENT. Say: "I understand - your safety is the priority. I am sending this to the right lawyer for immediate review now."');
-  const a4_routine = response('No - routine matter');
-  addEdge(a4, a4_urgent);  addEdge(a4_urgent,  mkTransfer('A - Custody: Urgent Transfer', true));
-  addEdge(a4, a4_routine); addEdge(a4_routine, mkTransfer('A - Custody: Transfer to Attorney'));
+  const famDiv4 = addNode('question', 'FH4. Other Side Representation', {
+    question: 'Does your spouse or partner already have a lawyer?',
+  });
+  const famDiv3_yes = resp('Yes - minor children are involved');
+  const famDiv3_no = resp('No - no minor children involved');
+  addEdge(famDiv3, famDiv3_yes);
+  addEdge(famDiv3_yes, famDiv4);
+  addEdge(famDiv3, famDiv3_no);
+  addEdge(famDiv3_no, famDiv4);
 
-  // Emergency (Branch C)
-  addEdge(cEmergency, mkTransfer('C - Emergency Transfer', true));
+  const famDiv5 = addNode('question', 'FH5. Immediate Divorce Urgency', {
+    question: 'Is there anything urgent right now, like a safety issue, being locked out of finances or the home, or a deadline coming up?',
+  });
+  const famDiv4_yes = resp('Yes - the other side already has a lawyer');
+  const famDiv4_no = resp('No - the other side does not have a lawyer');
+  const famDiv4_unsure = resp('I am not sure if they have a lawyer');
+  addEdge(famDiv4, famDiv4_yes);
+  addEdge(famDiv4_yes, famDiv5);
+  addEdge(famDiv4, famDiv4_no);
+  addEdge(famDiv4_no, famDiv5);
+  addEdge(famDiv4, famDiv4_unsure);
+  addEdge(famDiv4_unsure, famDiv5);
 
-  // C2 responses
-  const c2_spouse   = response('Spouse or former spouse');
-  const c2_coparent = response('Co-parent or parent of my child');
-  const c2_family   = response('Parent or sibling (family member)');
-  const c2_partner  = response('Intimate partner / boyfriend / girlfriend');
-  addEdge(c2, c2_spouse);   addEdge(c2_spouse,   mkTransfer('C - Family Offense: Transfer (Spouse)'));
-  addEdge(c2, c2_coparent); addEdge(c2_coparent, mkTransfer('C - Family Offense: Transfer (Co-parent)'));
-  addEdge(c2, c2_family);   addEdge(c2_family,   mkTransfer('C - Family Offense: Transfer (Family)'));
-  addEdge(c2, c2_partner);  addEdge(c2_partner,  mkTransfer('C - Family Offense: Transfer (Partner)'));
+  const famDivUrgent = addNode('action', 'Flag: Divorce - Urgent', {
+    actionType: 'set_flag',
+    flagName: 'urgencyFlag',
+    flagValue: 'divorce_urgent',
+    note: 'Caller reported an urgent divorce issue like safety, access to finances, or an imminent deadline.',
+  });
+  const famDiv5_urgent = resp('Yes - there is an urgent divorce issue', 'FLAG URGENT. Capture the urgency details before handoff.');
+  const famDiv5_routine = resp('No - no immediate urgency');
+  addEdge(famDiv5, famDiv5_urgent);
+  addEdge(famDiv5_urgent, famDivUrgent);
+  addEdge(famDivUrgent, transferId);
+  addEdge(famDiv5, famDiv5_routine);
+  addEdge(famDiv5_routine, transferId);
 
-  // B3 responses
-  const b3_petitioner  = response('Receiving support (Petitioner)');
-  const b3_respondent  = response('Being asked to pay (Respondent)', 'Note: respondent-side representation.');
-  addEdge(b3, b3_petitioner); addEdge(b3_petitioner, b2);
-  addEdge(b3, b3_respondent); addEdge(b3_respondent, mkTransfer('B - Support: Transfer (Respondent)'));
-  addEdge(b2_lt3,   mkTransfer('B - Support: Transfer (Less than 3 months)'));
-  addEdge(b2_3to12, mkTransfer('B - Support: Transfer (3 to 12 months)'));
-  addEdge(b2_gt1,   mkTransfer('B - Support: Transfer (Over 1 year)'));
+  const famOther_q5 = resp('Other family law matter');
+  addEdge(famTriage, famOther_q5);
+  addEdge(famOther_q5, transferId);
 
-  // D1 responses
-  addEdge(d1_investigation, mkTransfer('D - ACS: Transfer (Investigation)'));
-  addEdge(d1_court,         mkTransfer('D - ACS: Transfer (Court Date)'));
-
-  // D2 responses
-  addEdge(d2_placement, mkTransfer('D - Foster: Transfer (Placement)'));
-  addEdge(d2_adopt,     mkTransfer('D - Foster: Transfer (Adoption)'));
-  addEdge(d2_dispute,   mkTransfer('D - Foster: Transfer (Dispute)'));
-
-  // Branch D "concerned about child elsewhere"
-  addEdge(branchD_child, mkTransfer('D - Child Welfare: Transfer'));
-
-  // Branch E responses
-  addEdge(branchE_mother,  mkTransfer('E - Paternity: Transfer (Mother)'));
-  addEdge(branchE_father,  mkTransfer('E - Paternity: Transfer (Father)'));
-  addEdge(branchE_dispute, mkTransfer('E - Paternity: Transfer (Dispute)'));
-
-  // Branch F, G, H
-  addEdge(branchF_any, mkTransfer('F - Adoption/Guardianship: Transfer'));
-  addEdge(branchG_any, mkTransfer('G - Juvenile: Transfer'));
-  addEdge(branchH_any, mkTransfer('H - Other: Transfer'));
+  addEdge(q5, famA_q5);
+  addEdge(q5, famB_q5);
+  addEdge(q5, famC_q5);
+  addEdge(q5, famD_q5);
+  addEdge(q5, famE_q5);
+  addEdge(q5, famF_q5);
+  addEdge(q5, famG_q5);
+  addEdge(q5, famH_q5);
+  addEdge(q5, famOther_q5);
 
   return {
     name: 'Family Court Intake',
-    description: 'Complete AI intake script for prospective family law clients. Uses {firm} and {name} variables. Covers custody, support, family offense, child welfare, paternity, adoption, juvenile, and miscellaneous matters.',
+    description: 'Family-law-first intake template built on the same main intake structure as the general flow. Covers custody, support, family offense, child welfare, paternity, adoption, guardianship, juvenile matters, divorce, and includes an outside-family fallback that directs callers to the main line.',
     isTemplate: true,
     nodes,
     edges,
