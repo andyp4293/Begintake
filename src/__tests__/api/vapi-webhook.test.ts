@@ -2139,6 +2139,7 @@ describe('VAPI Webhook', () => {
           notes: 'Caller said they were rear-ended and have ER records.',
           transcript: 'Bobby: Thanks for calling.\nCaller: I was rear-ended yesterday.',
           recordingUrl: 'https://api.vapi.ai/recordings/call-queued.mp3',
+          recordingKind: 'stereo',
         })
       );
       expect(prisma.callSession.update).toHaveBeenLastCalledWith(
@@ -2519,6 +2520,75 @@ describe('VAPI Webhook', () => {
         expect.objectContaining({
           callId: 'call-queued-2',
           recordingUrl: 'https://storage.vapi.ai/call-queued-2-mono.wav',
+          recordingKind: 'mono',
+        })
+      );
+    });
+
+    it('passes through stereo recording artifacts so downstream email delivery can use the authenticated stereo endpoint', async () => {
+      vi.mocked(prisma.callSession.findUnique)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-stereo',
+          callId: 'call-queued-stereo',
+          notes: 'Caller needs help with a car accident.',
+          summary: 'Car accident intake',
+          callOutcome: 'summary_queued',
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-stereo',
+          callId: 'call-queued-stereo',
+          callerPhone: '+15559990001',
+          summary: 'Car accident intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'cs-queued-stereo',
+          callId: 'call-queued-stereo',
+          callerPhone: '+15559990001',
+          summary: 'Car accident intake',
+          notes: 'assistant: Thanks for calling.\nuser: I was rear-ended yesterday.',
+          legalArea: 'personal_injury',
+          callOutcome: 'summary_queued',
+          petitionType: null,
+          matterCategory: null,
+          partyRole: null,
+          urgencyFlag: null,
+          client: { name: 'Jane Doe', email: 'jane@test.com' },
+          lawyer: { id: 'law-1', name: 'Sarah Chen', email: 'sarah@test.com' },
+        } as any);
+
+      const req = makeRequest({
+        message: {
+          type: 'end-of-call-report',
+          call: { id: 'call-queued-stereo' },
+          summary: 'Car accident intake',
+          artifact: {
+            transcript: [
+              { role: 'assistant', content: 'Thanks for calling.' },
+              { role: 'user', content: 'I was rear-ended yesterday.' },
+            ],
+            recording: {
+              stereoUrl: 'https://storage.vapi.ai/calls/private-stereo.wav',
+            },
+          },
+        },
+      });
+
+      await POST(req);
+
+      expect(sendCallSummaryEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callId: 'call-queued-stereo',
+          recordingUrl: 'https://storage.vapi.ai/calls/private-stereo.wav',
+          recordingKind: 'stereo',
         })
       );
     });

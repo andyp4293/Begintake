@@ -2021,46 +2021,63 @@ async function handleGenerateTransferSummary(
   };
 }
 
-function extractRecordingUrl(message: any): string | undefined {
+function extractRecordingArtifact(message: any): { url?: string; kind?: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video' } {
   const recording = message?.artifact?.recording
     ?? message?.call?.artifact?.recording
     ?? message?.recording
     ?? message?.recordingUrl;
 
-  const directUrl = message?.artifact?.recordingUrl
-    ?? message?.call?.artifact?.recordingUrl
-    ?? message?.artifact?.stereoRecordingUrl
-    ?? message?.call?.artifact?.stereoRecordingUrl
-    ?? message?.stereoRecordingUrl;
+  const directCandidates: Array<{ value: any; kind: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video' }> = [
+    { value: message?.artifact?.recordingUrl, kind: 'mono' },
+    { value: message?.call?.artifact?.recordingUrl, kind: 'mono' },
+    { value: message?.artifact?.stereoRecordingUrl, kind: 'stereo' },
+    { value: message?.call?.artifact?.stereoRecordingUrl, kind: 'stereo' },
+    { value: message?.artifact?.videoRecordingUrl, kind: 'video' },
+    { value: message?.call?.artifact?.videoRecordingUrl, kind: 'video' },
+    { value: message?.stereoRecordingUrl, kind: 'stereo' },
+    { value: message?.videoRecordingUrl, kind: 'video' },
+  ];
 
-  if (typeof directUrl === 'string' && directUrl) {
-    return directUrl;
+  for (const candidate of directCandidates) {
+    if (typeof candidate.value === 'string' && candidate.value) {
+      return { url: candidate.value, kind: candidate.kind };
+    }
   }
 
   if (typeof recording === 'string' && recording) {
-    return recording;
+    return { url: recording, kind: 'mono' };
   }
 
   if (recording && typeof recording === 'object') {
     const monoCombinedUrl = recording?.mono?.combinedUrl;
     if (typeof monoCombinedUrl === 'string' && monoCombinedUrl) {
-      return monoCombinedUrl;
+      return { url: monoCombinedUrl, kind: 'mono' };
     }
 
-    for (const key of ['recordingUrl', 'stereoRecordingUrl', 'stereoUrl', 'monoUrl', 'url', 'mp3Url', 'wavUrl']) {
-      const value = recording[key];
-      if (typeof value === 'string' && value) {
-        return value;
+    const typedCandidates: Array<{ value: any; kind: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video' }> = [
+      { value: recording?.stereoUrl, kind: 'stereo' },
+      { value: recording?.customerUrl, kind: 'customer' },
+      { value: recording?.assistantUrl, kind: 'assistant' },
+      { value: recording?.videoUrl, kind: 'video' },
+      { value: recording?.monoUrl, kind: 'mono' },
+      { value: recording?.url, kind: 'mono' },
+      { value: recording?.mp3Url, kind: 'mono' },
+      { value: recording?.wavUrl, kind: 'mono' },
+    ];
+
+    for (const candidate of typedCandidates) {
+      if (typeof candidate.value === 'string' && candidate.value) {
+        return { url: candidate.value, kind: candidate.kind };
       }
     }
   }
 
-  return undefined;
+  return {};
 }
 
 async function deliverQueuedSummaryEmail(
   callSessionId: string,
-  options: { intakeNotes?: string; transcriptText?: string; recordingUrl?: string; assistantName?: string }
+  options: { intakeNotes?: string; transcriptText?: string; recordingUrl?: string; recordingKind?: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video'; assistantName?: string }
 ) {
   const callSession = await prisma.callSession.findUnique({
     where: { id: callSessionId },
@@ -2128,6 +2145,7 @@ async function deliverQueuedSummaryEmail(
     notes: options.intakeNotes,
     transcript: options.transcriptText,
     recordingUrl: options.recordingUrl,
+    recordingKind: options.recordingKind,
     legalArea: callSession.legalArea || 'other',
     petitionType: callSession.petitionType || undefined,
     matterCategory: callSession.matterCategory || undefined,
@@ -2696,7 +2714,7 @@ async function handleAdvanceActiveFlow(
 
 async function maybeDeliverInferredSummaryEmail(
   callSessionId: string,
-  options: { transcriptText?: string; recordingUrl?: string; summary?: string | null },
+  options: { transcriptText?: string; recordingUrl?: string; recordingKind?: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video'; summary?: string | null },
 ) {
   const callSession = await prisma.callSession.findUnique({
     where: { id: callSessionId },
@@ -2758,6 +2776,7 @@ async function maybeDeliverInferredSummaryEmail(
   await deliverQueuedSummaryEmail(callSession.id, {
     transcriptText: options.transcriptText,
     recordingUrl: options.recordingUrl,
+    recordingKind: options.recordingKind,
   });
 }
 
@@ -3146,7 +3165,9 @@ export async function POST(req: NextRequest) {
       const vapiPhoneNumberId = body?.message?.call?.phoneNumberId || body?.message?.call?.phoneNumber?.id || undefined;
       const summary = body?.message?.summary;
       const transcript = body?.message?.artifact?.transcript ?? body?.message?.transcript;
-      const recordingUrl = extractRecordingUrl(body?.message);
+      const recordingArtifact = extractRecordingArtifact(body?.message);
+      const recordingUrl = recordingArtifact.url;
+      const recordingKind = recordingArtifact.kind;
 
       if (callId) {
         const existingSession = await prisma.callSession.findUnique({
@@ -3195,12 +3216,14 @@ export async function POST(req: NextRequest) {
             intakeNotes,
             transcriptText,
             recordingUrl,
+            recordingKind,
             assistantName,
           });
         } else if (finalSession) {
           await maybeDeliverInferredSummaryEmail(finalSession.id, {
             transcriptText,
             recordingUrl,
+            recordingKind,
             summary,
           });
         }

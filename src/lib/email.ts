@@ -25,12 +25,20 @@ interface CallSummaryEmailParams {
   notes?: string;
   transcript?: string;
   recordingUrl?: string;
+  recordingKind?: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video';
   legalArea: string;
   petitionType?: string;
   urgencyFlag?: string;
   matterCategory?: string;
   partyRole?: string;
 }
+
+type RecordingArtifactKind = NonNullable<CallSummaryEmailParams['recordingKind']>;
+
+type RecordingDownloadTarget = {
+  url: string;
+  headers: HeadersInit;
+};
 
 function parseTranscriptEntries(
   transcript?: string,
@@ -63,22 +71,128 @@ function renderTranscriptHtml(transcript?: string, assistantName?: string): stri
     .join('');
 }
 
-async function fetchRecordingAttachment(recordingUrl?: string): Promise<{
+function isVapiHostedArtifactUrl(recordingUrl?: string): boolean {
+  if (!recordingUrl) return false;
+
+  try {
+    const hostname = new URL(recordingUrl).hostname.toLowerCase();
+    return hostname.endsWith('vapi.ai');
+  } catch {
+    return recordingUrl.includes('vapi.ai');
+  }
+}
+
+function getRecordingArtifactPath(kind?: RecordingArtifactKind): string {
+  switch (kind) {
+    case 'stereo':
+      return 'stereo-recording';
+    case 'customer':
+      return 'customer-recording';
+    case 'assistant':
+      return 'assistant-recording';
+    case 'video':
+      return 'video-recording';
+    case 'mono':
+    default:
+      return 'mono-recording';
+  }
+}
+
+function resolveRecordingDownloadTarget(params: {
+  recordingUrl?: string;
+  callId?: string;
+  recordingKind?: RecordingArtifactKind;
+}): RecordingDownloadTarget | null {
+  const recordingUrl = params.recordingUrl?.trim();
+  const recordingKind = params.recordingKind || 'mono';
+
+  if (params.callId && process.env.VAPI_PRIVATE_KEY && (!recordingUrl || isVapiHostedArtifactUrl(recordingUrl))) {
+    return {
+      url: `https://api.vapi.ai/call/${params.callId}/${getRecordingArtifactPath(recordingKind)}`,
+      headers: {
+        Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
+      },
+    };
+  }
+
+  if (!recordingUrl) return null;
+
+  const headers: HeadersInit = {};
+  if (recordingUrl.includes('api.vapi.ai') && process.env.VAPI_PRIVATE_KEY) {
+    headers.Authorization = `Bearer ${process.env.VAPI_PRIVATE_KEY}`;
+  }
+
+  return {
+    url: recordingUrl,
+    headers,
+  };
+}
+
+function inferFilenameFromResponse(params: {
+  response: Response;
+  requestUrl: string;
+  callId?: string;
+  recordingKind?: RecordingArtifactKind;
+}): string {
+  const disposition = params.response.headers.get('content-disposition');
+  if (disposition) {
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      return decodeURIComponent(utf8Match[1]);
+    }
+
+    const quotedMatch = disposition.match(/filename=\"([^\"]+)\"/i);
+    if (quotedMatch?.[1]) {
+      return quotedMatch[1];
+    }
+
+    const plainMatch = disposition.match(/filename=([^;]+)/i);
+    if (plainMatch?.[1]) {
+      return plainMatch[1].trim();
+    }
+  }
+
+  const contentType = params.response.headers.get('content-type') || undefined;
+  const sourceUrl = params.response.url || params.requestUrl;
+  const rawName = (() => {
+    try {
+      return new URL(sourceUrl).pathname.split('/').pop() || '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const pathSegment = rawName || `${params.callId || 'call-recording'}-${params.recordingKind || 'mono'}`;
+  const hasExtension = /\.[a-z0-9]+$/i.test(pathSegment);
+  const extension = contentType?.includes('mpeg')
+    ? '.mp3'
+    : contentType?.includes('wav')
+    ? '.wav'
+    : contentType?.includes('mp4')
+    ? '.mp4'
+    : '';
+
+  return hasExtension ? pathSegment : `${pathSegment}${extension || '.bin'}`;
+}
+
+async function fetchRecordingAttachment(params: {
+  recordingUrl?: string;
+  callId?: string;
+  recordingKind?: RecordingArtifactKind;
+}): Promise<{
   filename: string;
   content: Buffer;
   content_type?: string;
 } | null> {
-  if (!recordingUrl) return null;
+  const downloadTarget = resolveRecordingDownloadTarget(params);
+  if (!downloadTarget) return null;
 
   try {
-    const headers: HeadersInit = {};
-    if (recordingUrl.includes('vapi') && process.env.VAPI_PRIVATE_KEY) {
-      headers.Authorization = `Bearer ${process.env.VAPI_PRIVATE_KEY}`;
-    }
-
-    const response = await fetch(recordingUrl, { headers });
+    const response = await fetch(downloadTarget.url, {
+      headers: downloadTarget.headers,
+    });
     if (!response.ok) {
-      console.error(`[email] Recording download failed (${response.status}) for ${recordingUrl}`);
+      console.error(`[email] Recording download failed (${response.status}) for ${downloadTarget.url}`);
       return null;
     }
 
@@ -86,77 +200,23 @@ async function fetchRecordingAttachment(recordingUrl?: string): Promise<{
     const arrayBuffer = await response.arrayBuffer();
     const content = Buffer.from(arrayBuffer);
     if (!content.length) {
-      console.error(`[email] Recording download returned empty body for ${recordingUrl}`);
+      console.error(`[email] Recording download returned empty body for ${downloadTarget.url}`);
       return null;
     }
 
-    const url = new URL(recordingUrl);
-    const rawName = url.pathname.split('/').pop() || 'call-recording';
-    const hasExtension = /\.[a-z0-9]+$/i.test(rawName);
-    const extension = contentType?.includes('mpeg')
-      ? '.mp3'
-      : contentType?.includes('wav')
-      ? '.wav'
-      : contentType?.includes('mp4')
-      ? '.mp4'
-      : '';
-
     return {
-      filename: hasExtension ? rawName : `${rawName}${extension || '.bin'}`,
+      filename: inferFilenameFromResponse({
+        response,
+        requestUrl: downloadTarget.url,
+        callId: params.callId,
+        recordingKind: params.recordingKind,
+      }),
       content,
       content_type: contentType,
     };
   } catch (error) {
     console.error('[email] Recording download failed:', error);
     return null;
-  }
-}
-
-function extractRecordingUrlFromVapiCallPayload(payload: any): string | undefined {
-  const candidates = [
-    payload?.artifact?.recording?.mono?.combinedUrl,
-    payload?.artifact?.recordingUrl,
-    payload?.recordingUrl,
-    payload?.artifact?.recording?.stereoUrl,
-    payload?.artifact?.stereoRecordingUrl,
-    payload?.stereoRecordingUrl,
-    payload?.artifact?.recording?.url,
-    payload?.artifact?.recording?.mp3Url,
-    payload?.artifact?.recording?.wavUrl,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate.trim();
-    }
-  }
-
-  return undefined;
-}
-
-async function resolveRecordingUrl(recordingUrl?: string, callId?: string): Promise<string | undefined> {
-  const normalizedUrl = recordingUrl?.trim();
-  if (normalizedUrl) return normalizedUrl;
-
-  if (!callId || !process.env.VAPI_PRIVATE_KEY) return undefined;
-
-  try {
-    const response = await fetch(`https://api.vapi.ai/call/${callId}`, {
-      headers: {
-        Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`[email] Failed to fetch Vapi call artifact (${response.status}) for ${callId}`);
-      return undefined;
-    }
-
-    const payload = await response.json();
-    return extractRecordingUrlFromVapiCallPayload(payload);
-  } catch (error) {
-    console.error(`[email] Failed to resolve recording url for call ${callId}:`, error);
-    return undefined;
   }
 }
 
@@ -310,19 +370,25 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
   ).values());
 
   try {
-    const resolvedRecordingUrl = await resolveRecordingUrl(params.recordingUrl, params.callId);
+    const normalizedRecordingUrl = params.recordingUrl?.trim() || undefined;
+    const shouldMentionRecording = Boolean(normalizedRecordingUrl || params.callId);
+    const shouldExposeRecordingLink = Boolean(normalizedRecordingUrl && !isVapiHostedArtifactUrl(normalizedRecordingUrl));
 
     // Generate PDF transcript
     let pdfBuffer: Buffer | null = null;
     try {
       pdfBuffer = generateTranscriptPdf({
         ...params,
-        recordingUrl: resolvedRecordingUrl,
+        recordingUrl: shouldMentionRecording ? (normalizedRecordingUrl || 'vapi-authenticated-artifact') : undefined,
       });
     } catch (err) {
       console.error('[email] PDF generation failed, sending without attachment:', err);
     }
-    const recordingAttachment = await fetchRecordingAttachment(resolvedRecordingUrl);
+    const recordingAttachment = await fetchRecordingAttachment({
+      recordingUrl: normalizedRecordingUrl,
+      callId: params.callId,
+      recordingKind: params.recordingKind,
+    });
 
     const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const attachments = [];
@@ -377,12 +443,14 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
             </div>
           ` : ''}
 
-          ${resolvedRecordingUrl ? `
+          ${shouldMentionRecording ? `
             <h3 style="color: #333;">Call Recording</h3>
             <p style="line-height: 1.6;">
               ${recordingAttachment
                 ? 'The call recording is attached to this email.'
-                : `Recording link: <a href="${resolvedRecordingUrl}">${resolvedRecordingUrl}</a>`}
+                : shouldExposeRecordingLink
+                ? `Recording link: <a href="${normalizedRecordingUrl}">${normalizedRecordingUrl}</a>`
+                : 'The call recording could not be attached automatically, but it remains available in Vapi/Begintake for internal review.'}
             </p>
           ` : ''}
 

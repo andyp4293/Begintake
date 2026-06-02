@@ -212,6 +212,57 @@ describe('sendCallSummaryEmail', () => {
     );
   });
 
+  it('uses the authenticated Vapi mono-recording endpoint when a call id is available for a Vapi-hosted recording', async () => {
+    process.env.VAPI_PRIVATE_KEY = 'vapi-test-key';
+    mockFetch.mockResolvedValueOnce(new Response('audio-bytes', {
+      status: 200,
+      headers: { 'content-type': 'audio/wav' },
+    }));
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+
+    await sendCallSummaryEmail({
+      ...baseParams,
+      callId: 'call-authenticated',
+      recordingUrl: 'https://storage.vapi.ai/calls/private-recording.wav',
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://api.vapi.ai/call/call-authenticated/mono-recording',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer vapi-test-key',
+        }),
+      }),
+    );
+  });
+
+  it('uses the authenticated Vapi stereo-recording endpoint when the artifact is stereo', async () => {
+    process.env.VAPI_PRIVATE_KEY = 'vapi-test-key';
+    mockFetch.mockResolvedValueOnce(new Response('audio-bytes', {
+      status: 200,
+      headers: { 'content-type': 'audio/wav' },
+    }));
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+
+    await sendCallSummaryEmail({
+      ...baseParams,
+      callId: 'call-stereo',
+      recordingUrl: 'https://storage.vapi.ai/calls/private-stereo.wav',
+      recordingKind: 'stereo',
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://api.vapi.ai/call/call-stereo/stereo-recording',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer vapi-test-key',
+        }),
+      }),
+    );
+  });
+
   it('keeps the audio attached while removing the raw recording link from the PDF', async () => {
     mockFetch.mockResolvedValueOnce(new Response('audio-bytes', {
       status: 200,
@@ -242,17 +293,9 @@ describe('sendCallSummaryEmail', () => {
     );
   });
 
-  it('looks up the Vapi call artifact when the recording url is not provided directly', async () => {
+  it('downloads the authenticated Vapi mono-recording endpoint when only call id is available', async () => {
     process.env.VAPI_PRIVATE_KEY = 'vapi-test-key';
     mockFetch
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        artifact: {
-          recordingUrl: 'https://storage.vapi.ai/calls/recovered-recording.wav',
-        },
-      }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }))
       .mockResolvedValueOnce(new Response('audio-bytes', {
         status: 200,
         headers: { 'content-type': 'audio/wav' },
@@ -266,7 +309,7 @@ describe('sendCallSummaryEmail', () => {
 
     expect(mockFetch).toHaveBeenNthCalledWith(
       1,
-      'https://api.vapi.ai/call/call-123',
+      'https://api.vapi.ai/call/call-123/mono-recording',
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer vapi-test-key',
@@ -277,9 +320,39 @@ describe('sendCallSummaryEmail', () => {
     const callArgs = mockSend.mock.calls[0][0];
     expect(callArgs.attachments).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ filename: 'recovered-recording.wav' }),
+        expect.objectContaining({ filename: 'mono-recording.wav' }),
       ])
     );
+  });
+
+  it('keeps non-Vapi recording links as a fallback when the attachment cannot be downloaded', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 403 }));
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+
+    await sendCallSummaryEmail({
+      ...baseParams,
+      recordingUrl: 'https://firm-bucket.example.com/recordings/call.wav',
+    });
+
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.html).toContain('Recording link:');
+    expect(callArgs.html).toContain('https://firm-bucket.example.com/recordings/call.wav');
+  });
+
+  it('does not expose raw Vapi-hosted recording links in the email body when attachment download fails', async () => {
+    process.env.VAPI_PRIVATE_KEY = 'vapi-test-key';
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null, headers: null });
+
+    await sendCallSummaryEmail({
+      ...baseParams,
+      callId: 'call-private-failure',
+      recordingUrl: 'https://storage.vapi.ai/calls/private-recording.wav',
+    });
+
+    const callArgs = mockSend.mock.calls[0][0];
+    expect(callArgs.html).toContain('could not be attached automatically');
+    expect(callArgs.html).not.toContain('https://storage.vapi.ai/calls/private-recording.wav');
   });
 
   it('treats a direct resend id response as success for compatibility', async () => {
