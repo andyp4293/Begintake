@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/prisma';
+import { isInternalFlowFieldName } from '@/lib/active-flow-runner';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     transferredTo: callSession.transferredTo,
     client: callSession.client,
     lawyer: callSession.lawyer,
-    intakeData: callSession.intakeData,
+    intakeData: callSession.intakeData.filter((row) => !isInternalFlowFieldName(row.fieldName)),
     createdAt: callSession.createdAt,
   });
 }

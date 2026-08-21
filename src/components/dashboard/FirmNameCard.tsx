@@ -58,8 +58,8 @@ export function FirmNameCard() {
           <Building2 className="w-5 h-5 text-white" />
         </div>
         <div>
-          <h3 className="text-sm font-medium text-zinc-300">Firm Name</h3>
-          <p className="text-xs text-zinc-500">Used as {'{firm}'} in flow scripts - e.g. &quot;Thank you for calling {'{firm}'}&quot;</p>
+          <h3 className="text-sm font-medium text-zinc-300">Organization Name</h3>
+          <p className="text-xs text-zinc-500">Used as {'{firm}'} in flow scripts, for example &quot;Thank you for calling {'{firm}'}&quot;</p>
         </div>
       </div>
 
@@ -68,7 +68,7 @@ export function FirmNameCard() {
           type="text"
           value={name}
           onChange={(e) => handleChange(e.target.value)}
-          placeholder="e.g. Anderson Bowman PLLC"
+          placeholder="e.g. Begintake, Acme Support, Anderson Bowman PLLC"
           className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors"
         />
         {hasChanges && (

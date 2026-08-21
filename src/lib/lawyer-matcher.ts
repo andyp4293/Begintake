@@ -16,6 +16,11 @@ export type LegalArea =
   | 'environmental'
   | 'other';
 
+export interface LegalAreaMatch {
+  area: LegalArea;
+  score: number;
+}
+
 const LEGAL_AREA_KEYWORDS: Record<LegalArea, string[]> = {
   family: [
     'divorce', 'custody', 'child support', 'alimony', 'marriage',
@@ -30,6 +35,9 @@ const LEGAL_AREA_KEYWORDS: Record<LegalArea, string[]> = {
     'probation', 'parole', 'warrant', 'accused', 'indicted', 'arraignment',
     'incarcerated', 'detained', 'police', 'prosecution', 'expungement',
     'robbery', 'murder', 'homicide', 'domestic violence charge', 'sex offense',
+    'charges', 'pressing charges', 'pressed charges', 'bar fight',
+    'got into a fight', 'hit someone', 'battery', 'court paperwork',
+    'criminal complaint',
   ],
   immigration: [
     'immigration', 'visa', 'deportation', 'citizenship', 'asylum',
@@ -73,7 +81,7 @@ const LEGAL_AREA_KEYWORDS: Record<LegalArea, string[]> = {
     'bills', 'overwhelmed by debt', 'credit card debt', 'medical debt',
   ],
   tax: [
-    'tax', 'irs', 'audit', 'back taxes', 'tax lien', 'tax levy',
+    'tax', 'taxes', 'irs', 'audit', 'audited', 'being audited', 'back taxes', 'tax lien', 'tax levy',
     'tax debt', 'tax evasion', 'tax fraud', 'tax court', 'w-2',
     '1099', 'tax return', 'penalty', 'interest', 'tax notice',
     'tax attorney', 'offer in compromise', 'installment agreement',
@@ -109,22 +117,54 @@ const LEGAL_AREA_KEYWORDS: Record<LegalArea, string[]> = {
   other: [],
 };
 
-export function identifyLegalArea(description: string): LegalArea {
-  const lower = description.toLowerCase();
+function normalizeMatchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function countKeywordMatch(text: string, keyword: string): number {
+  const normalizedText = normalizeMatchText(text);
+  const normalizedKeyword = normalizeMatchText(keyword);
+  if (!normalizedText || !normalizedKeyword) return 0;
+
+  if (normalizedKeyword.includes(' ')) {
+    if (!normalizedText.includes(normalizedKeyword)) return 0;
+    return normalizedKeyword.split(' ').length + 1;
+  }
+
+  const tokens = new Set(normalizedText.split(' ').filter(Boolean));
+  return tokens.has(normalizedKeyword) ? 1 : 0;
+}
+
+export function identifyLegalAreaMatch(description: string): LegalAreaMatch {
+  const normalized = normalizeMatchText(description);
+  if (!normalized) {
+    return { area: 'other', score: 0 };
+  }
 
   let bestMatch: LegalArea = 'other';
   let bestScore = 0;
 
   for (const [area, keywords] of Object.entries(LEGAL_AREA_KEYWORDS) as [LegalArea, string[]][]) {
     if (area === 'other') continue;
-    const score = keywords.filter((kw) => lower.includes(kw)).length;
+    const score = keywords.reduce((total, kw) => total + countKeywordMatch(normalized, kw), 0);
     if (score > bestScore) {
       bestScore = score;
       bestMatch = area;
     }
   }
 
-  return bestMatch;
+  return {
+    area: bestScore > 0 ? bestMatch : 'other',
+    score: bestScore,
+  };
+}
+
+export function identifyLegalArea(description: string): LegalArea {
+  return identifyLegalAreaMatch(description).area;
 }
 
 export async function findBestLawyer(legalArea: LegalArea) {

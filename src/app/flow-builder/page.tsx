@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Scale, Plus, Trash2, Zap, LayoutTemplate, Workflow, ArrowRight, X,
+  Plus, Trash2, Zap, LayoutTemplate, Workflow, ArrowRight, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -21,11 +21,19 @@ interface Flow {
 
 const TEMPLATES = [
   {
+    id: 'default-intake',
+    name: 'Default Reception Intake',
+    badge: 'General',
+    badgeColor: '#e5e7eb',
+    description: 'A broad front-desk intake flow. It collects core details, screens for urgency, and routes people toward scheduling, follow-up review, or a live team handoff.',
+    areas: ['Family', 'Criminal Defense', 'Immigration', 'Personal Injury', 'Corporate', 'Real Estate', 'Employment', 'Bankruptcy', 'Tax', 'Estate Planning', 'Intellectual Property', 'Civil Rights', 'Environmental'],
+  },
+  {
     id: 'family-court-intake',
     name: 'Family Court Intake',
     badge: 'Family Law',
     badgeColor: '#3b82f6',
-    description: 'Deep intake script purpose-built for a dedicated family law firm. Covers custody, divorce, support, family offense (with safety-first protocol), child welfare, paternity, adoption, and juvenile matters.',
+    description: 'A family-law-focused intake flow built on the same main intake structure as the general template. It keeps deeper family routing while checking once for any family-law issue before sending non-family matters back to the main line.',
     areas: ['Custody & Visitation', 'Divorce', 'Child & Spousal Support', 'Orders of Protection', 'Child Welfare / ACS', 'Paternity', 'Adoption & Guardianship', 'Juvenile Matters'],
   },
   {
@@ -33,7 +41,7 @@ const TEMPLATES = [
     name: 'General Legal Intake',
     badge: 'All 13 Practice Areas',
     badgeColor: '#22c55e',
-    description: 'Comprehensive intake for a full-service law firm. Routes callers to the right attorney across all practice areas, collecting the correct information for each matter type with urgency screening throughout.',
+    description: 'A comprehensive multi-branch intake flow for firms that handle many matter types and need deeper routing before follow-up.',
     areas: ['Family', 'Criminal Defense', 'Immigration', 'Personal Injury', 'Corporate', 'Real Estate', 'Employment', 'Bankruptcy', 'Tax', 'Estate Planning', 'Intellectual Property', 'Civil Rights', 'Environmental'],
   },
 ];
@@ -169,11 +177,11 @@ export default function FlowListPage() {
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors">
-            <Scale className="w-5 h-5 text-white" />
+            <Workflow className="w-5 h-5 text-white" />
           </Link>
           <div>
             <h1 className="text-lg font-semibold text-white">Intake Flows</h1>
-            <p className="text-xs text-zinc-500">Build and manage AI call scripts</p>
+            <p className="text-xs text-zinc-500">Build and manage AI intake experiences</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

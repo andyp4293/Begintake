@@ -11,7 +11,14 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { transferPhoneNumber: true, assistantName: true, firmName: true },
+    select: {
+      transferPhoneNumber: true,
+      assistantName: true,
+      firmName: true,
+      backupSummaryEmail: true,
+      additionalSummaryEmails: true,
+      assumeNewClients: true,
+    },
   });
 
   // Parse the service account email from the env var if present
@@ -25,6 +32,9 @@ export async function GET() {
     transferPhoneNumber: user?.transferPhoneNumber || '',
     assistantName: user?.assistantName || '',
     firmName: user?.firmName || '',
+    backupSummaryEmail: user?.backupSummaryEmail || '',
+    additionalSummaryEmails: user?.additionalSummaryEmails || [],
+    assumeNewClients: Boolean(user?.assumeNewClients),
     calendarServiceEmail,
   });
 }
@@ -37,10 +47,45 @@ export async function PUT(req: NextRequest) {
 
   const body = await req.json();
 
-  const data: { transferPhoneNumber?: string | null; assistantName?: string | null; firmName?: string | null } = {};
+  const data: {
+    transferPhoneNumber?: string | null;
+    assistantName?: string | null;
+    firmName?: string | null;
+    backupSummaryEmail?: string | null;
+    additionalSummaryEmails?: string[];
+    assumeNewClients?: boolean;
+  } = {};
   if ('transferPhoneNumber' in body) data.transferPhoneNumber = body.transferPhoneNumber || null;
   if ('assistantName' in body)       data.assistantName       = body.assistantName || null;
   if ('firmName' in body)            data.firmName            = body.firmName || null;
+  if ('backupSummaryEmail' in body) {
+    const trimmed = typeof body.backupSummaryEmail === 'string' ? body.backupSummaryEmail.trim() : '';
+    if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return NextResponse.json({ error: 'Please enter a valid backup email address' }, { status: 400 });
+    }
+    data.backupSummaryEmail = trimmed || null;
+  }
+  if ('additionalSummaryEmails' in body) {
+    const values = Array.isArray(body.additionalSummaryEmails)
+      ? body.additionalSummaryEmails
+      : typeof body.additionalSummaryEmails === 'string'
+        ? body.additionalSummaryEmails.split(/[,\n]/g)
+        : [];
+    const normalizedEntries: Array<readonly [string, string]> = [];
+    for (const value of values) {
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+      if (!trimmed) continue;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        return NextResponse.json({ error: `Please enter a valid email address: ${trimmed}` }, { status: 400 });
+      }
+      normalizedEntries.push([trimmed.toLowerCase(), trimmed] as const);
+    }
+    const normalized = Array.from(new Map(normalizedEntries).values());
+    data.additionalSummaryEmails = normalized;
+  }
+  if ('assumeNewClients' in body) {
+    data.assumeNewClients = Boolean(body.assumeNewClients);
+  }
 
   if (Object.keys(data).length > 0) {
     await prisma.user.update({ where: { id: session.user.id }, data });

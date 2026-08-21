@@ -1,22 +1,223 @@
 import { Resend } from 'resend';
 import { jsPDF } from 'jspdf';
+import { parseTranscriptLine } from '@/lib/transcript-speakers';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+interface SendEmailResult {
+  success: boolean;
+  error?: string;
+  providerMessageId?: string;
+}
+
 interface CallSummaryEmailParams {
+  callId?: string;
   lawyerEmail: string;
   lawyerName: string;
+  backupEmail?: string;
+  additionalEmails?: string[];
+  assistantName?: string;
   callerName: string;
   callerPhone: string;
+  callOriginPhone?: string;
   callerEmail?: string;
   summary: string;
-  notes: string;
+  notes?: string;
+  transcript?: string;
+  recordingUrl?: string;
+  recordingKind?: 'mono' | 'stereo' | 'customer' | 'assistant' | 'video';
   legalArea: string;
   petitionType?: string;
   urgencyFlag?: string;
   matterCategory?: string;
   partyRole?: string;
-  availabilityLink?: string;
+}
+
+type RecordingArtifactKind = NonNullable<CallSummaryEmailParams['recordingKind']>;
+
+type RecordingDownloadTarget = {
+  url: string;
+  headers: HeadersInit;
+};
+
+function parseTranscriptEntries(
+  transcript?: string,
+  assistantName?: string
+): Array<{ label: string; content: string; isAi: boolean }> {
+  if (!transcript) return [];
+
+  return transcript
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => parseTranscriptLine(line, assistantName));
+}
+
+function renderTranscriptHtml(transcript?: string, assistantName?: string): string {
+  const entries = parseTranscriptEntries(transcript, assistantName);
+  if (!entries.length) return '';
+
+  return entries
+    .map(
+      (entry) => `
+        <div style="margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; background: ${entry.isAi ? '#eff6ff' : '#f8fafc'};">
+          <p style="margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: ${entry.isAi ? '#2563eb' : '#0f172a'};">
+            ${entry.label}
+          </p>
+          <p style="margin: 0; line-height: 1.65; white-space: pre-wrap; color: #18181b;">${entry.content}</p>
+        </div>
+      `
+    )
+    .join('');
+}
+
+function isVapiHostedArtifactUrl(recordingUrl?: string): boolean {
+  if (!recordingUrl) return false;
+
+  try {
+    const hostname = new URL(recordingUrl).hostname.toLowerCase();
+    return hostname.endsWith('vapi.ai');
+  } catch {
+    return recordingUrl.includes('vapi.ai');
+  }
+}
+
+function getRecordingArtifactPath(kind?: RecordingArtifactKind): string {
+  switch (kind) {
+    case 'stereo':
+      return 'stereo-recording';
+    case 'customer':
+      return 'customer-recording';
+    case 'assistant':
+      return 'assistant-recording';
+    case 'video':
+      return 'video-recording';
+    case 'mono':
+    default:
+      return 'mono-recording';
+  }
+}
+
+function resolveRecordingDownloadTarget(params: {
+  recordingUrl?: string;
+  callId?: string;
+  recordingKind?: RecordingArtifactKind;
+}): RecordingDownloadTarget | null {
+  const recordingUrl = params.recordingUrl?.trim();
+  const recordingKind = params.recordingKind || 'mono';
+
+  if (params.callId && process.env.VAPI_PRIVATE_KEY && (!recordingUrl || isVapiHostedArtifactUrl(recordingUrl))) {
+    return {
+      url: `https://api.vapi.ai/call/${params.callId}/${getRecordingArtifactPath(recordingKind)}`,
+      headers: {
+        Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
+      },
+    };
+  }
+
+  if (!recordingUrl) return null;
+
+  const headers: HeadersInit = {};
+  if (recordingUrl.includes('api.vapi.ai') && process.env.VAPI_PRIVATE_KEY) {
+    headers.Authorization = `Bearer ${process.env.VAPI_PRIVATE_KEY}`;
+  }
+
+  return {
+    url: recordingUrl,
+    headers,
+  };
+}
+
+function inferFilenameFromResponse(params: {
+  response: Response;
+  requestUrl: string;
+  callId?: string;
+  recordingKind?: RecordingArtifactKind;
+}): string {
+  const disposition = params.response.headers.get('content-disposition');
+  if (disposition) {
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      return decodeURIComponent(utf8Match[1]);
+    }
+
+    const quotedMatch = disposition.match(/filename=\"([^\"]+)\"/i);
+    if (quotedMatch?.[1]) {
+      return quotedMatch[1];
+    }
+
+    const plainMatch = disposition.match(/filename=([^;]+)/i);
+    if (plainMatch?.[1]) {
+      return plainMatch[1].trim();
+    }
+  }
+
+  const contentType = params.response.headers.get('content-type') || undefined;
+  const sourceUrl = params.response.url || params.requestUrl;
+  const rawName = (() => {
+    try {
+      return new URL(sourceUrl).pathname.split('/').pop() || '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const pathSegment = rawName || `${params.callId || 'call-recording'}-${params.recordingKind || 'mono'}`;
+  const hasExtension = /\.[a-z0-9]+$/i.test(pathSegment);
+  const extension = contentType?.includes('mpeg')
+    ? '.mp3'
+    : contentType?.includes('wav')
+    ? '.wav'
+    : contentType?.includes('mp4')
+    ? '.mp4'
+    : '';
+
+  return hasExtension ? pathSegment : `${pathSegment}${extension || '.bin'}`;
+}
+
+async function fetchRecordingAttachment(params: {
+  recordingUrl?: string;
+  callId?: string;
+  recordingKind?: RecordingArtifactKind;
+}): Promise<{
+  filename: string;
+  content: Buffer;
+  content_type?: string;
+} | null> {
+  const downloadTarget = resolveRecordingDownloadTarget(params);
+  if (!downloadTarget) return null;
+
+  try {
+    const response = await fetch(downloadTarget.url, {
+      headers: downloadTarget.headers,
+    });
+    if (!response.ok) {
+      console.error(`[email] Recording download failed (${response.status}) for ${downloadTarget.url}`);
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || undefined;
+    const arrayBuffer = await response.arrayBuffer();
+    const content = Buffer.from(arrayBuffer);
+    if (!content.length) {
+      console.error(`[email] Recording download returned empty body for ${downloadTarget.url}`);
+      return null;
+    }
+
+    return {
+      filename: inferFilenameFromResponse({
+        response,
+        requestUrl: downloadTarget.url,
+        callId: params.callId,
+        recordingKind: params.recordingKind,
+      }),
+      content,
+      content_type: contentType,
+    };
+  } catch (error) {
+    console.error('[email] Recording download failed:', error);
+    return null;
+  }
 }
 
 function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
@@ -47,7 +248,7 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
 
   // Header
   addText('ANDERSON BOWMAN PLLC', 14, 'bold');
-  addText('AI Paralegal - Call Transcript & Summary', 10, 'normal', [100, 100, 100]);
+  addText('Begintake - Call Transcript & Summary', 10, 'normal', [100, 100, 100]);
   y += 4;
   addLine();
 
@@ -55,7 +256,10 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
   addText('CLIENT INFORMATION', 10, 'bold', [50, 50, 50]);
   y += 2;
   addText(`Name: ${params.callerName}`, 10);
-  addText(`Phone: ${params.callerPhone}`, 10);
+  if (params.callOriginPhone) {
+    addText(`Phone Used for Call: ${params.callOriginPhone}`, 10);
+  }
+  addText(`Best Callback Number: ${params.callerPhone}`, 10);
   if (params.callerEmail) addText(`Email: ${params.callerEmail}`, 10);
   addText(`Legal Area: ${params.legalArea}`, 10);
   addText(`Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, 10);
@@ -81,9 +285,9 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
   y += 4;
   addLine();
 
-  // Detailed notes
+  // Intake notes
   if (params.notes) {
-    addText('DETAILED NOTES', 10, 'bold', [50, 50, 50]);
+    addText('INTAKE NOTES', 10, 'bold', [50, 50, 50]);
     y += 2;
     addText(params.notes, 9);
     y += 4;
@@ -91,49 +295,116 @@ function generateTranscriptPdf(params: CallSummaryEmailParams): Buffer {
   }
 
   // Transcript
-  if (params.notes && params.notes.includes(':')) {
+  if (params.transcript) {
     addText('CALL TRANSCRIPT', 10, 'bold', [50, 50, 50]);
     y += 2;
-    const lines = params.notes.split('\n').filter(Boolean);
-    for (const line of lines) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) {
-        addText(line, 9);
-        continue;
-      }
-      const role = line.slice(0, colonIdx).trim().toLowerCase();
-      const content = line.slice(colonIdx + 1).trim();
-      const isAi = role === 'assistant' || role === 'bot' || role === 'ai';
-      const label = isAi ? 'AI' : 'Caller';
-      addText(`${label}: ${content}`, 9, 'normal', isAi ? [37, 99, 235] : [0, 0, 0]);
+    const entries = parseTranscriptEntries(params.transcript, params.assistantName);
+    for (const entry of entries) {
+      addText(entry.label, 8, 'bold', entry.isAi ? [37, 99, 235] : [15, 23, 42]);
+      addText(entry.content, 9);
+      y += 2;
+      if (y > 275) { doc.addPage(); y = 20; }
     }
+    if (!entries.length) {
+      const lines = params.transcript.split('\n').filter(Boolean);
+      for (const line of lines) {
+        addText(line, 9);
+      }
+    }
+    y += 2;
+    addLine();
+  }
+
+  if (params.recordingUrl) {
+    addText('CALL RECORDING', 10, 'bold', [50, 50, 50]);
+    y += 2;
+    addText('The call recording is attached separately to the email.', 9);
   }
 
   // Footer
   y += 8;
-  addText('Generated by AI Paralegal - Privileged & Confidential', 8, 'normal', [150, 150, 150]);
+  addText('Generated by Begintake - Privileged & Confidential', 8, 'normal', [150, 150, 150]);
 
   const arrayBuffer = doc.output('arraybuffer');
   return Buffer.from(arrayBuffer);
 }
 
-export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Promise<{ success: boolean; error?: string }> {
-  const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@example.com';
+function parseResendDelivery(result: unknown): SendEmailResult {
+  if (!result || typeof result !== 'object') {
+    return { success: false, error: 'Resend returned an empty response' };
+  }
+
+  const response = result as {
+    id?: unknown;
+    data?: { id?: unknown } | null;
+    error?: { message?: unknown } | null;
+  };
+
+  if (typeof response.id === 'string' && response.id.length > 0) {
+    return { success: true, providerMessageId: response.id };
+  }
+
+  if (response.data && typeof response.data.id === 'string' && response.data.id.length > 0) {
+    return { success: true, providerMessageId: response.data.id };
+  }
+
+  if (response.error) {
+    const message = typeof response.error.message === 'string'
+      ? response.error.message
+      : 'Resend returned an error response';
+    return { success: false, error: message };
+  }
+
+  return { success: false, error: 'Resend did not return a message id' };
+}
+
+export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Promise<SendEmailResult> {
+  const fromEmail = (process.env.RESEND_FROM_EMAIL || 'noreply@example.com')
+    .replace(/\\n/g, '')
+    .trim();
+  const recipients = Array.from(new Map(
+    [params.lawyerEmail, params.backupEmail, ...(params.additionalEmails || [])]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean)
+      .map((value) => [value.toLowerCase(), value] as const)
+  ).values());
 
   try {
+    const normalizedRecordingUrl = params.recordingUrl?.trim() || undefined;
+    const shouldMentionRecording = Boolean(normalizedRecordingUrl || params.callId);
+    const shouldExposeRecordingLink = Boolean(normalizedRecordingUrl && !isVapiHostedArtifactUrl(normalizedRecordingUrl));
+
     // Generate PDF transcript
     let pdfBuffer: Buffer | null = null;
     try {
-      pdfBuffer = generateTranscriptPdf(params);
+      pdfBuffer = generateTranscriptPdf({
+        ...params,
+        recordingUrl: shouldMentionRecording ? (normalizedRecordingUrl || 'vapi-authenticated-artifact') : undefined,
+      });
     } catch (err) {
       console.error('[email] PDF generation failed, sending without attachment:', err);
     }
+    const recordingAttachment = await fetchRecordingAttachment({
+      recordingUrl: normalizedRecordingUrl,
+      callId: params.callId,
+      recordingKind: params.recordingKind,
+    });
 
     const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const attachments = [];
+    if (pdfBuffer) {
+      attachments.push({
+        filename: `${params.callerName.replace(/[^a-zA-Z0-9]/g, '_')}_Transcript_${date.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+        content: pdfBuffer,
+      });
+    }
+    if (recordingAttachment) {
+      attachments.push(recordingAttachment);
+    }
 
-    await resend.emails.send({
-      from: `AI Paralegal <${fromEmail}>`,
-      to: params.lawyerEmail,
+    const resendResult = await resend.emails.send({
+      from: `Begintake <${fromEmail}>`,
+      to: recipients,
       subject: `New Prospective Client: ${params.callerName} - ${params.legalArea}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -141,7 +412,8 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
 
           <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
             <p><strong>Client Name:</strong> ${params.callerName}</p>
-            <p><strong>Call Back Number:</strong> <a href="tel:${params.callerPhone}">${params.callerPhone}</a></p>
+            ${params.callOriginPhone ? `<p><strong>Phone Used for Call:</strong> <a href="tel:${params.callOriginPhone}">${params.callOriginPhone}</a></p>` : ''}
+            <p><strong>Best Callback Number:</strong> <a href="tel:${params.callerPhone}">${params.callerPhone}</a></p>
             ${params.callerEmail ? `<p><strong>Email:</strong> <a href="mailto:${params.callerEmail}">${params.callerEmail}</a></p>` : ''}
             <p><strong>Legal Area:</strong> ${params.legalArea}</p>
           </div>
@@ -160,40 +432,60 @@ export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Prom
           <p style="line-height: 1.6;">${params.summary}</p>
 
           ${params.notes ? `
-            <h3 style="color: #333;">Notes</h3>
+            <h3 style="color: #333;">Intake Notes</h3>
             <p style="line-height: 1.6; white-space: pre-wrap;">${params.notes}</p>
+          ` : ''}
+
+          ${params.transcript ? `
+            <h3 style="color: #333;">Call Transcript</h3>
+            <div style="margin-top: 8px;">
+              ${renderTranscriptHtml(params.transcript, params.assistantName)}
+            </div>
+          ` : ''}
+
+          ${shouldMentionRecording ? `
+            <h3 style="color: #333;">Call Recording</h3>
+            <p style="line-height: 1.6;">
+              ${recordingAttachment
+                ? 'The call recording is attached to this email.'
+                : shouldExposeRecordingLink
+                ? `Recording link: <a href="${normalizedRecordingUrl}">${normalizedRecordingUrl}</a>`
+                : 'The call recording could not be attached automatically, but it remains available in Vapi/Begintake for internal review.'}
+            </p>
           ` : ''}
 
           ${pdfBuffer ? `
             <p style="color: #666; font-size: 13px; margin-top: 16px; padding: 12px; background: #f0f7ff; border-radius: 6px;">
-              📎 <strong>Full transcript PDF attached</strong> - includes client info, summary, and complete call transcript.
+              📎 <strong>Call summary PDF attached</strong> - includes client info, summary, intake notes, and transcript when available.
             </p>
           ` : ''}
 
-          ${params.availabilityLink ? `
-            <div style="margin: 24px 0;">
-              <a href="${params.availabilityLink}"
-                 style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block;">
-                View Your Availability & Respond
-              </a>
-            </div>
+          ${recordingAttachment ? `
+            <p style="color: #666; font-size: 13px; margin-top: 16px; padding: 12px; background: #f0fff4; border-radius: 6px;">
+              🎧 <strong>Call recording attached</strong>
+            </p>
           ` : ''}
 
           <p style="color: #666; font-size: 12px; margin-top: 32px;">
-            This summary was generated by AI Paralegal. Please review and follow up with the prospective client at your earliest convenience.
+            This summary was generated by Begintake. Please review and follow up with the prospective client at your earliest convenience.
           </p>
         </div>
       `,
-      ...(pdfBuffer ? {
-        attachments: [{
-          filename: `${params.callerName.replace(/[^a-zA-Z0-9]/g, '_')}_Transcript_${date.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
-          content: pdfBuffer,
-        }],
-      } : {}),
+      ...(attachments.length ? { attachments } : {}),
     });
 
-    console.log(`[email] Sent summary${pdfBuffer ? ' with PDF' : ''} to ${params.lawyerEmail} for caller ${params.callerName}`);
-    return { success: true };
+    const delivery = parseResendDelivery(resendResult);
+    if (!delivery.success) {
+      console.error(
+        `[email] Resend did not confirm delivery for ${params.lawyerEmail}: ${delivery.error || 'Unknown response'}`
+      );
+      return delivery;
+    }
+
+    console.log(
+      `[email] Sent summary${pdfBuffer ? ' with PDF' : ''} to ${recipients.join(', ')} for caller ${params.callerName} (message ${delivery.providerMessageId})`
+    );
+    return delivery;
   } catch (error: any) {
     console.error('[email] Failed to send:', error?.message || error);
     return { success: false, error: error?.message || 'Failed to send email' };

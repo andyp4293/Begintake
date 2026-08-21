@@ -17,7 +17,7 @@ import LoginPage from '@/app/login/page';
 describe('LoginPage', () => {
   it('renders the app title', () => {
     render(<LoginPage />);
-    expect(screen.getByText('AI Paralegal')).toBeInTheDocument();
+    expect(screen.getByText('Begintake')).toBeInTheDocument();
   });
 
   it('renders sign in description', () => {

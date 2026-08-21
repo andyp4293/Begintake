@@ -57,7 +57,7 @@ export function TransferNumberCard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setHasChanges(false);
-      toast.success('Transfer number saved');
+      toast.success('Live transfer number saved');
     },
     onError: () => {
       toast.error('Failed to save');
@@ -79,8 +79,8 @@ export function TransferNumberCard() {
           <PhoneForwarded className="w-5 h-5 text-white" />
         </div>
         <div>
-          <h3 className="text-sm font-medium text-zinc-300">Transfer Number</h3>
-          <p className="text-xs text-zinc-500">Where to forward calls to a real paralegal</p>
+          <h3 className="text-sm font-medium text-zinc-300">Live Transfer Number</h3>
+          <p className="text-xs text-zinc-500">Where Begintake forwards calls when a flow uses a live team handoff</p>
         </div>
       </div>
 

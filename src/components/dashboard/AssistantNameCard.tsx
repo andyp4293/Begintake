@@ -59,7 +59,7 @@ export function AssistantNameCard() {
         </div>
         <div>
           <h3 className="text-sm font-medium text-zinc-300">Assistant Name</h3>
-          <p className="text-xs text-zinc-500">What callers will hear as the AI's name</p>
+          <p className="text-xs text-zinc-500">What callers will hear as your intake assistant&apos;s name</p>
         </div>
       </div>
 

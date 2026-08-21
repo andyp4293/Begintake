@@ -101,7 +101,7 @@ export async function registerWithVapi(
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID?.trim(),
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN?.trim(),
     smsEnabled: false,
-    name: `${name} AI Paralegal`,
+    name: `${name} - Begintake`,
     server: { url: serverUrl },
   });
 

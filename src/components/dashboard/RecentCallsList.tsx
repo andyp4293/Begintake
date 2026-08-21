@@ -3,6 +3,7 @@
 import { PhoneIncoming, PhoneForwarded, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Filter } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { parseTranscriptLine } from '@/lib/transcript-speakers';
 
 interface CallSession {
   id: string;
@@ -20,6 +21,7 @@ interface CallSession {
   petitionType: string | null;
   matterCategory: string | null;
   partyRole: string | null;
+  assistantName?: string | null;
   lawyer: { name: string } | null;
   client: { name: string } | null;
 }
@@ -31,7 +33,24 @@ interface PagedResponse {
   totalCount: number;
 }
 
-function TranscriptView({ notes }: { notes: string }) {
+function getOutcomeLabel(callOutcome: string) {
+  switch (callOutcome) {
+    case 'consultation_scheduled':
+      return 'Scheduled';
+    case 'summary_sent':
+      return 'Summary Sent';
+    case 'summary_delivery_failed':
+      return 'Email Delivery Failed';
+    case 'summary_unassigned':
+      return 'Needs Assignment';
+    case 'transferred':
+      return 'Transferred';
+    default:
+      return callOutcome;
+  }
+}
+
+function TranscriptView({ notes, assistantName }: { notes: string; assistantName?: string | null }) {
   const [showFull, setShowFull] = useState(false);
   const lines = notes.split('\n').filter(Boolean);
   const preview = lines.slice(0, 4);
@@ -42,17 +61,14 @@ function TranscriptView({ notes }: { notes: string }) {
       <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Transcript</p>
       <div className="bg-zinc-800/50 rounded-lg p-3 space-y-1.5 max-h-64 overflow-y-auto">
         {(showFull ? lines : preview).map((line, i) => {
-          const colonIdx = line.indexOf(':');
-          if (colonIdx === -1) return <p key={i} className="text-xs text-zinc-400">{line}</p>;
-          const role = line.slice(0, colonIdx).trim().toLowerCase();
-          const content = line.slice(colonIdx + 1).trim();
-          const isAi = role === 'assistant' || role === 'bot' || role === 'ai';
+          const entry = parseTranscriptLine(line, assistantName || undefined);
+          if (entry.label === 'Note') return <p key={i} className="text-xs text-zinc-400">{entry.content}</p>;
           return (
             <div key={i} className="flex gap-2">
-              <span className={`text-[10px] font-medium mt-0.5 shrink-0 w-12 ${isAi ? 'text-blue-400' : 'text-green-400'}`}>
-                {isAi ? 'AI' : 'Caller'}
+              <span className={`text-[10px] font-medium mt-0.5 shrink-0 w-12 ${entry.isAi ? 'text-blue-400' : 'text-green-400'}`}>
+                {entry.label}
               </span>
-              <p className="text-xs text-zinc-300">{content}</p>
+              <p className="text-xs text-zinc-300">{entry.content}</p>
             </div>
           );
         })}
@@ -158,6 +174,8 @@ export function RecentCallsList() {
             <option value="">All outcomes</option>
             <option value="consultation_scheduled">Scheduled</option>
             <option value="summary_sent">Summary sent</option>
+            <option value="summary_delivery_failed">Email delivery failed</option>
+            <option value="summary_unassigned">Needs assignment</option>
             <option value="transferred">Transferred</option>
             <option value="general_inquiry">General inquiry</option>
           </select>
@@ -211,10 +229,7 @@ export function RecentCallsList() {
                         )}
                         {call.callOutcome && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-medium">
-                            {call.callOutcome === 'consultation_scheduled' ? 'Scheduled'
-                              : call.callOutcome === 'summary_sent' ? 'Summary Sent'
-                              : call.callOutcome === 'transferred' ? 'Transferred'
-                              : call.callOutcome}
+                            {getOutcomeLabel(call.callOutcome)}
                           </span>
                         )}
                         {call.legalArea && (
@@ -288,7 +303,7 @@ export function RecentCallsList() {
                     )}
 
                     {call.notes && (
-                      <TranscriptView notes={call.notes} />
+                      <TranscriptView notes={call.notes} assistantName={call.assistantName} />
                     )}
                   </div>
                 )}

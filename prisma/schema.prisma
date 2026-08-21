@@ -21,9 +21,12 @@ model User {
   vapiPhoneNumber     String?
   twilioNumberSid     String?
   transferPhoneNumber String?
+  backupSummaryEmail  String?
+  additionalSummaryEmails String[] @default([])
   googleRefreshToken  String?
   assistantName       String?
   firmName            String?
+  assumeNewClients    Boolean      @default(false)
   documents           Document[]
   intakeFlows         IntakeFlow[]
 }

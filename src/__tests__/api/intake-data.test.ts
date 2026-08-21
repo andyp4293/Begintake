@@ -55,6 +55,7 @@ describe('GET /api/calls/[id]/intake-data', () => {
       lawyer: { name: 'Sarah Chen', email: 'sarah@test.com', specialties: ['family'] },
       intakeData: [
         { id: 'id1', fieldName: 'caller_name', fieldValue: 'John Smith', createdAt: new Date() },
+        { id: 'id-flow', fieldName: '__flow_current_node_id', fieldValue: 'node-123', createdAt: new Date() },
         { id: 'id2', fieldName: 'num_children', fieldValue: '2', createdAt: new Date() },
       ],
       createdAt: new Date(),
@@ -69,6 +70,7 @@ describe('GET /api/calls/[id]/intake-data', () => {
     expect(data.urgencyFlag).toBe('standard');
     expect(data.partyRole).toBe('self');
     expect(data.intakeData).toHaveLength(2);
+    expect(data.intakeData.some((row: any) => row.fieldName === '__flow_current_node_id')).toBe(false);
     expect(data.client.name).toBe('John');
     expect(data.lawyer.name).toBe('Sarah Chen');
   });
